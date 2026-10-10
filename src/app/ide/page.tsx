@@ -108,10 +108,10 @@ const CircuitCanvas = dynamic(() => import('@/components/CircuitCanvas').then((m
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading, plan, planExpiresAt } = useAuth();
-  let tokenLimit = 50000; // 50k for free
-  if (plan === 'starter') tokenLimit = 150000;
-  if (plan === 'booster') tokenLimit = 300000;
-  if (plan === 'pro') tokenLimit = 1000000;
+  let tokenLimit = 25000; // 25k for free
+  if (plan === 'starter') tokenLimit = 50000;
+  if (plan === 'booster') tokenLimit = 75000;
+  if (plan === 'pro') tokenLimit = 100000;
   const [apiKeys, setApiKeys] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [availableModels, setAvailableModels] = useState<Array<{ name: string; displayName?: string }>>([]);
