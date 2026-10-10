@@ -10,6 +10,8 @@ import { buildHardwareStudioSystemPrompt } from '@/lib/agent/system-prompt';
 import { compactConversationContext } from '@/lib/agent/context-compaction';
 import { breadboardLaneKey } from '@/lib/circuit-networks';
 
+const EMPTY_BOARD_POSITIONS = {};
+
 export interface ComponentInstance {
   id: string;
   type: string;
@@ -611,7 +613,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
     return { x: centerX - totalWidth / 2, y: centerY - 165, boardCount: breadboardPlan.boardCount };
   }, [accumulatedState.components, breadboardPlan, data]);
 
-  const activeBoardPositions = boardPositionsByProject[boardLayoutKey] || {};
+  const activeBoardPositions = boardPositionsByProject[boardLayoutKey] || EMPTY_BOARD_POSITIONS;
   const getBreadboardPosition = useCallback((boardIndex: number) => {
     if (!breadboardPosition) return null;
     return activeBoardPositions[boardIndex] || {
