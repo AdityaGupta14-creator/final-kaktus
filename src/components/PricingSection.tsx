@@ -179,7 +179,7 @@ export function PricingSection() {
             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-green-500 text-white px-4 py-1 rounded-full text-xs font-bold tracking-wide">POPULAR</div>
             <h3 className="text-2xl font-bold mb-2">Starter</h3>
             <p className="text-gray-500 mb-6">Unlock better reasoning for 1 week.</p>
-            <div className="text-5xl font-black mb-8">₹49<span className="text-lg text-gray-400 font-normal">/week</span></div>
+            <div className="text-5xl font-black mb-8">₹39<span className="text-lg text-gray-400 font-normal">/week</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">150k Tokens Daily</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">50 Flash Runs Daily</span></li>
@@ -187,7 +187,7 @@ export function PricingSection() {
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">15x Reasoning Capacity</span></li>
             </ul>
             <button 
-              onClick={() => handlePlanClick('starter', 'Starter', '49')} 
+              onClick={() => handlePlanClick('starter', 'Starter', '39')} 
               className="w-full py-4 text-center rounded-xl bg-green-500 text-white font-bold hover:bg-green-600 transition-colors shadow-md"
             >
               Start Trial
@@ -198,7 +198,7 @@ export function PricingSection() {
           <FadeIn delay={0.3} className="flex flex-col p-8 bg-gray-50 rounded-3xl border border-gray-100 shadow-sm relative">
             <h3 className="text-2xl font-bold mb-2">Booster</h3>
             <p className="text-gray-500 mb-6">For your mid-term projects (2 weeks).</p>
-            <div className="text-5xl font-black mb-8">₹99<span className="text-lg text-gray-400 font-normal">/14 days</span></div>
+            <div className="text-5xl font-black mb-8">₹69<span className="text-lg text-gray-400 font-normal">/14 days</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">300k Tokens Daily</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">100 Flash Runs Daily</span></li>
@@ -206,7 +206,7 @@ export function PricingSection() {
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">30x Reasoning Capacity</span></li>
             </ul>
             <button 
-              onClick={() => handlePlanClick('booster', 'Booster', '99')} 
+              onClick={() => handlePlanClick('booster', 'Booster', '69')} 
               className="w-full py-4 text-center rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-colors"
             >
               Upgrade
@@ -217,7 +217,7 @@ export function PricingSection() {
           <FadeIn delay={0.4} className="flex flex-col p-8 bg-gray-50 rounded-3xl border border-gray-100 shadow-sm relative">
             <h3 className="text-2xl font-bold mb-2">Pro</h3>
             <p className="text-gray-500 mb-6">For serious builders and engineers.</p>
-            <div className="text-5xl font-black mb-8">₹200<span className="text-lg text-gray-400 font-normal">/month</span></div>
+            <div className="text-5xl font-black mb-8">₹199<span className="text-lg text-gray-400 font-normal">/month</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">1M Tokens Daily</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Unlimited Flash Runs</span></li>
@@ -225,7 +225,7 @@ export function PricingSection() {
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">100x Reasoning Capacity</span></li>
             </ul>
             <button 
-              onClick={() => handlePlanClick('pro', 'Pro', '200')} 
+              onClick={() => handlePlanClick('pro', 'Pro', '199')} 
               className="w-full py-4 text-center rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-colors"
             >
               Upgrade
