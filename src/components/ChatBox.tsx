@@ -1851,9 +1851,7 @@ RULES:
             </div>
             
             <div className="flex items-center gap-2">
-              <button className="text-gray-400 hover:text-white p-1 rounded-full transition-colors flex items-center justify-center">
-                <Mic size={18} />
-              </button>
+
               <button
                 onClick={() => {
                   if (isQuotaReached) {
