@@ -34,7 +34,7 @@ export function circuitWirePairKey(from: string, to: string) {
 
 export function breadboardLaneKey(wire: CircuitWireEndpoint, getComponentType: ComponentTypeLookup) {
   for (const endpoint of [wire.from, wire.to]) {
-    if (isPowerDistributionEndpoint(endpoint, getComponentType)) return `pin:${endpoint.toLowerCase()}`;
+    if (canShareCircuitEndpoint(endpoint, getComponentType)) return `pin:${endpoint.toLowerCase()}`;
   }
   const net = wire.net?.trim().toLowerCase();
   if (net) return `net:${net}`;

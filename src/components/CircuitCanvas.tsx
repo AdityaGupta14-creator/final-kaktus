@@ -160,7 +160,6 @@ function BreadboardGraphic({
       transform={`translate(${x} ${y})`}
       role="button"
       aria-label={`Move breadboard ${boardNumber}`}
-      title="Drag to move breadboard"
       pointerEvents="all"
       style={{ cursor: 'grab' }}
       onPointerDown={event => onPointerDown(event, boardNumber - 1, x, y)}

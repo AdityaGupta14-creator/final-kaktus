@@ -71,6 +71,7 @@ export interface WorkspaceMemoryTab {
 }
 
 interface MergeableCircuitStep {
+  replace_step?: number;
   phase?: string;
   instruction?: string;
   detail?: string;

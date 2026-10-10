@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { X, Download, FileText, Edit3, Check, Loader2 } from 'lucide-react';
 import type { TutorialData } from './CircuitCanvas';
 import { buildFinalCircuitSvg, svgToPngDataUrl } from '@/lib/circuit-diagram';
+import { breadboardLaneKey } from '@/lib/circuit-networks';
 
 interface PdfGeneratorProps {
   isOpen: boolean;
@@ -59,10 +60,11 @@ export function PdfGenerator({ isOpen, onClose, circuitData, sessionTitle, tabNa
       if (step.add_components) step.add_components.forEach((c: any) => compMap.set(c.id, c));
       if (step.add_wiring) step.add_wiring.forEach((w: any) => {
         wireMap.set(`${w.from}-${w.to}`, w);
-        const slotKey = normalizedWireKey(w.from, w.to);
+        const slotKey = breadboardLaneKey(w, id => compMap.get(id)?.type);
         if (!wireSlots.has(slotKey)) wireSlots.set(slotKey, wireSlots.size);
       });
-      if (wireMap.size >= 6 || Array.from(compMap.values()).some(component => /breadboard/i.test(component.type || ''))) {
+      const activeLaneCount = new Set(Array.from(wireMap.values(), wire => breadboardLaneKey(wire, id => compMap.get(id)?.type))).size;
+      if (wireMap.size >= 6 || activeLaneCount < wireMap.size || Array.from(compMap.values()).some(component => /breadboard/i.test(component.type || ''))) {
         boardRequired = true;
       }
     }

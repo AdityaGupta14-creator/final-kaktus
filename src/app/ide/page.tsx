@@ -108,10 +108,10 @@ const CircuitCanvas = dynamic(() => import('@/components/CircuitCanvas').then((m
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading, plan, planExpiresAt } = useAuth();
-  let tokenLimit = 25000; // 25k for free
-  if (plan === 'starter') tokenLimit = 40000;
-  if (plan === 'booster') tokenLimit = 60000;
-  if (plan === 'pro') tokenLimit = 100000;
+  let tokenLimit = 50000; // 50k for free
+  if (plan === 'starter') tokenLimit = 150000;
+  if (plan === 'booster') tokenLimit = 300000;
+  if (plan === 'pro') tokenLimit = 1000000;
   const [apiKeys, setApiKeys] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [availableModels, setAvailableModels] = useState<Array<{ name: string; displayName?: string }>>([]);
@@ -142,7 +142,7 @@ export default function Home() {
         if (usageRaw) {
           const usage = JSON.parse(usageRaw);
           let totalStoredTokens = 0;
-          const today = new Date().toISOString().substring(0, 16); // 1-minute reset for testing
+          const today = new Date().toISOString().substring(0, 10); // 24-hour reset (daily)
           if (usage[today]) {
             for (const key in usage[today]) {
               for (const model in usage[today][key]) {

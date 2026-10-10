@@ -1,3 +1,5 @@
+import { breadboardLaneKey } from './circuit-networks';
+
 type CircuitPart = {
   id: string;
   type?: string;
@@ -27,8 +29,6 @@ const escapeXml = (value: unknown) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&apos;');
-
-const normalizedWireKey = (from: string, to: string) => [from.toLowerCase(), to.toLowerCase()].sort().join('|');
 
 function componentSize(part: CircuitPart) {
   const type = (part.type || '').toLowerCase();
@@ -145,7 +145,7 @@ export function buildFinalCircuitSvg(parts: CircuitPart[], connections: CircuitC
     const from = connectionPoint(fromPart, fromPin, positions.get(fromId) || { x: 0, y: 0 });
     const to = connectionPoint(toPart, toPin, positions.get(toId) || { x: 0, y: 0 });
     const wireColor = connection.color && /^(#[\da-f]{3,8}|[a-z]{3,20})$/i.test(connection.color) ? connection.color : '#36c96f';
-    const wireKey = normalizedWireKey(connection.from, connection.to);
+    const wireKey = breadboardLaneKey(connection, id => parts.find(part => part.id === id)?.type);
     const slot = board.wireSlots[wireKey] ?? index;
     const pathMarkup = board.required
       ? (() => {
