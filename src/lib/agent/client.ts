@@ -123,7 +123,7 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
         if (typeof window !== 'undefined') {
           const uid = localStorage.getItem('kaktus_user_uid');
           if (uid) {
-            const today = new Date().toISOString().split('T')[0];
+            const today = new Date().toISOString().substring(0, 16); // 1-minute reset for testing
             const usageRaw = localStorage.getItem(`gemini_key_usage_stats_${uid}`) || '{}';
             const usage = JSON.parse(usageRaw);
             if (!usage[today]) usage[today] = {};

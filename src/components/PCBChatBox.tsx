@@ -66,10 +66,21 @@ export function PCBChatBox({ apiKey, model, onUpdatePCB, currentStep = 0, totalS
     setIsLoading(true);
 
     try {
-      const conversationHistory = [...messages, userMsg].map(m => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        parts: [{ text: m.content }]
-      }));
+      const transcript = [...messages, userMsg].slice(-8);
+      const latestPCBDesignIndex = transcript.reduce((latestIndex, message, index) =>
+        message.role === 'assistant' && message.parsedPCB ? index : latestIndex, -1);
+      const conversationHistory = transcript.map((message, index) => {
+        const text = message.role === 'assistant'
+          ? index === latestPCBDesignIndex
+            ? `${getCleanText(message.content)}\n<pcb_design>${JSON.stringify(message.parsedPCB)}</pcb_design>`
+            : getCleanText(message.content).slice(0, 900)
+          : message.content.slice(0, 1_600);
+        return {
+          role: message.role === 'user' ? 'user' : 'model',
+          parts: [{ text }],
+        };
+      });
+      while (conversationHistory[0]?.role === 'model') conversationHistory.shift();
 
       const systemPrompt = `You are an expert PCB (Printed Circuit Board) design engineer. When a user asks you to design a PCB, output a structured JSON inside <pcb_design></pcb_design> tags.
 

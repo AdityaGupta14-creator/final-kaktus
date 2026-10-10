@@ -250,10 +250,20 @@ export function buildHardwareStudioSystemPrompt(context: AgentContext): string {
     workflow = '\n\nFor a substantial multi-subsystem request, use COMPLEX PROJECT GATE and wait for explicit approval before implementation. For simple standalone requests, proceed directly.';
   }
 
-  const selectedExpertise = DOMAIN_EXPERTISE
-    .filter(module => module.match.test(context.userRequest || ''))
-    .map(module => `\n${module.title}\n${module.guidance.trim()}`)
-    .join('\n');
+  const hasArduinoFirmwareContext = context.surface !== 'pcb' && /arduino|esp32|firmware|sketch|flash|upload|serial monitor/i.test([
+    context.userRequest || '',
+    context.projectName || '',
+    ...(context.components || []).map(component => component.type),
+    ...(context.allTabs || []).flatMap(tab => tab.components.map(component => `${component.id} ${component.type}`)),
+  ].join(' '));
+  const selectedExpertise = [
+    ...(hasArduinoFirmwareContext ? [`
+ARDUINO FIRMWARE AND TESTING — STRICT IN-APP RULE
+This user is working in Hardware Studio/Kaktus. Never tell them to leave this app, open Arduino IDE, PlatformIO, VS Code, or another app to edit, compile, upload, flash, or test firmware. Keep code editing in this app's Code Preview; tell them to save edits to the named circuit step. For hardware testing, direct them to this app's Flash to Board / Connect controls: select the detected board and USB port, compile and flash here, then use this app's Serial Monitor. Name the exact module and one-based step to test, and give the expected observation/pass condition from that step. A compiler pass is not a physical board test. If the board or in-app USB service is unavailable, say that physical testing cannot happen yet, preserve the code, and explain the exact in-app steps to do when it is available. Never claim a flash, connection, simulation, or physical test succeeded unless the app reports that result.`] : []),
+    ...DOMAIN_EXPERTISE
+      .filter(module => module.match.test(context.userRequest || ''))
+      .map(module => `\n${module.title}\n${module.guidance.trim()}`),
+  ].join('\n');
   const insertionContext = context.userRequest && /after this step|after the current step|after step\s+\d+|iss step ke baad|is step ke baad|current step ke baad/i.test(context.userRequest)
     ? `\n\nREQUESTED STEP INSERTION\nThe active UI step is the one-based ordinal ${(context.currentStep ?? 0) + 1}. For "after this/current step", set insert_after_step to that ordinal. For "after step N", N is the visible one-based step number. Keep multiple insertions after that same anchor in their given order. Do not overwrite, restart, or renumber unrelated existing steps.`
     : '';

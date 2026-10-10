@@ -1,4 +1,5 @@
 import type { AgentPlan } from './protocol';
+import { canShareCircuitEndpoint, splitCircuitEndpoint } from '../circuit-networks';
 
 const PROJECT_RESET_REQUEST = /\b(?:start|create|make|begin|open)\s+(?:a\s+)?new\s+project\b|\bnew\s+project\s+from\s+scratch\b|\bstart\s+over\b|\breset\s+(?:the\s+)?(?:current\s+)?project\b|\bfrom\s+scratch\b|\b(?:naya|nayi)\s+project\s+(?:shuru|start|banao)\b/i;
 const EXPLICIT_TAB_REQUEST = /\b(?:new|separate|own)\s+(?:workspace\s+)?(?:tab|module|subsystem|phase)\b|\b(?:naya|alag)\s+(?:tab|module|subsystem)\b/i;
@@ -60,6 +61,215 @@ export function insertStepsAfter<T extends { insert_after_step?: number; replace
   }
 
   return { steps: merged, firstInsertedIndex };
+}
+
+export interface WorkspaceMemoryTab {
+  name: string;
+  mergedFrom?: string[];
+  components?: Array<{ id: string; type: string }>;
+  wires?: Array<{ from: string; to: string; net?: string; stepIndex?: number }>;
+}
+
+interface MergeableCircuitStep {
+  phase?: string;
+  instruction?: string;
+  detail?: string;
+  verify?: string;
+  code?: string;
+  code_language?: string;
+  add_components?: any[];
+  add_wiring?: any[];
+  remove_components?: string[];
+  remove_wiring?: Array<string | { from: string; to: string }>;
+}
+
+function canonicalWireKey(from: string, to: string): string {
+  return [from.trim().toLowerCase(), to.trim().toLowerCase()].sort().join('|');
+}
+
+function stepSignature(step: MergeableCircuitStep): string {
+  const sorted = (items: any[] | undefined, key: (item: any) => string) =>
+    [...(items || [])].sort((left, right) => key(left).localeCompare(key(right))).map(item => JSON.stringify(item));
+  return JSON.stringify({
+    phase: step.phase || '',
+    instruction: step.instruction || '',
+    detail: step.detail || '',
+    verify: step.verify || '',
+    code: step.code || '',
+    code_language: step.code_language || '',
+    add_components: sorted(step.add_components, item => `${item.id}:${item.type}:${item.x}:${item.y}`),
+    add_wiring: sorted(step.add_wiring, item => canonicalWireKey(item.from, item.to)),
+    remove_components: [...(step.remove_components || [])].sort(),
+    remove_wiring: sorted(step.remove_wiring, item => typeof item === 'string' ? item : canonicalWireKey(item.from, item.to)),
+  });
+}
+
+function rebuildActiveCircuitState(steps: MergeableCircuitStep[]) {
+  const components = new Map<string, { id: string; type?: string; [key: string]: unknown }>();
+  const wires = new Map<string, { from: string; to: string; [key: string]: unknown }>();
+  for (const step of steps) {
+    for (const id of step.remove_components || []) {
+      components.delete(id);
+      for (const [key, wire] of wires) {
+        if (wire.from.startsWith(`${id}:`) || wire.to.startsWith(`${id}:`)) wires.delete(key);
+      }
+    }
+    for (const removal of step.remove_wiring || []) {
+      if (typeof removal === 'string') {
+        for (const [key, wire] of wires) {
+          if (wire.from === removal || wire.to === removal) wires.delete(key);
+        }
+      } else if (removal?.from && removal?.to) {
+        wires.delete(canonicalWireKey(removal.from, removal.to));
+      }
+    }
+    for (const component of step.add_components || []) components.set(component.id, component);
+    for (const wire of step.add_wiring || []) wires.set(canonicalWireKey(wire.from, wire.to), wire);
+  }
+  return { components, wires };
+}
+
+export function mergeCircuitSteps<T extends MergeableCircuitStep>(baseSteps: T[], incomingSteps: T[]) {
+  const steps = [...baseSteps];
+  const knownSignatures = new Map(steps.map((step, index) => [stepSignature(step), index]));
+  const sourceStepIndices: number[] = [];
+  const active = rebuildActiveCircuitState(steps);
+  const idRemap = new Map<string, string>();
+  let firstInsertedIndex = steps.length;
+
+  for (let sourceIndex = 0; sourceIndex < incomingSteps.length; sourceIndex += 1) {
+    const original = incomingSteps[sourceIndex];
+    const duplicateAt = knownSignatures.get(stepSignature(original));
+    if (duplicateAt !== undefined) {
+      sourceStepIndices[sourceIndex] = duplicateAt;
+      continue;
+    }
+
+    const remapEndpoint = (endpoint: string) => {
+      const separator = endpoint.indexOf(':');
+      if (separator < 0) return endpoint;
+      const id = endpoint.slice(0, separator);
+      const replacement = idRemap.get(id);
+      return replacement ? `${replacement}${endpoint.slice(separator)}` : endpoint;
+    };
+    const cloned = JSON.parse(JSON.stringify(original)) as T;
+    cloned.add_components = (cloned.add_components || []).map(component => {
+      const existing = active.components.get(component.id);
+      if (existing && existing.type && component.type && existing.type !== component.type && !idRemap.has(component.id)) {
+        let suffix = 2;
+        let candidate = `${component.id}_merged${suffix}`.slice(0, 48);
+        while (active.components.has(candidate)) {
+          suffix += 1;
+          candidate = `${component.id}_merged${suffix}`.slice(0, 48);
+        }
+        idRemap.set(component.id, candidate);
+      }
+      return { ...component, id: idRemap.get(component.id) || component.id };
+    }).filter(component => {
+      const existing = active.components.get(component.id);
+      return !existing || (existing.type && component.type && existing.type !== component.type);
+    });
+    cloned.remove_components = (cloned.remove_components || []).map(id => idRemap.get(id) || id);
+    cloned.add_wiring = (cloned.add_wiring || []).map(wire => ({
+      ...wire,
+      from: remapEndpoint(wire.from),
+      to: remapEndpoint(wire.to),
+    })).filter(wire => !active.wires.has(canonicalWireKey(wire.from, wire.to)));
+    cloned.remove_wiring = (cloned.remove_wiring || []).map(removal => typeof removal === 'string'
+      ? remapEndpoint(removal)
+      : { from: remapEndpoint(removal.from), to: remapEndpoint(removal.to) });
+
+    firstInsertedIndex = Math.min(firstInsertedIndex, steps.length);
+    sourceStepIndices[sourceIndex] = steps.length;
+    steps.push(cloned);
+    knownSignatures.set(stepSignature(cloned), steps.length - 1);
+    const rebuilt = rebuildActiveCircuitState(steps);
+    active.components.clear();
+    active.wires.clear();
+    for (const [id, component] of rebuilt.components) active.components.set(id, component);
+    for (const [key, wire] of rebuilt.wires) active.wires.set(key, wire);
+  }
+
+  return { steps, firstInsertedIndex, sourceStepIndices };
+}
+
+export function buildChatProjectMemory(tabs: WorkspaceMemoryTab[]): string {
+  const circuitTabs = tabs.filter(tab => tab.components?.length || tab.wires?.length);
+  if (!circuitTabs.length) return '';
+  const lineages = circuitTabs
+    .filter(tab => tab.mergedFrom?.length)
+    .map(tab => `${tab.name} includes ${tab.mergedFrom!.join(', ')}`);
+  const connectionCount = circuitTabs.reduce((total, tab) => total + (tab.wires?.length || 0), 0);
+  return [
+    'Persisted project memory for this chat:',
+    `Circuit tabs in this chat: ${circuitTabs.map(tab => tab.name).join(', ')}.`,
+    ...(lineages.length ? [`Merged tab history: ${lineages.join('; ')}.`] : []),
+    `The workspace contains ${connectionCount} active connection${connectionCount === 1 ? '' : 's'}; treat their pin-to-net assignments above as reserved across tabs. Give unrelated signals free pins; only supply, ground, or explicitly shared bus nets may fan out.`,
+    'If later steps use a breadboard, show that same board from the first wiring step and keep its hole mapping stable.',
+  ].join('\n');
+}
+
+export function findSignalPinReuseConflicts(
+  tabs: WorkspaceMemoryTab[],
+  incomingSteps: Array<Pick<MergeableCircuitStep, 'add_components' | 'add_wiring' | 'remove_components' | 'remove_wiring' | 'replace_step'>>,
+  targetTabName: string,
+): string[] {
+  const componentTypes = new Map<string, string>();
+  const wires = new Map<string, { from: string; to: string; net?: string; stepIndex?: number; tabName: string }>();
+  for (const tab of tabs) {
+    for (const component of tab.components || []) componentTypes.set(component.id, component.type);
+    for (const wire of tab.wires || []) wires.set(canonicalWireKey(wire.from, wire.to), { ...wire, tabName: tab.name });
+  }
+
+  const pinParts = (endpoint: string) => {
+    const parts = splitCircuitEndpoint(endpoint);
+    return { id: parts.componentId, pin: parts.pin };
+  };
+  const mayFanOut = (endpoint: string) => canShareCircuitEndpoint(endpoint, id => componentTypes.get(id));
+  const conflicts = new Map<string, { endpoint: string; peers: Set<string> }>();
+
+  for (const step of incomingSteps) {
+    if (Number.isInteger(step.replace_step)) {
+      for (const [key, wire] of wires) {
+        if (wire.tabName.toLowerCase() === targetTabName.toLowerCase() && wire.stepIndex === (step.replace_step as number) - 1) wires.delete(key);
+      }
+    }
+    for (const component of step.add_components || []) componentTypes.set(component.id, component.type || '');
+    for (const id of step.remove_components || []) {
+      for (const [key, wire] of wires) {
+        if (wire.tabName.toLowerCase() === targetTabName.toLowerCase() && (wire.from.startsWith(`${id}:`) || wire.to.startsWith(`${id}:`))) wires.delete(key);
+      }
+      componentTypes.delete(id);
+    }
+    for (const removal of step.remove_wiring || []) {
+      for (const [key, wire] of wires) {
+        if (wire.tabName.toLowerCase() !== targetTabName.toLowerCase()) continue;
+        if (typeof removal === 'string'
+          ? wire.from === removal || wire.to === removal
+          : canonicalWireKey(wire.from, wire.to) === canonicalWireKey(removal.from, removal.to)) wires.delete(key);
+      }
+    }
+    for (const wire of step.add_wiring || []) {
+      const key = canonicalWireKey(wire.from, wire.to);
+      if (wires.has(key)) continue;
+      for (const [endpoint, peer] of [[wire.from, wire.to], [wire.to, wire.from]]) {
+        if (mayFanOut(endpoint)) continue;
+        const normalizedEndpoint = endpoint.toLowerCase();
+        const existing = Array.from(wires.values()).filter(item => item.from.toLowerCase() === normalizedEndpoint || item.to.toLowerCase() === normalizedEndpoint);
+        const conflicting = existing.filter(item => {
+          const oldPeer = item.from.toLowerCase() === normalizedEndpoint ? item.to : item.from;
+          return oldPeer.toLowerCase() !== peer.toLowerCase() && !(wire.net && item.net && wire.net.trim().toLowerCase() === item.net.trim().toLowerCase());
+        });
+        if (conflicting.length) {
+          const conflict = conflicts.get(normalizedEndpoint) || { endpoint, peers: new Set<string>() };
+          conflicting.forEach(item => conflict.peers.add(item.from.toLowerCase() === normalizedEndpoint ? item.to : item.from));
+          conflicts.set(normalizedEndpoint, conflict);
+        }
+      }
+      wires.set(key, { ...wire, tabName: targetTabName });
+    }
+  }
+  return Array.from(conflicts.values()).map(({ endpoint, peers }) => `${endpoint} is already assigned to ${Array.from(peers).join(', ')}`);
 }
 
 export function routePlanPhase(

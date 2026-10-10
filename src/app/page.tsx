@@ -242,6 +242,48 @@ export default function LandingPage() {
       
       <PricingSection />
 
+      {/* Complaint Section */}
+      <section className="w-full py-24 px-6 bg-white border-t border-gray-100 flex justify-center">
+        <FadeIn className="w-full max-w-3xl bg-orange-50/50 border border-orange-100 rounded-[2rem] p-8 md:p-14 text-center shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 bg-orange-200/50 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 -mb-8 -ml-8 w-32 h-32 bg-orange-300/30 rounded-full blur-3xl"></div>
+          
+          <div className="relative z-10">
+            <h3 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4 tracking-tight">Have an issue or complaint?</h3>
+            <p className="text-lg text-gray-600 mb-8 max-w-xl mx-auto">
+              We take your experience seriously. Drop your issue below and we promise to solve it and get back to you within <strong className="text-orange-600 bg-orange-100 px-2 py-0.5 rounded-md">2 to 3 days</strong>.
+            </p>
+            <form 
+              className="flex flex-col gap-4 text-left max-w-lg mx-auto" 
+              onSubmit={(e) => { 
+                e.preventDefault(); 
+                alert('Thank you! Your complaint has been submitted. Our team will resolve it in 2-3 days.'); 
+                (e.target as HTMLFormElement).reset(); 
+              }}
+            >
+              <input 
+                type="email" 
+                placeholder="Your Email Address" 
+                required 
+                className="w-full px-5 py-4 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 bg-white text-gray-900 placeholder-gray-400 shadow-sm transition-all" 
+              />
+              <textarea 
+                placeholder="Describe your issue or complaint in detail..." 
+                required 
+                rows={4} 
+                className="w-full px-5 py-4 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 bg-white text-gray-900 placeholder-gray-400 shadow-sm transition-all resize-none" 
+              />
+              <button 
+                type="submit" 
+                className="w-full bg-[#111] text-white font-bold py-4 rounded-xl hover:bg-black hover:scale-[1.02] transition-all shadow-md mt-2"
+              >
+                Submit Complaint
+              </button>
+            </form>
+          </div>
+        </FadeIn>
+      </section>
+
       {/* CTA Section at the bottom */}
       <section className="w-full py-40 px-6 flex flex-col items-center justify-center text-center bg-gray-50/50 border-t border-gray-100">
         <FadeIn className="flex flex-col items-center max-w-3xl">
@@ -266,6 +308,52 @@ export default function LandingPage() {
           </Link>
         </FadeIn>
       </section>
+
+      {/* Footer */}
+      <footer className="w-full bg-white border-t border-gray-100 pt-16 pb-8 px-6 md:px-12">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
+          <div className="col-span-1 md:col-span-2">
+            <Link href="/" className="flex items-center gap-2 mb-4">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <g stroke="url(#logoGrad)">
+                  <path d="M12 22V4" />
+                  <path d="M12 14H9a2 2 0 0 1-2-2V8" />
+                  <path d="M12 10h3a2 2 0 0 0 2-2V5" />
+                </g>
+              </svg>
+              <span className="font-semibold text-xl tracking-tight text-black">Kaktus</span>
+            </Link>
+            <p className="text-gray-500 max-w-sm mb-6 leading-relaxed">
+              The intelligent hardware engineering platform. Design, wire, and build in the AI-first era.
+            </p>
+          </div>
+          
+          <div>
+            <h4 className="font-bold text-gray-900 mb-4">Legal</h4>
+            <ul className="flex flex-col gap-3 text-sm text-gray-500">
+              <li><Link href="/terms" className="hover:text-black transition-colors">Terms & Conditions</Link></li>
+              <li><Link href="/privacy" className="hover:text-black transition-colors">Privacy Policy</Link></li>
+              <li><Link href="/refund" className="hover:text-black transition-colors">Refund & Cancellation Policy</Link></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="font-bold text-gray-900 mb-4">Company</h4>
+            <ul className="flex flex-col gap-3 text-sm text-gray-500">
+              <li><Link href="/app-info" className="hover:text-black transition-colors">About Us</Link></li>
+              <li><Link href="/how-to-use" className="hover:text-black transition-colors">How to Use</Link></li>
+              <li><a href="mailto:admin@kaktus.com" className="hover:text-black transition-colors">Contact Us</a></li>
+            </ul>
+          </div>
+        </div>
+        
+        <div className="max-w-7xl mx-auto pt-8 border-t border-gray-100 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-400">
+          <p>© {new Date().getFullYear()} Kaktus. All rights reserved.</p>
+          <div className="flex gap-4">
+            <p>Made with ❤️ for Hardware Engineers</p>
+          </div>
+        </div>
+      </footer>
 
     </div>
   );

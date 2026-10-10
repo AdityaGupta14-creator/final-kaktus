@@ -66,6 +66,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setPlanExpiresAt(null);
         localStorage.removeItem('kaktus_user_plan');
         localStorage.removeItem('kaktus_user_uid');
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('hardware-studio-') || key.startsWith('gemini_key_usage_stats_') || key.startsWith('lastTokenReset_'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
         setLoading(false);
         if (unsubscribeDoc) unsubscribeDoc();
       }

@@ -17,10 +17,11 @@ interface ModelSelectorProps {
   apiKey: string;
   selectedModel: string;
   onModelChange: (model: string) => void;
+  onAvailableModelsChange?: (models: Array<Pick<Model, 'name' | 'displayName'>>) => void;
   variant?: 'default' | 'minimal';
 }
 
-export function ModelSelector({ apiKey, selectedModel, onModelChange, variant = 'default' }: ModelSelectorProps) {
+export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailableModelsChange, variant = 'default' }: ModelSelectorProps) {
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -73,6 +74,11 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, variant = 
         filteredModels.sort((a, b) => allowedIds.indexOf(a.name) - allowedIds.indexOf(b.name));
 
         setModels(filteredModels);
+        onAvailableModelsChange?.(
+          filteredModels
+            .filter(model => !isModelLocked(model.name, plan))
+            .map(({ name, displayName }) => ({ name, displayName })),
+        );
         
         // Only set default if we have none, or the selected one isn't in the list
         if (filteredModels.length > 0 && (!selectedModel || !filteredModels.find(m => m.name === selectedModel))) {
@@ -85,7 +91,7 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, variant = 
       .finally(() => {
         setLoading(false);
       });
-  }, [apiKey]);
+  }, [apiKey, onAvailableModelsChange, plan]);
 
   const activeModel = models.find(m => m.name === selectedModel) || models[0];
 

@@ -62,7 +62,7 @@ export default function VerifyPaymentPage() {
           setStatus('success');
           setTimeout(() => {
             router.push('/ide');
-          }, 3000);
+          }, 1500);
         } else {
           setStatus('failed');
           setErrorMsg(`Payment not successful. Status: ${data.status}`);

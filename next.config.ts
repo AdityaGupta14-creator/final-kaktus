@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  turbopack: {},
   webpack: (config, { isServer }) => {
     config.resolve.alias = {
       ...config.resolve.alias,

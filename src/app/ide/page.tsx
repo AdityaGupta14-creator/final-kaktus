@@ -9,11 +9,12 @@ import { ChatBox, ImplementationPlanCard } from '@/components/ChatBox';
 import { ModelSelector } from '@/components/ModelSelector';
 import type { TerminalRef } from '@/components/Terminal';
 import type { TutorialData } from '@/components/CircuitCanvas';
-import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Settings, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Settings, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, Download } from 'lucide-react';
 import { FlashPanel } from '@/components/FlashPanel';
+import { PdfGenerator } from '@/components/PdfGenerator';
 import { extractProjectPlanResponse } from '@/lib/agent/protocol';
 import type { PlanBuildAction, ProjectPlan, ResearchSource } from '@/lib/agent/protocol';
-import { insertStepsAfter } from '@/lib/agent/workspace';
+import { buildChatProjectMemory, insertStepsAfter, mergeCircuitSteps } from '@/lib/agent/workspace';
 import { useAuth } from '@/components/AuthProvider';
 import { getApiPool } from '@/lib/admin';
 import { signOut } from 'firebase/auth';
@@ -41,6 +42,7 @@ interface WorkspaceTab {
   sources?: ResearchSource[];
   planTargetTabId?: string;
   planApproved?: boolean;
+  mergedFrom?: string[];
 }
 
 interface WorkspaceState {
@@ -66,6 +68,40 @@ function parseWorkspaceSnapshot(value: string | null): WorkspaceState | null {
   }
 }
 
+function mergeWorkspaceTabIntoPrevious(state: WorkspaceState, sourceTabId: string): WorkspaceState {
+  const sourceIndex = state.tabs.findIndex(tab => tab.id === sourceTabId && tab.kind !== 'plan');
+  if (sourceIndex < 0 || sourceTabId === 'main') return state;
+  const sourceTab = state.tabs[sourceIndex];
+  if (!sourceTab.data) return state;
+
+  const previousCircuitTab = state.tabs.slice(0, sourceIndex).reverse().find(tab => tab.kind !== 'plan');
+  const fallbackTab = state.tabs.find(tab => tab.id === 'main' && tab.id !== sourceTabId);
+  const targetTab = previousCircuitTab || fallbackTab;
+  if (!targetTab || targetTab.id === sourceTabId) return state;
+
+  const mergedSteps = mergeCircuitSteps(targetTab.data?.steps || [], sourceTab.data.steps || []);
+  const sourceStepIndex = mergedSteps.sourceStepIndices[sourceTab.currentStep] ?? Math.max(0, mergedSteps.steps.length - 1);
+  const sourceLineage = [...(sourceTab.mergedFrom || []), sourceTab.name];
+  const mergedTab: WorkspaceTab = {
+    ...targetTab,
+    data: {
+      project_name: targetTab.data?.project_name || sourceTab.data.project_name || targetTab.name,
+      description: [targetTab.data?.description, sourceTab.data.description]
+        .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+        .join('\n\n'),
+      blueprint_svg: targetTab.data?.blueprint_svg || sourceTab.data.blueprint_svg,
+      steps: mergedSteps.steps,
+    },
+    currentStep: Math.min(sourceStepIndex, Math.max(0, mergedSteps.steps.length - 1)),
+    mergedFrom: Array.from(new Set([...(targetTab.mergedFrom || []), ...sourceLineage])),
+  };
+  const tabs = state.tabs
+    .filter(tab => tab.id !== sourceTabId)
+    .map(tab => tab.id === targetTab.id ? mergedTab : tab);
+
+  return { ...state, tabs, activeTabId: targetTab.id };
+}
+
 const Terminal = dynamic(() => import('@/components/Terminal').then((mod) => mod.Terminal), { ssr: false });
 const CircuitCanvas = dynamic(() => import('@/components/CircuitCanvas').then((mod) => mod.CircuitCanvas), { ssr: false });
 
@@ -78,6 +114,7 @@ export default function Home() {
   if (plan === 'pro') tokenLimit = 100000;
   const [apiKeys, setApiKeys] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
+  const [availableModels, setAvailableModels] = useState<Array<{ name: string; displayName?: string }>>([]);
   
   const [workspace, setWorkspace] = useState<WorkspaceState>(emptyWorkspace);
   const [workspaceReady, setWorkspaceReady] = useState(false);
@@ -86,7 +123,14 @@ export default function Home() {
   const [lastSaved, setLastSaved] = useState<string>('');
   const [totalTokens, setTotalTokens] = useState(0);
   const [isQuotaModalDismissed, setIsQuotaModalDismissed] = useState(false);
+  const [isPdfGeneratorOpen, setIsPdfGeneratorOpen] = useState(false);
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/');
+    }
+  }, [user, authLoading, router]);
 
 
   useEffect(() => {
@@ -98,7 +142,7 @@ export default function Home() {
         if (usageRaw) {
           const usage = JSON.parse(usageRaw);
           let totalStoredTokens = 0;
-          const today = new Date().toISOString().split('T')[0];
+          const today = new Date().toISOString().substring(0, 16); // 1-minute reset for testing
           if (usage[today]) {
             for (const key in usage[today]) {
               for (const model in usage[today][key]) {
@@ -347,27 +391,7 @@ export default function Home() {
       
       // MERGE TAB logic: Git-style merge (replace main with branch)
       if (action === 'MERGE_TAB') {
-        const mainIndex = tabs.findIndex(t => t.id === 'main');
-        const activeIndex = tabs.findIndex(t => t.id === activeTabId);
-        
-        if (mainIndex >= 0 && activeIndex >= 0 && activeTabId !== 'main') {
-          const mainTab = tabs[mainIndex];
-          const activeTab = tabs[activeIndex];
-          
-          if (activeTab.data) {
-            // REPLACE main tab data with the active tab's data entirely
-            const updatedMainData = JSON.parse(JSON.stringify(activeTab.data));
-            const newTabs = tabs.filter(t => t.id !== activeTabId);
-            const mainIdxInNew = newTabs.findIndex(t => t.id === 'main');
-            if (mainIdxInNew >= 0) {
-              newTabs[mainIdxInNew].data = updatedMainData;
-              newTabs[mainIdxInNew].currentStep = activeTab.currentStep;
-            }
-            
-            return { tabs: newTabs, activeTabId: 'main' };
-          }
-        }
-        return prev; // Nothing to merge if we are on main
+        return mergeWorkspaceTabIntoPrevious(prev, activeTabId);
       }
       
       // NEW_TAB logic: Create fresh independent tab for a sub-system
@@ -496,39 +520,64 @@ export default function Home() {
 
   // Compute all tabs summary with FULL component/wire detail for AI context
   const allTabs = workspace.tabs.filter(t => t.kind !== 'plan').map(t => {
-    const components: Array<{ id: string; type: string; x?: number; y?: number }> = [];
-    const wires: Array<{ from: string; to: string; color?: string }> = [];
-    const pinLinks = new Map<string, Set<string>>();
-    if (t.data?.steps) {
-      t.data.steps.forEach((s: any) => {
-        (s.add_components || []).forEach((c: any) => {
-          if (!components.find(ex => ex.id === c.id)) {
-            components.push({ id: c.id, type: c.type, x: c.x, y: c.y });
-          }
-        });
-        (s.add_wiring || []).forEach((w: any) => {
-          wires.push({ from: w.from, to: w.to, color: w.color });
-          for (const [endpoint, peer] of [[w.from, w.to], [w.to, w.from]]) {
-            if (typeof endpoint !== 'string' || typeof peer !== 'string' || !endpoint.includes(':')) continue;
-            const links = pinLinks.get(endpoint) || new Set<string>();
-            links.add(peer);
-            pinLinks.set(endpoint, links);
-          }
-        });
-      });
+    const componentMap = new Map<string, { id: string; type: string; x?: number; y?: number }>();
+    const wireMap = new Map<string, { from: string; to: string; color?: string; net?: string; stepIndex: number }>();
+    const wireKey = (from: string, to: string) => [from.toLowerCase(), to.toLowerCase()].sort().join('|');
+    for (const [stepIndex, step] of (t.data?.steps || []).entries()) {
+      for (const id of step.remove_components || []) {
+        componentMap.delete(id);
+        for (const [key, wire] of wireMap) {
+          if (wire.from.startsWith(`${id}:`) || wire.to.startsWith(`${id}:`)) wireMap.delete(key);
+        }
+      }
+      for (const removal of step.remove_wiring || []) {
+        for (const [key, wire] of wireMap) {
+          const remove = typeof removal === 'string'
+            ? wire.from === removal || wire.to === removal
+            : wireKey(wire.from, wire.to) === wireKey(removal.from, removal.to);
+          if (remove) wireMap.delete(key);
+        }
+      }
+      for (const component of step.add_components || []) {
+        componentMap.set(component.id, { id: component.id, type: component.type, x: component.x, y: component.y });
+      }
+      for (const wire of step.add_wiring || []) {
+        wireMap.set(wireKey(wire.from, wire.to), { from: wire.from, to: wire.to, color: wire.color, net: wire.net, stepIndex });
+      }
     }
+    const components = Array.from(componentMap.values());
+    const wires = Array.from(wireMap.values());
+    const pinLinks = new Map<string, Set<string>>();
+    wires.forEach(wire => {
+      for (const [endpoint, peer] of [[wire.from, wire.to], [wire.to, wire.from]]) {
+        if (typeof endpoint !== 'string' || typeof peer !== 'string' || !endpoint.includes(':')) continue;
+        const links = pinLinks.get(endpoint) || new Set<string>();
+        links.add(peer);
+        pinLinks.set(endpoint, links);
+      }
+    });
     return {
       name: t.name,
       isActive: t.id === activeCircuitTab.id,
+      mergedFrom: t.mergedFrom || [],
       componentCount: components.length,
       wireCount: wires.length,
       stepCount: t.data?.steps?.length || 0,
       components,
       wires,
       pinAssignments: Array.from(pinLinks, ([pin, peers]) => `${pin} -> ${Array.from(peers).join(', ')}`),
-      stepOutline: t.data?.steps?.map((step: any) => `${step.phase || 'Build'}: ${step.instruction}`).slice(0, 100) || []
+      stepOutline: (() => {
+        const outline = t.data?.steps?.map((step: any) => `${step.phase || 'Build'}: ${step.instruction}`) || [];
+        const recentOutline = outline.length > 10
+          ? [outline[0], `${outline.length - 9} earlier steps summarized`, ...outline.slice(-8)]
+          : outline;
+        return recentOutline.map((step: string) => step.length > 180 ? `${step.slice(0, 179).trimEnd()}…` : step);
+      })()
     };
   });
+  const projectMemory = buildChatProjectMemory(allTabs);
+
+  if (!authLoading && !user) return null;
 
   return (
     <div className="min-h-screen h-screen bg-[#0a0a0a] text-gray-100 flex flex-col font-sans overflow-hidden dark-ui">
@@ -565,7 +614,7 @@ export default function Home() {
             </button>
             {user && (
               <button 
-                onClick={() => { router.push('/'); setTimeout(() => signOut(auth), 100); }}
+                onClick={() => { window.location.href = '/'; setTimeout(() => signOut(auth), 100); }}
                 className="px-2 h-full flex items-center hover:bg-red-950/40 text-gray-400 hover:text-red-400 rounded-md transition-colors gap-1 text-[12px]"
                 title="Log out"
               >
@@ -586,6 +635,14 @@ export default function Home() {
             >
               <Usb size={13} />
               Connect
+            </button>
+            <button 
+              onClick={() => setIsPdfGeneratorOpen(true)}
+              className="px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors gap-1.5 text-blue-400 hover:text-blue-300"
+              title="Export as PDF"
+            >
+              <Download size={13} />
+              Export PDF
             </button>
           </nav>
         </div>
@@ -635,7 +692,7 @@ export default function Home() {
                     {user.email}
                   </span>
                   <span 
-                    onClick={() => { router.push('/'); setTimeout(() => signOut(auth), 100); }}
+                    onClick={() => { window.location.href = '/'; setTimeout(() => signOut(auth), 100); }}
                     className="text-[9px] text-gray-500 hover:text-red-400 transition-colors uppercase tracking-widest hidden md:block cursor-pointer font-semibold"
                   >
                     Logout
@@ -672,6 +729,8 @@ export default function Home() {
               key={sessionId}
               apiKeys={apiKeys} 
               model={selectedModel}
+              availableModels={availableModels}
+              onModelChange={setSelectedModel}
               onExecuteCommand={handleExecuteCommand}
               onUpdateCircuit={handleCircuitUpdate}
               onStepChange={handleStepChange}
@@ -679,6 +738,7 @@ export default function Home() {
               totalSteps={circuitData?.steps?.length || 0}
               circuitData={circuitData}
               allTabs={allTabs}
+              projectMemory={projectMemory}
               activeTabId={activeCircuitTab.id}
               targetWorkspaceTabId={activeTab.kind === 'plan' ? activeTab.planTargetTabId || 'main' : activeTab.id}
               sessionId={sessionId}
@@ -692,7 +752,8 @@ export default function Home() {
               pendingPlanAction={pendingPlanAction}
               onPlanActionConsumed={handlePlanActionConsumed}
               onQuotaReached={() => setIsQuotaModalDismissed(false)}
-              modelSelectorNode={<ModelSelector apiKey={apiKeys[0] || ''} selectedModel={selectedModel} onModelChange={setSelectedModel} variant="minimal" />}
+              isQuotaReached={totalTokens >= tokenLimit}
+              modelSelectorNode={<ModelSelector apiKey={apiKeys[0] || ''} selectedModel={selectedModel} onModelChange={setSelectedModel} onAvailableModelsChange={setAvailableModels} variant="minimal" />}
             />}
           </div>
         </div>
@@ -715,29 +776,13 @@ export default function Home() {
                 >
                   {tab.name}
                   
-                  {/* Merge Button */}
+                  {/* Merge the branch into the previous circuit tab while preserving both histories. */}
                   {workspace.activeTabId === tab.id && tab.id !== 'main' && tab.kind !== 'plan' && tab.data && (
                     <button 
-                      title="Merge to Main"
+                      title="Merge into the previous circuit tab"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setWorkspace(prev => {
-                          const mainIndex = prev.tabs.findIndex(t => t.id === 'main');
-                          const activeTab = prev.tabs.find(t => t.id === tab.id);
-                          if (mainIndex >= 0 && activeTab?.data) {
-                            const newTabs = prev.tabs.filter(t => t.id !== tab.id);
-                            const mainIdxInNew = newTabs.findIndex(t => t.id === 'main');
-                            if (mainIdxInNew >= 0) {
-                              newTabs[mainIdxInNew] = {
-                                ...newTabs[mainIdxInNew],
-                                data: JSON.parse(JSON.stringify(activeTab.data)),
-                                currentStep: activeTab.currentStep
-                              };
-                            }
-                            return { tabs: newTabs, activeTabId: 'main' };
-                          }
-                          return prev;
-                        });
+                        setWorkspace(prev => mergeWorkspaceTabIntoPrevious(prev, tab.id));
                       }}
                       className="ml-2 text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded px-1.5 py-0.5 text-[10px] transition-colors"
                     >
@@ -798,6 +843,9 @@ export default function Home() {
     data={circuitData}
     currentStep={currentStep}
     allTabs={allTabs}
+    projectMemory={projectMemory}
+    sessionId={sessionId}
+    workspaceTabId={activeTab.id}
     onStepChange={handleStepChange}
     apiKeys={apiKeys}
     model={selectedModel}
@@ -898,7 +946,7 @@ export default function Home() {
                 </p>
                 
                 <button
-                  onClick={() => router.push('/#pricing')}
+                  onClick={() => { window.location.href = '/#pricing'; }}
                   className="relative w-full py-3.5 px-4 bg-[#2b64d2] hover:bg-[#2353b3] text-white rounded-xl font-medium transition-all shadow-[0_4px_14px_0_rgba(43,100,210,0.39)] flex items-center justify-center gap-2 group overflow-hidden"
                 >
                   {/* Button Stitching */}
@@ -912,6 +960,16 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        <PdfGenerator
+          isOpen={isPdfGeneratorOpen}
+          onClose={() => setIsPdfGeneratorOpen(false)}
+          circuitData={circuitData}
+          sessionTitle={sessions.find(session => session.id === sessionId)?.title || 'New Project'}
+          tabName={activeTab.name}
+          sessionId={sessionId}
+          workspaceTabId={activeTab.id}
+        />
 
       </main>
     </div>

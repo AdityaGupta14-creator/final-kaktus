@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, X, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -32,6 +32,16 @@ export function PricingSection() {
   // Prefetched Cashfree data
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [cashfreeInstance, setCashfreeInstance] = useState<any>(null);
+  const orderPromiseRef = useRef<Promise<string> | null>(null);
+
+  useEffect(() => {
+    // Preload Cashfree SDK on mount so it's ready instantly when needed
+    import('@cashfreepayments/cashfree-js').then(({ load }) => {
+      load({
+        mode: process.env.NEXT_PUBLIC_CASHFREE_ENV === 'PRODUCTION' ? 'production' : 'sandbox',
+      }).then(cf => setCashfreeInstance(cf));
+    }).catch(console.error);
+  }, []);
 
   const handlePlanClick = async (planId: string, planName: string, price: string) => {
     if (!user) {
@@ -47,30 +57,32 @@ export function PricingSection() {
     setSelectedPlan({ id: planId, name: planName, price });
     setError('');
     setSessionId(null);
+    orderPromiseRef.current = null;
     
-    // 1. Prefetch SDK
-    import('@cashfreepayments/cashfree-js').then(({ load }) => {
-      load({
-        mode: process.env.NEXT_PUBLIC_CASHFREE_ENV === 'PRODUCTION' ? 'production' : 'sandbox',
-      }).then(cf => setCashfreeInstance(cf));
-    });
-
-    // 2. Prefetch order session
-    try {
-      const response = await fetch('/api/cashfree/create-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          planId,
-          amount: price,
-          customerId: user.uid,
-          customerEmail: user.email,
-        }),
+    // Prefetch order session and store the promise so we don't duplicate it
+    const promise = fetch('/api/cashfree/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        planId,
+        amount: price,
+        customerId: user.uid,
+        customerEmail: user.email,
+      }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.payment_session_id) {
+          setSessionId(data.payment_session_id);
+          return data.payment_session_id;
+        }
+        throw new Error(data.error || 'Failed to create payment session.');
       });
-      const data = await response.json();
-      if (response.ok && data.payment_session_id) {
-        setSessionId(data.payment_session_id);
-      }
+      
+    orderPromiseRef.current = promise;
+    
+    try {
+      await promise;
     } catch (e) {
       console.error("Prefetch order failed", e);
     }
@@ -87,8 +99,13 @@ export function PricingSection() {
 
     try {
       let currentSessionId = sessionId;
-      let cf = cashfreeInstance;
 
+      // Wait for the in-flight order creation if it hasn't finished yet
+      if (!currentSessionId && orderPromiseRef.current) {
+        currentSessionId = await orderPromiseRef.current;
+      }
+
+      // Fallback if something failed
       if (!currentSessionId) {
         const response = await fetch('/api/cashfree/create-order', {
           method: 'POST',
@@ -106,21 +123,24 @@ export function PricingSection() {
         currentSessionId = data.payment_session_id;
       }
 
+      let cf = cashfreeInstance;
       if (!cf) {
         const { load } = await import('@cashfreepayments/cashfree-js');
         cf = await load({
           mode: process.env.NEXT_PUBLIC_CASHFREE_ENV === 'PRODUCTION' ? 'production' : 'sandbox',
         });
+        setCashfreeInstance(cf);
       }
 
       cf.checkout({
         paymentSessionId: currentSessionId,
-        redirectTarget: "_modal",
+        redirectTarget: "_self",
       });
     } catch (err: any) {
       console.error("Checkout error:", err);
       setError(typeof err === 'string' ? err : (err.message || 'Payment initialization failed.'));
       setSessionId(null);
+    } finally {
       setSubmitting(false);
     }
   };

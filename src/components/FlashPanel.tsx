@@ -91,7 +91,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
       setStage('idle');
     } catch (e) {
       setStage('error');
-      setErrorText('Cannot connect to backend. Please download and start Kaktus Desktop Agent to flash your Arduino.?');
+      setErrorText('Kaktus local hardware connection service is unavailable. Start or restart the app connection service, then refresh ports and flash here. Your sketch stays in Kaktus; no external IDE is needed.');
     }
   }, []);
 
