@@ -163,7 +163,7 @@ export function PricingSection() {
             <div className="text-5xl font-black mb-8">₹0<span className="text-lg text-gray-400 font-normal">/mo</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">25k Tokens Daily</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">10 Flash Runs Daily</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Standard Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">Gemini 2.5 Flash / Lite</span></li>
             </ul>
             <button 
@@ -182,7 +182,7 @@ export function PricingSection() {
             <div className="text-5xl font-black mb-8">₹39<span className="text-lg text-gray-400 font-normal">/week</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">50k Tokens Daily</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">50 Flash Runs Daily</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Fast Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-blue-600 font-bold">Unlocks 3.5 Flash-Lite</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">15x Reasoning Capacity</span></li>
             </ul>
@@ -201,7 +201,7 @@ export function PricingSection() {
             <div className="text-5xl font-black mb-8">₹69<span className="text-lg text-gray-400 font-normal">/14 days</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">75k Tokens Daily</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">100 Flash Runs Daily</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Priority Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-blue-600 font-bold">Unlocks 3.5 & 3.6 Flash</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">30x Reasoning Capacity</span></li>
             </ul>
@@ -220,7 +220,7 @@ export function PricingSection() {
             <div className="text-5xl font-black mb-8">₹199<span className="text-lg text-gray-400 font-normal">/month</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">100k Tokens Daily</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Unlimited Flash Runs</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Max Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-blue-600 font-bold">Unlocks 3.7 & 3.8 Flash</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">100x Reasoning Capacity</span></li>
             </ul>

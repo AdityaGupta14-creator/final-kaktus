@@ -333,7 +333,6 @@ export default function LandingPage() {
             <ul className="flex flex-col gap-3 text-sm text-gray-500">
               <li><Link href="/terms" className="hover:text-black transition-colors">Terms & Conditions</Link></li>
               <li><Link href="/privacy" className="hover:text-black transition-colors">Privacy Policy</Link></li>
-              <li><Link href="/refund" className="hover:text-black transition-colors">Refund & Cancellation Policy</Link></li>
             </ul>
           </div>
 
