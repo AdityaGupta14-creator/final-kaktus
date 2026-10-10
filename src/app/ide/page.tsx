@@ -612,16 +612,7 @@ export default function Home() {
             <button className="px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors">
               File
             </button>
-            {user && (
-              <button 
-                onClick={() => { window.location.href = '/'; setTimeout(() => signOut(auth), 100); }}
-                className="px-2 h-full flex items-center hover:bg-red-950/40 text-gray-400 hover:text-red-400 rounded-md transition-colors gap-1 text-[12px]"
-                title="Log out"
-              >
-                <LogOut size={12} />
-                <span>Logout</span>
-              </button>
-            )}
+
             <button 
               onClick={() => setIsTerminalOpen(!isTerminalOpen)}
               className={`px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors ${isTerminalOpen ? 'bg-[#333333] text-white' : ''}`}

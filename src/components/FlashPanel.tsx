@@ -25,12 +25,12 @@ interface FlashPanelProps {
 type FlashStage = 'idle' | 'detecting' | 'compiling' | 'uploading' | 'success' | 'error' | 'monitoring';
 
 const BOARD_OPTIONS = [
-  { fqbn: 'arduino:avr:uno', name: 'Arduino Uno', icon: '🔵' },
-  { fqbn: 'arduino:avr:nano', name: 'Arduino Nano', icon: '🟢' },
-  { fqbn: 'arduino:avr:mega', name: 'Arduino Mega', icon: '🟣' },
-  { fqbn: 'esp32:esp32:esp32', name: 'ESP32 Dev Module', icon: '🟠' },
-  { fqbn: 'esp32:esp32:esp32s3', name: 'ESP32-S3', icon: '🟡' },
-  { fqbn: 'esp32:esp32:esp32c3', name: 'ESP32-C3', icon: '🔴' },
+  { fqbn: 'arduino:avr:uno', name: 'Arduino Uno', icon: '' },
+  { fqbn: 'arduino:avr:nano', name: 'Arduino Nano', icon: '' },
+  { fqbn: 'arduino:avr:mega', name: 'Arduino Mega', icon: '' },
+  { fqbn: 'esp32:esp32:esp32', name: 'ESP32 Dev Module', icon: '' },
+  { fqbn: 'esp32:esp32:esp32s3', name: 'ESP32-S3', icon: '' },
+  { fqbn: 'esp32:esp32:esp32c3', name: 'ESP32-C3', icon: '' },
 ];
 
 export function FlashPanel({ code, onClose }: FlashPanelProps) {
@@ -252,11 +252,11 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
-      className="absolute bottom-0 left-0 right-0 z-50 bg-[#0d1117] border-t border-[#1e3a5f] shadow-2xl"
+      className="absolute bottom-0 left-0 right-0 z-50 bg-[#0a0a0a] border-t border-[#222222] shadow-2xl"
       style={{ height: stage === 'monitoring' ? '55vh' : '280px' }}
     >
       {/* Header */}
-      <div className="h-9 border-b border-[#1e3a5f] bg-[#161b22] flex items-center justify-between px-4">
+      <div className="h-9 border-b border-[#222222] bg-[#141414] flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <Zap size={14} className="text-white" />
           <span className="text-xs font-bold text-gray-200">1-Click Flash</span>
@@ -277,7 +277,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
 
       <div className="flex h-[calc(100%-36px)]">
         {/* Left: Controls */}
-        <div className="w-[320px] border-r border-[#1e3a5f] p-3 flex flex-col gap-3">
+        <div className="w-[320px] border-r border-[#222222] p-3 flex flex-col gap-3">
           {/* Board & Port Selection */}
           <div className="flex gap-2">
             {/* Port */}
@@ -287,7 +287,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
                 <select
                   value={selectedPort}
                   onChange={e => setSelectedPort(e.target.value)}
-                  className="flex-1 bg-[#0d1117] border border-[#30363d] rounded px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500"
+                  className="flex-1 bg-[#0a0a0a] border border-[#333333] rounded px-2 py-1.5 text-xs text-white outline-none focus:border-white"
                 >
                   <option value="">Select port...</option>
                   {ports.map(p => (
@@ -297,7 +297,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
                   ))}
                 </select>
                 <button onClick={detectBoards} title="Refresh ports"
-                  className="p-1.5 rounded bg-[#21262d] border border-[#30363d] text-gray-400 hover:text-white hover:border-blue-500 transition-colors">
+                  className="p-1.5 rounded bg-[#1a1a1a] border border-[#333333] text-gray-400 hover:text-white hover:border-white transition-colors">
                   <RefreshCw size={12} className={stage === 'detecting' ? 'animate-spin' : ''} />
                 </button>
               </div>
@@ -310,7 +310,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
             <div className="relative">
               <button
                 onClick={() => setShowBoardDropdown(!showBoardDropdown)}
-                className="w-full bg-[#0d1117] border border-[#30363d] rounded px-2 py-1.5 text-xs text-left text-white flex items-center justify-between hover:border-blue-500 transition-colors"
+                className="w-full bg-[#0a0a0a] border border-[#333333] rounded px-2 py-1.5 text-xs text-left text-white flex items-center justify-between hover:border-white transition-colors"
               >
                 <span>{BOARD_OPTIONS.find(b => b.fqbn === selectedBoard)?.name || 'Select board...'}</span>
                 <ChevronDown size={12} className="text-gray-500" />
@@ -321,11 +321,11 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
                     initial={{ opacity: 0, y: -5 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -5 }}
-                    className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden shadow-xl"
+                    className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#141414] border border-[#333333] rounded-lg overflow-hidden shadow-xl"
                   >
                     {BOARD_OPTIONS.map(b => (
                       <button key={b.fqbn} onClick={() => { setSelectedBoard(b.fqbn); setShowBoardDropdown(false); }}
-                        className={`w-full px-3 py-1.5 text-xs text-left flex items-center gap-2 hover:bg-[#21262d] transition-colors
+                        className={`w-full px-3 py-1.5 text-xs text-left flex items-center gap-2 hover:bg-[#1a1a1a] transition-colors
                           ${selectedBoard === b.fqbn ? 'text-blue-400 bg-blue-500/10' : 'text-gray-300'}`}>
                         <span>{b.icon}</span> {b.name}
                       </button>
@@ -355,7 +355,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
               )}
               {stage === 'compiling' ? 'Compiling...' :
                stage === 'uploading' ? 'Uploading...' :
-               stage === 'success' ? '⚡ Flash Again' : '⚡ Flash'}
+               stage === 'success' ? 'Flash Again' : 'Flash'}
             </button>
             
             <button
@@ -374,7 +374,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
 
           {/* Progress Bar */}
           {(stage === 'compiling' || stage === 'uploading') && (
-            <div className="w-full bg-[#21262d] rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-[#1a1a1a] rounded-full h-1.5 overflow-hidden">
               <motion.div
                 className="h-full rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]"
                 initial={{ width: '0%' }}
@@ -452,7 +452,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
                   <Usb size={28} strokeWidth={1} />
                   <div className="text-center">
                     <p className="text-xs font-medium text-gray-400">Ready to Flash</p>
-                    <p className="text-[10px] mt-1">Connect your board, select it, and hit ⚡ Flash</p>
+                    <p className="text-[10px] mt-1">Connect your board, select it, and hit Flash</p>
                     <p className="text-[10px] text-gray-700 mt-2">
                       Supported: Arduino Uno/Nano/Mega, ESP32, ESP32-S3, ESP32-C3
                     </p>
