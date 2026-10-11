@@ -29,13 +29,11 @@ export function PricingSection() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   
-  // Prefetched Cashfree data
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
   const [cashfreeInstance, setCashfreeInstance] = useState<any>(null);
-  const orderPromiseRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
-    // Preload Cashfree SDK on mount so it's ready instantly when needed
+    // Preload Cashfree SDK immediately on mount so checkout opens instantaneously
     import('@cashfreepayments/cashfree-js').then(({ load }) => {
       load({
         mode: process.env.NEXT_PUBLIC_CASHFREE_ENV === 'PRODUCTION' ? 'production' : 'sandbox',
@@ -54,75 +52,28 @@ export function PricingSection() {
       return;
     }
 
-    setSelectedPlan({ id: planId, name: planName, price });
+    setLoadingPlanId(planId);
     setError('');
-    setSessionId(null);
-    orderPromiseRef.current = null;
-    
-    // Prefetch order session and store the promise so we don't duplicate it
-    const promise = fetch('/api/cashfree/create-order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        planId,
-        amount: price,
-        customerId: user.uid,
-        customerEmail: user.email,
-      }),
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.payment_session_id) {
-          setSessionId(data.payment_session_id);
-          return data.payment_session_id;
-        }
-        throw new Error(data.error || 'Failed to create payment session.');
+
+    try {
+      // 1. Create order session
+      const response = await fetch('/api/cashfree/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planId,
+          amount: price,
+          customerId: user.uid,
+          customerEmail: user.email,
+        }),
       });
-      
-    orderPromiseRef.current = promise;
-    
-    try {
-      await promise;
-    } catch (e) {
-      console.error("Prefetch order failed", e);
-    }
-  };
 
-  const handleCashfreePayment = async () => {
-    if (!user) {
-      setError('Please login first to proceed with payment.');
-      return;
-    }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to create payment session.');
 
-    setSubmitting(true);
-    setError('');
+      const paymentSessionId = data.payment_session_id;
 
-    try {
-      let currentSessionId = sessionId;
-
-      // Wait for the in-flight order creation if it hasn't finished yet
-      if (!currentSessionId && orderPromiseRef.current) {
-        currentSessionId = await orderPromiseRef.current;
-      }
-
-      // Fallback if something failed
-      if (!currentSessionId) {
-        const response = await fetch('/api/cashfree/create-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            planId: selectedPlan!.id,
-            amount: selectedPlan!.price,
-            customerId: user.uid,
-            customerEmail: user.email,
-          }),
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Failed to create payment session.');
-        currentSessionId = data.payment_session_id;
-      }
-
+      // 2. Ensure Cashfree instance is available
       let cf = cashfreeInstance;
       if (!cf) {
         const { load } = await import('@cashfreepayments/cashfree-js');
@@ -132,16 +83,17 @@ export function PricingSection() {
         setCashfreeInstance(cf);
       }
 
+      // 3. Immediately launch checkout in 1 click
       cf.checkout({
-        paymentSessionId: currentSessionId,
+        paymentSessionId,
         redirectTarget: "_self",
       });
     } catch (err: any) {
       console.error("Checkout error:", err);
       setError(typeof err === 'string' ? err : (err.message || 'Payment initialization failed.'));
-      setSessionId(null);
+      setSelectedPlan({ id: planId, name: planName, price });
     } finally {
-      setSubmitting(false);
+      setLoadingPlanId(null);
     }
   };
 
@@ -187,10 +139,15 @@ export function PricingSection() {
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">15x Reasoning Capacity</span></li>
             </ul>
             <button 
+              disabled={loadingPlanId !== null}
               onClick={() => handlePlanClick('starter', 'Starter', '39')} 
-              className="w-full py-4 text-center rounded-xl bg-green-500 text-white font-bold hover:bg-green-600 transition-colors shadow-md"
+              className="w-full py-4 text-center rounded-xl bg-green-500 text-white font-bold hover:bg-green-600 transition-colors shadow-md flex items-center justify-center gap-2 disabled:opacity-75"
             >
-              Start Trial
+              {loadingPlanId === 'starter' ? (
+                <><Loader2 className="w-5 h-5 animate-spin" /> Opening Checkout...</>
+              ) : (
+                'Start Trial'
+              )}
             </button>
           </FadeIn>
 
@@ -206,10 +163,15 @@ export function PricingSection() {
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">30x Reasoning Capacity</span></li>
             </ul>
             <button 
+              disabled={loadingPlanId !== null}
               onClick={() => handlePlanClick('booster', 'Booster', '69')} 
-              className="w-full py-4 text-center rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-colors"
+              className="w-full py-4 text-center rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-75"
             >
-              Upgrade
+              {loadingPlanId === 'booster' ? (
+                <><Loader2 className="w-5 h-5 animate-spin" /> Opening Checkout...</>
+              ) : (
+                'Upgrade'
+              )}
             </button>
           </FadeIn>
 
@@ -225,10 +187,15 @@ export function PricingSection() {
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">100x Reasoning Capacity</span></li>
             </ul>
             <button 
+              disabled={loadingPlanId !== null}
               onClick={() => handlePlanClick('pro', 'Pro', '199')} 
-              className="w-full py-4 text-center rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-colors"
+              className="w-full py-4 text-center rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-75"
             >
-              Upgrade
+              {loadingPlanId === 'pro' ? (
+                <><Loader2 className="w-5 h-5 animate-spin" /> Opening Checkout...</>
+              ) : (
+                'Upgrade'
+              )}
             </button>
           </FadeIn>
         </div>
