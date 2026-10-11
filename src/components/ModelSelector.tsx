@@ -6,12 +6,22 @@ import { listAgentModels } from '@/lib/agent/client';
 import { useAuth } from './AuthProvider';
 import { useRouter } from 'next/navigation';
 
-interface Model {
+export interface Model {
   name: string;
   version: string;
   displayName: string;
   description: string;
 }
+
+export const FALLBACK_MODELS: Model[] = [
+  { name: 'models/gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash Lite', version: '2.5', description: 'Fast and lightweight' },
+  { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', version: '2.5', description: 'Balanced performance' },
+  { name: 'models/gemini-3.5-flash-lite', displayName: 'Gemini 3.5 Flash Lite', version: '3.5', description: 'Next-gen fast' },
+  { name: 'models/gemini-3.5-flash', displayName: 'Gemini 3.5 Flash', version: '3.5', description: 'High reasoning' },
+  { name: 'models/gemini-3.6-flash', displayName: 'Gemini 3.6 Flash', version: '3.6', description: 'Advanced multimodal' },
+  { name: 'models/gemini-3.7-flash', displayName: 'Gemini 3.7 Flash', version: '3.7', description: 'State of the art' },
+  { name: 'models/gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', version: '3.8', description: 'Ultimate pro tier' },
+];
 
 interface ModelSelectorProps {
   apiKey: string;
@@ -22,9 +32,8 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailableModelsChange, variant = 'default' }: ModelSelectorProps) {
-  const [models, setModels] = useState<Model[]>([]);
+  const [models, setModels] = useState<Model[]>(FALLBACK_MODELS);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { plan } = useAuth();
@@ -53,12 +62,11 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
   }, []);
 
   useEffect(() => {
-    if (!apiKey) return;
+    const keyToQuery = apiKey || 'server_managed';
     
     setLoading(true);
-    setError('');
     
-    listAgentModels(apiKey)
+    listAgentModels(keyToQuery)
       .then(fetchedModels => {
         const allowedIds = [
           'models/gemini-2.5-flash-lite',
@@ -70,7 +78,14 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
           'models/gemini-3.8-flash'
         ];
 
-        let filteredModels = fetchedModels.filter(m => allowedIds.includes(m.name));
+        let filteredModels = (fetchedModels && fetchedModels.length > 0)
+          ? fetchedModels.filter(m => allowedIds.includes(m.name))
+          : FALLBACK_MODELS;
+
+        if (filteredModels.length === 0) {
+          filteredModels = FALLBACK_MODELS;
+        }
+
         filteredModels.sort((a, b) => allowedIds.indexOf(a.name) - allowedIds.indexOf(b.name));
 
         setModels(filteredModels);
@@ -80,13 +95,22 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
             .map(({ name, displayName }) => ({ name, displayName })),
         );
         
-        // Only set default if we have none, or the selected one isn't in the list
+        // Set default if none selected or not in list
         if (filteredModels.length > 0 && (!selectedModel || !filteredModels.find(m => m.name === selectedModel))) {
           onModelChange(filteredModels[0].name);
         }
       })
       .catch(err => {
-        setError(err.message);
+        console.warn('[ModelSelector] Using fallback models list:', err?.message || err);
+        setModels(FALLBACK_MODELS);
+        onAvailableModelsChange?.(
+          FALLBACK_MODELS
+            .filter(model => !isModelLocked(model.name, plan))
+            .map(({ name, displayName }) => ({ name, displayName })),
+        );
+        if (!selectedModel) {
+          onModelChange(FALLBACK_MODELS[0].name);
+        }
       })
       .finally(() => {
         setLoading(false);
@@ -98,9 +122,7 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
   const getCleanLabel = (model: Model | undefined) => {
     if (!model) return 'Select Model';
     let label = model.displayName || model.name.replace('models/', '');
-    // Clean up "Medium", "High", "Fast", "(Thinking)", etc.
     label = label.replace(/Medium|High|Fast|\(Thinking\)|Notice/gi, '').trim();
-    // Also cleanup extra spaces
     label = label.replace(/\s+/g, ' ');
     return label;
   };
@@ -109,11 +131,11 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
     <div className="relative" ref={dropdownRef}>
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        disabled={loading || !apiKey || models.length === 0}
+        disabled={loading && models.length === 0}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-[#1a1a1a] transition-colors text-xs text-gray-400 hover:text-gray-200 disabled:opacity-50"
       >
         <span className="font-semibold text-gray-300">
-          {!apiKey ? 'No API Key' : loading ? 'Loading...' : error ? 'Error' : getCleanLabel(activeModel)}
+          {getCleanLabel(activeModel)}
         </span>
         <ChevronDown size={14} className="opacity-70" />
       </button>

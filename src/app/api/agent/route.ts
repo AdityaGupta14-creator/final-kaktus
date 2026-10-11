@@ -1,4 +1,6 @@
-export const runtime = 'edge';
+export const runtime = 'nodejs';
+
+import { getServerApiKey } from '@/lib/server/api-keys';
 
 const MAX_BODY_BYTES = 1_500_000;
 const MODEL_PATTERN = /^(?:models\/)?gemini-[a-zA-Z0-9._-]+$/;
@@ -11,8 +13,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function mapToGeminiModel(inputModel: string): string {
+  const clean = inputModel.replace(/^models\//, '');
+  // Map virtual/display tiers to valid Gemini model endpoints
+  if (clean.includes('3.8') || clean.includes('3.7')) {
+    return 'models/gemini-2.5-flash';
+  }
+  if (clean.includes('3.6') || clean.includes('3.5')) {
+    return 'models/gemini-2.5-flash';
+  }
+  if (clean.includes('2.5-flash-lite')) {
+    return 'models/gemini-2.5-flash-lite';
+  }
+  if (clean.includes('2.5-flash')) {
+    return 'models/gemini-2.5-flash';
+  }
+  return inputModel.startsWith('models/') ? inputModel : `models/${inputModel}`;
+}
+
 interface GeminiResponse {
-  error?: { message?: string };
+  error?: { message?: string; code?: number };
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string }> };
     groundingMetadata?: {
@@ -42,42 +62,101 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
   }
 
-  if (!validText(body.apiKey, 512) || !validText(body.model, 160) || !MODEL_PATTERN.test(body.model)) {
-    return Response.json({ error: 'A valid Gemini API key and model are required.' }, { status: 400 });
+  if (!validText(body.model, 160) || !MODEL_PATTERN.test(body.model)) {
+    return Response.json({ error: 'A valid Gemini model identifier is required.' }, { status: 400 });
   }
   if (!validText(body.systemPrompt, 600_000) || !Array.isArray(body.contents) || body.contents.length > 80) {
     return Response.json({ error: 'Invalid agent context.' }, { status: 400 });
   }
 
-  const model = body.model.startsWith('models/') ? body.model : 'models/' + body.model;
-  const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/' + model + ':generateContent?key=' + encodeURIComponent(body.apiKey), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: body.systemPrompt }] },
-      contents: body.contents,
-      ...(body.research === true ? { tools: [{ google_search: {} }] } : {}),
-      generationConfig: {
-        temperature: typeof body.temperature === 'number' ? Math.min(Math.max(body.temperature, 0), 1) : 0.2,
-        maxOutputTokens: typeof body.maxOutputTokens === 'number' ? Math.min(Math.max(body.maxOutputTokens, 256), 32768) : 16384,
-        responseMimeType: 'text/plain',
-      },
-    }),
-  });
-  const result: GeminiResponse = await upstream.json().catch((): GeminiResponse => ({}));
-  if (!upstream.ok || result.error) {
-    return Response.json({ error: result.error?.message || 'Gemini request failed.' }, { status: upstream.status || 502 });
+  // Resolve API Key: check body key or resolve server managed key
+  let activeApiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+
+  if (!activeApiKey || activeApiKey === 'server_managed' || activeApiKey === 'default_server_key') {
+    try {
+      const serverKey = await getServerApiKey();
+      if (serverKey) {
+        activeApiKey = serverKey;
+      }
+    } catch (err) {
+      console.warn('[AgentRoute] Could not get server key from manager:', err);
+    }
+
+    if (!activeApiKey || activeApiKey === 'server_managed' || activeApiKey === 'default_server_key') {
+      if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
+        activeApiKey = process.env.GEMINI_API_KEY.trim();
+      }
+    }
   }
-  const text = result.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('') || '';
-  const grounding = result.candidates?.[0]?.groundingMetadata;
-  const sources = Array.isArray(grounding?.groundingChunks)
-    ? grounding.groundingChunks.flatMap(chunk => chunk.web?.uri && chunk.web?.title
-      ? [{ title: chunk.web.title.slice(0, 240), uri: chunk.web.uri }]
-      : []).filter((source: { uri: string }, index: number, all: { uri: string }[]) => all.findIndex(item => item.uri === source.uri) === index).slice(0, 20)
-    : [];
-  const searchQueries = Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries.slice(0, 12) : [];
-  const usage = result.usageMetadata?.totalTokenCount || 0;
-  return Response.json({ text, sources, searchQueries, researched: body.research === true && sources.length > 0, usage });
+
+  if (!activeApiKey || activeApiKey === 'server_managed' || activeApiKey === 'default_server_key') {
+    return Response.json({
+      error: 'No active Gemini API key found. Please add a Gemini key in the Admin Panel or set GEMINI_API_KEY.',
+    }, { status: 503 });
+  }
+
+  const candidateModels = [
+    mapToGeminiModel(body.model),
+    'models/gemini-2.5-flash',
+    'models/gemini-2.0-flash',
+    'models/gemini-1.5-flash',
+  ];
+  const uniqueCandidateModels = Array.from(new Set(candidateModels));
+
+  let lastResponse: Response | null = null;
+  let lastResult: GeminiResponse = {};
+
+  for (const modelToTry of uniqueCandidateModels) {
+    try {
+      const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/' + modelToTry + ':generateContent?key=' + encodeURIComponent(activeApiKey), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: body.systemPrompt }] },
+          contents: body.contents,
+          ...(body.research === true ? { tools: [{ google_search: {} }] } : {}),
+          generationConfig: {
+            temperature: typeof body.temperature === 'number' ? Math.min(Math.max(body.temperature, 0), 1) : 0.2,
+            maxOutputTokens: typeof body.maxOutputTokens === 'number' ? Math.min(Math.max(body.maxOutputTokens, 256), 32768) : 16384,
+            responseMimeType: 'text/plain',
+          },
+        }),
+      });
+
+      const result: GeminiResponse = await upstream.json().catch((): GeminiResponse => ({}));
+      lastResponse = upstream;
+      lastResult = result;
+
+      // If 404 (model not found on upstream), try next candidate model
+      if (upstream.status === 404) {
+        continue;
+      }
+
+      if (upstream.ok && !result.error) {
+        const text = result.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('') || '';
+        const grounding = result.candidates?.[0]?.groundingMetadata;
+        const sources = Array.isArray(grounding?.groundingChunks)
+          ? grounding.groundingChunks.flatMap(chunk => chunk.web?.uri && chunk.web?.title
+            ? [{ title: chunk.web.title.slice(0, 240), uri: chunk.web.uri }]
+            : []).filter((source: { uri: string }, index: number, all: { uri: string }[]) => all.findIndex(item => item.uri === source.uri) === index).slice(0, 20)
+          : [];
+        const searchQueries = Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries.slice(0, 12) : [];
+        const usage = result.usageMetadata?.totalTokenCount || 0;
+        return Response.json({ text, sources, searchQueries, researched: body.research === true && sources.length > 0, usage });
+      }
+
+      // If auth failure or quota limit, don't keep looping models
+      if (upstream.status === 401 || upstream.status === 429) {
+        break;
+      }
+    } catch (fetchErr) {
+      console.warn('[AgentRoute] Upstream fetch error for model:', modelToTry, fetchErr);
+    }
+  }
+
+  return Response.json({
+    error: lastResult?.error?.message || 'Gemini request failed.',
+  }, { status: lastResponse?.status || 502 });
 }
 
 export async function GET() {
