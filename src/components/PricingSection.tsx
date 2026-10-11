@@ -43,7 +43,7 @@ export function PricingSection() {
 
   const handlePlanClick = async (planId: string, planName: string, price: string) => {
     if (!user) {
-      router.push(planId === 'free' ? '/login?redirect=/ide' : '/login?redirect=/#pricing');
+      router.push(planId === 'free' ? '/login?redirect=/ide' : '/login?redirect=' + encodeURIComponent('/#pricing'));
       return;
     }
 
@@ -248,7 +248,7 @@ export function PricingSection() {
                 <div className="flex flex-col gap-2 mt-2">
                   <p className="text-sm text-gray-600 text-center mb-2">You must be logged in to proceed with payment.</p>
                   <button 
-                    onClick={() => router.push('/login?redirect=/#pricing')}
+                    onClick={() => router.push('/login?redirect=' + encodeURIComponent('/#pricing'))}
                     className="w-full bg-gray-900 hover:bg-black text-white font-bold py-3.5 rounded-xl transition-all duration-300 ease-in-out hover:scale-[1.02] active:scale-[0.98] shadow-md flex items-center justify-center"
                   >
                     Log In to Continue

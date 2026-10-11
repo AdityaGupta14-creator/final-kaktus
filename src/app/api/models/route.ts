@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-export const ALL_MODELS = [
+const ALL_MODELS = [
   {
     name: 'models/gemini-2.5-flash-lite',
     displayName: 'Gemini 2.5 Flash Lite',

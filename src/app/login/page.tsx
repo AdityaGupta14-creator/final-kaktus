@@ -31,6 +31,9 @@ function LoginContent() {
       }
 
       let redirectTo = searchParams.get('redirect');
+      if (typeof window !== 'undefined' && window.location.hash === '#pricing') {
+        redirectTo = '/#pricing';
+      }
       if (!redirectTo || redirectTo === '/') {
         if (role === 'ADMIN' || role === 'SUPER_ADMIN' || isSuperAdmin) {
           redirectTo = '/admin';
@@ -39,7 +42,11 @@ function LoginContent() {
         }
       }
 
-      router.push(redirectTo);
+      if (redirectTo.includes('#pricing')) {
+        window.location.href = redirectTo;
+      } else {
+        router.push(redirectTo);
+      }
     } catch (err: any) {
       setError(err.message || "Failed to sign in. Please try again.");
       setLoading(false);

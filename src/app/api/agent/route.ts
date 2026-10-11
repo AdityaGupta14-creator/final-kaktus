@@ -80,23 +80,24 @@ export async function POST(request: Request) {
     }, { status: 503 });
   }
 
-  const rawModel = body.model.startsWith('models/') ? body.model : `models/${body.model}`;
-  let primaryModel = rawModel;
-  if (rawModel.includes('2.5-flash-lite')) {
+  const rawModel = (typeof body.model === 'string' ? body.model : '').replace(/^models\//, '').toLowerCase();
+  let primaryModel = 'models/gemini-2.0-flash';
+  if (rawModel.includes('flash-lite') || rawModel.includes('lite')) {
     primaryModel = 'models/gemini-2.0-flash-lite';
-  } else if (rawModel.includes('2.5-flash')) {
+  } else if (rawModel.includes('3.7') || rawModel.includes('3.8') || rawModel.includes('pro')) {
+    primaryModel = 'models/gemini-2.0-flash';
+  } else if (rawModel.includes('flash') || rawModel.includes('3.5') || rawModel.includes('3.6') || rawModel.includes('2.5')) {
     primaryModel = 'models/gemini-2.0-flash';
   }
 
-  // Prioritize requested model with fallback to healthy active engines
+  // Real, active Google Generative Language models with separate quota buckets
   const candidateModels = [
     primaryModel,
     'models/gemini-2.0-flash',
-    'models/gemini-2.0-flash-lite',
     'models/gemini-1.5-flash',
-    'models/gemini-3.5-flash',
-    'models/gemini-3.5-flash-lite',
-    'models/gemini-flash-latest',
+    'models/gemini-1.5-flash-8b',
+    'models/gemini-2.0-flash-lite',
+    'models/gemini-1.5-pro',
   ];
   const uniqueCandidateModels = Array.from(new Set(candidateModels));
 
@@ -105,7 +106,9 @@ export async function POST(request: Request) {
 
   // Try candidate keys in pool
   for (const activeApiKey of candidateKeys) {
+    let keyQuotaBilledExhausted = false;
     for (const modelToTry of uniqueCandidateModels) {
+      if (keyQuotaBilledExhausted) break;
       try {
         const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/' + modelToTry + ':generateContent?key=' + encodeURIComponent(activeApiKey), {
           method: 'POST',
@@ -126,8 +129,8 @@ export async function POST(request: Request) {
         lastResponse = upstream;
         lastResult = result;
 
-        // If model not found (404) or temporarily overloaded (503), try next active candidate
-        if (upstream.status === 404 || upstream.status === 503) {
+        // If model not found (404), try next active candidate
+        if (upstream.status === 404) {
           continue;
         }
 
@@ -144,15 +147,22 @@ export async function POST(request: Request) {
           return Response.json({ text, sources, searchQueries, researched: body.research === true && sources.length > 0, usage });
         }
 
-        // If rate limit/quota on this model (429), try NEXT model on this key before giving up!
-        if (upstream.status === 429) {
-          console.warn(`[AgentRoute] Model ${modelToTry} returned 429 rate limit. Trying next candidate model...`);
+        const errMsg = (result.error?.message || '').toLowerCase();
+        const isQuotaHit = upstream.status === 429 || errMsg.includes('quota') || errMsg.includes('resource_exhausted');
+
+        if (isQuotaHit) {
+          console.warn(`[AgentRoute] Model ${modelToTry} quota hit on key ...${activeApiKey.slice(-4)}: ${result.error?.message}`);
+          if (errMsg.includes('exceeded your current quota') || errMsg.includes('billing')) {
+            // Entire key billing quota exhausted, switch to next key immediately
+            keyQuotaBilledExhausted = true;
+            break;
+          }
           continue;
         }
 
-        // If auth failure on this key (401), break to try next key in pool
-        if (upstream.status === 401) {
-          console.warn(`[AgentRoute] Key ending in ${activeApiKey.slice(-4)} failed with 401. Trying next key...`);
+        // If auth failure on this key (401 / 403), break to try next key in pool
+        if (upstream.status === 401 || (upstream.status === 403 && (errMsg.includes('api key') || errMsg.includes('credential')))) {
+          console.warn(`[AgentRoute] Key ending in ${activeApiKey.slice(-4)} failed with auth error ${upstream.status}. Trying next key...`);
           break;
         }
       } catch (fetchErr) {

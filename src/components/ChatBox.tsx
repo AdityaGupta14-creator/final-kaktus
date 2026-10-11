@@ -1639,6 +1639,16 @@ RULES:
               <PhaseContinueButton plan={msg.phasePlan} phaseIndex={msg.phaseIndex} completedIndices={msg.phaseCompletedIndices || []} onContinue={(plan, phaseIndex, completedPhaseIndices) => handleSend(`Continue the approved project. Build subsystem ${phaseIndex + 1}: ${plan.subsystems[phaseIndex].name}.`, { plan, phaseIndex, completedPhaseIndices, targetTabId: msg.phaseTargetTabId || 'main', startApproach: msg.phaseStartApproach })} />
             )}
 
+            {msg.role === 'assistant' && (msg.content?.toLowerCase().includes('quota') || msg.content?.toLowerCase().includes('exceeded') || msg.content?.toLowerCase().includes('all keys failed')) && (
+              <div 
+                onClick={() => { window.location.href = '/#pricing'; }}
+                className="mt-2.5 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 font-semibold text-xs cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-sm"
+              >
+                <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
+                <span>Quota Exceeded • Click to Upgrade Plan (₹1 - ₹3) →</span>
+              </div>
+            )}
+
             {msg.canvasWarning && (
               <p role="status" className="mt-2 max-w-[95%] border-l-2 border-amber-500/70 pl-2 text-[11px] leading-relaxed text-amber-300/90">{msg.canvasWarning}</p>
             )}
@@ -1796,7 +1806,10 @@ RULES:
           />
           {isQuotaReached && (
             <div 
-              onClick={() => onQuotaReached?.()}
+              onClick={() => {
+                if (onQuotaReached) onQuotaReached();
+                window.location.href = '/#pricing';
+              }}
               className="mb-1.5 mx-1 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 rounded-xl flex items-center justify-between text-xs text-red-300 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] group select-none shadow-sm"
             >
               <div className="flex items-center gap-2">
