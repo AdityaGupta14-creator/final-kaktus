@@ -13,23 +13,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function mapToGeminiModel(inputModel: string): string {
-  const clean = inputModel.replace(/^models\//, '');
-  // Map virtual/display tiers to valid Gemini model endpoints
-  if (clean.includes('3.8') || clean.includes('3.7')) {
-    return 'models/gemini-2.5-flash';
-  }
-  if (clean.includes('3.6') || clean.includes('3.5')) {
-    return 'models/gemini-2.5-flash';
-  }
-  if (clean.includes('2.5-flash-lite')) {
-    return 'models/gemini-2.5-flash-lite';
-  }
-  if (clean.includes('2.5-flash')) {
-    return 'models/gemini-2.5-flash';
-  }
-  return inputModel.startsWith('models/') ? inputModel : `models/${inputModel}`;
-}
 
 interface GeminiResponse {
   error?: { message?: string; code?: number };
@@ -95,11 +78,14 @@ export async function POST(request: Request) {
     }, { status: 503 });
   }
 
+  const requestedModel = body.model.startsWith('models/') ? body.model : `models/${body.model}`;
+  
+  // Prioritize user's requested model, with fallback to active working models
   const candidateModels = [
-    mapToGeminiModel(body.model),
-    'models/gemini-2.5-flash',
-    'models/gemini-2.0-flash',
-    'models/gemini-1.5-flash',
+    requestedModel,
+    'models/gemini-3.5-flash',
+    'models/gemini-3.5-flash-lite',
+    'models/gemini-flash-latest',
   ];
   const uniqueCandidateModels = Array.from(new Set(candidateModels));
 
@@ -127,8 +113,8 @@ export async function POST(request: Request) {
       lastResponse = upstream;
       lastResult = result;
 
-      // If 404 (model not found on upstream), try next candidate model
-      if (upstream.status === 404) {
+      // If model not found (404) or temporarily overloaded (503), try next active candidate
+      if (upstream.status === 404 || upstream.status === 503) {
         continue;
       }
 

@@ -14,13 +14,11 @@ export interface Model {
 }
 
 export const FALLBACK_MODELS: Model[] = [
-  { name: 'models/gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash Lite', version: '2.5', description: 'Fast and lightweight' },
-  { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', version: '2.5', description: 'Balanced performance' },
-  { name: 'models/gemini-3.5-flash-lite', displayName: 'Gemini 3.5 Flash Lite', version: '3.5', description: 'Next-gen fast' },
-  { name: 'models/gemini-3.5-flash', displayName: 'Gemini 3.5 Flash', version: '3.5', description: 'High reasoning' },
-  { name: 'models/gemini-3.6-flash', displayName: 'Gemini 3.6 Flash', version: '3.6', description: 'Advanced multimodal' },
-  { name: 'models/gemini-3.7-flash', displayName: 'Gemini 3.7 Flash', version: '3.7', description: 'State of the art' },
-  { name: 'models/gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', version: '3.8', description: 'Ultimate pro tier' },
+  { name: 'models/gemini-3.5-flash-lite', displayName: 'Gemini 3.5 Flash Lite', version: '3.5', description: 'Fast, efficient model for basic hardware assistance' },
+  { name: 'models/gemini-3.5-flash', displayName: 'Gemini 3.5 Flash', version: '3.5', description: 'High reasoning performance for complex circuit design' },
+  { name: 'models/gemini-3.6-flash', displayName: 'Gemini 3.6 Flash', version: '3.6', description: 'Multimodal schematic, PCB analysis & firmware synthesis' },
+  { name: 'models/gemini-3.7-flash', displayName: 'Gemini 3.7 Flash', version: '3.7', description: 'State of the art hardware verification & electrical design' },
+  { name: 'models/gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', version: '3.8', description: 'Ultimate pro tier with deep engineering logic' },
 ];
 
 interface ModelSelectorProps {
@@ -45,10 +43,10 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
       return ['models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
     }
     if (currentPlan === 'starter') {
-      return ['models/gemini-3.5-flash', 'models/gemini-3.6-flash', 'models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
+      return ['models/gemini-3.6-flash', 'models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
     }
     // Free
-    return ['models/gemini-3.5-flash-lite', 'models/gemini-3.5-flash', 'models/gemini-3.6-flash', 'models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
+    return ['models/gemini-3.6-flash', 'models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
   };
 
   useEffect(() => {
@@ -69,8 +67,6 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
     listAgentModels(keyToQuery)
       .then(fetchedModels => {
         const allowedIds = [
-          'models/gemini-2.5-flash-lite',
-          'models/gemini-2.5-flash',
           'models/gemini-3.5-flash-lite',
           'models/gemini-3.5-flash',
           'models/gemini-3.6-flash',

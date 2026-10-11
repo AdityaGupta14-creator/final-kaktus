@@ -113,7 +113,7 @@ export default function Home() {
   if (plan === 'booster') tokenLimit = 75000;
   if (plan === 'pro') tokenLimit = 100000;
   const [apiKeys, setApiKeys] = useState<string[]>(['server_managed']);
-  const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash-lite');
+  const [selectedModel, setSelectedModel] = useState('models/gemini-3.5-flash');
   const [availableModels, setAvailableModels] = useState<Array<{ name: string; displayName?: string }>>([]);
   
   const [workspace, setWorkspace] = useState<WorkspaceState>(emptyWorkspace);
