@@ -132,9 +132,16 @@ export default function Home() {
     if (!authLoading && !user) {
       router.push('/');
     } else if (user) {
+      const email = (user.email || '').toLowerCase().trim();
+      const isSuperAdmin = email === 'mahesh.gupta8952@gmail.com' || email === 'dixitshubham68359@gmail.com';
+      if (isSuperAdmin) {
+        setUserRole('SUPER_ADMIN');
+      }
       user.getIdTokenResult(true).then(result => {
         if (result.claims?.role) {
           setUserRole(result.claims.role as string);
+        } else if (isSuperAdmin) {
+          setUserRole('SUPER_ADMIN');
         }
       }).catch(console.error);
     }

@@ -12,9 +12,10 @@ interface AuthContextType {
   loading: boolean;
   plan: string;
   planExpiresAt: Date | null;
+  role: string;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true, plan: 'free', planExpiresAt: null });
+const AuthContext = createContext<AuthContextType>({ user: null, loading: true, plan: 'free', planExpiresAt: null, role: 'USER' });
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -23,6 +24,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [plan, setPlan] = useState('free');
   const [planExpiresAt, setPlanExpiresAt] = useState<Date | null>(null);
+  const [role, setRole] = useState('USER');
   const router = useRouter();
   const pathname = usePathname();
 
@@ -33,6 +35,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(currentUser);
       
       if (currentUser) {
+        const userEmail = (currentUser.email || '').toLowerCase().trim();
+        const isSuperAdmin = userEmail === 'mahesh.gupta8952@gmail.com' || userEmail === 'dixitshubham68359@gmail.com';
+        let resolvedRole = isSuperAdmin ? 'SUPER_ADMIN' : 'USER';
+        setRole(resolvedRole);
+
+        currentUser.getIdTokenResult(true).then(tokenResult => {
+          if (tokenResult.claims?.role) {
+            setRole(tokenResult.claims.role as string);
+          } else if (isSuperAdmin) {
+            setRole('SUPER_ADMIN');
+          }
+        }).catch(err => {
+          console.error("Token role fetch error", err);
+        });
+
         import('firebase/firestore').then(({ doc, onSnapshot }) => {
           unsubscribeDoc = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
             const docData = docSnap.exists() ? docSnap.data() : null;
@@ -62,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
         });
       } else {
+        setRole('USER');
         setPlan('free');
         setPlanExpiresAt(null);
         localStorage.removeItem('kaktus_user_plan');
@@ -79,7 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       // Route guarding logic
-      if (!currentUser && (pathname === '/ide' || pathname === '/pcb-designer')) {
+      if (!currentUser && (pathname === '/ide' || pathname === '/pcb-designer' || pathname === '/admin' || pathname === '/profile')) {
         router.push('/login?redirect=' + pathname);
       }
     });
@@ -163,7 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [plan, planExpiresAt?.getTime(), user?.uid]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, plan, planExpiresAt }}>
+    <AuthContext.Provider value={{ user, loading, plan, planExpiresAt, role }}>
       {children}
     </AuthContext.Provider>
   );

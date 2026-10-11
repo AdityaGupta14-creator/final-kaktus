@@ -1,4 +1,4 @@
-import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 export interface PaymentSettings {
@@ -16,22 +16,49 @@ export interface PaymentTransaction {
   createdAt: any;
 }
 
+/**
+ * Fetches current public payment settings (UPI ID & QR Code) via API
+ */
 export const getAdminPaymentSettings = async (): Promise<PaymentSettings> => {
   try {
-    const docSnap = await getDoc(doc(db, 'admin', 'settings'));
-    if (docSnap.exists() && docSnap.data().payment) {
-      return docSnap.data().payment as PaymentSettings;
+    const res = await fetch('/api/admin/settings');
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        upiId: data.upiId || '',
+        upiQrUrl: data.upiQrUrl || '',
+      };
     }
   } catch (error) {
-    console.error("Error fetching payment settings:", error);
+    console.error('[Payments] Error fetching payment settings via API:', error);
   }
   return { upiId: '', upiQrUrl: '' };
 };
 
-export const updateAdminPaymentSettings = async (settings: PaymentSettings) => {
-  await setDoc(doc(db, 'admin', 'settings'), { payment: settings }, { merge: true });
+/**
+ * Updates payment settings via secure server admin route
+ */
+export const updateAdminPaymentSettings = async (settings: PaymentSettings, idToken?: string) => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+
+  const res = await fetch('/api/admin/settings', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(settings),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update payment settings.');
+  }
 };
 
+/**
+ * Submits user transaction verification to the payments collection
+ */
 export const submitPaymentVerification = async (uid: string, email: string | null, planId: string, txnId: string) => {
   const docRef = doc(collection(db, 'payments'));
   await setDoc(docRef, {
@@ -41,91 +68,69 @@ export const submitPaymentVerification = async (uid: string, email: string | nul
     planId,
     txnId,
     status: 'pending',
-    createdAt: serverTimestamp()
+    createdAt: serverTimestamp(),
   });
   return docRef.id;
 };
 
-export const getPendingPayments = async (): Promise<PaymentTransaction[]> => {
-  const q = query(collection(db, 'payments'), where("status", "==", "pending"));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((doc: any) => doc.data() as PaymentTransaction);
-};
+/**
+ * Fetches pending payment verifications via secure server route
+ */
+export const getPendingPayments = async (idToken?: string): Promise<PaymentTransaction[]> => {
+  try {
+    const headers: Record<string, string> = {};
+    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
 
-export const approvePayment = async (txn: PaymentTransaction) => {
-  // 1. Mark payment as approved
-  await updateDoc(doc(db, 'payments', txn.id), { status: 'approved' });
-  
-  // 2. Grant plan to user
-  let proRuns = 0;
-  if (txn.planId === 'starter') proRuns = 10;
-  if (txn.planId === 'booster') proRuns = 20;
-  if (txn.planId === 'pro') proRuns = 50;
-
-  const userRef = doc(db, 'users', txn.uid);
-  const userSnap = await getDoc(userRef);
-  
-  let currentProRuns = 0;
-  if (userSnap.exists() && userSnap.data().proRuns) {
-    currentProRuns = userSnap.data().proRuns;
-  }
-  
-  let expiresAt = new Date();
-  if (txn.planId === 'starter') {
-    expiresAt.setDate(expiresAt.getDate() + 7); // 1 week
-  } else if (txn.planId === 'booster') {
-    expiresAt.setDate(expiresAt.getDate() + 14); // 2 weeks
-  } else if (txn.planId === 'pro') {
-    expiresAt.setDate(expiresAt.getDate() + 30); // 1 month
-  } else {
-    expiresAt.setMinutes(expiresAt.getMinutes() + 10); // fallback testing
-  }
-  await setDoc(userRef, {
-    plan: txn.planId,
-    proRuns: currentProRuns + proRuns,
-    planUpdatedAt: serverTimestamp(),
-    planExpiresAt: expiresAt
-  }, { merge: true });
-};
-
-export const rejectPayment = async (txnId: string) => {
-  await updateDoc(doc(db, 'payments', txnId), { status: 'rejected' });
-};
-
-export const verifyAndClaimUtr = async (uid: string, email: string | null, planId: string, txnId: string): Promise<boolean> => {
-  const utrRef = doc(db, 'received_utrs', txnId);
-  const utrSnap = await getDoc(utrRef);
-  
-  if (utrSnap.exists()) {
-    const data = utrSnap.data();
-    if (data.used) {
-      throw new Error('This Transaction ID has already been claimed.');
+    const res = await fetch('/api/admin/payments', { headers });
+    if (res.ok) {
+      const data = await res.json();
+      return data.payments || [];
     }
-    
-    // Mark as used
-    await updateDoc(utrRef, { used: true, claimedBy: uid, claimedAt: serverTimestamp() });
-    
-    // Create an approved payment record
-    const pId = doc(collection(db, 'payments')).id;
-    const txn: PaymentTransaction = {
-      id: pId,
-      uid,
-      email,
-      planId,
-      txnId,
-      status: 'approved',
-      createdAt: serverTimestamp()
-    };
-    
-    // Save the approved payment
-    await setDoc(doc(db, 'payments', pId), txn);
-    
-    // Grant the plan to the user instantly
-    await approvePayment(txn);
-    return true;
+    console.warn('[Payments] Non-OK response fetching pending payments:', res.statusText);
+  } catch (error) {
+    console.error('[Payments] Error fetching pending payments:', error);
   }
-  
-  // If not found in our confirmed UTRs list
-  return false;
+  return [];
 };
 
+/**
+ * Approves a transaction and updates user plan entitlements via secure server endpoint
+ */
+export const approvePayment = async (txn: PaymentTransaction, idToken?: string) => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+
+  const res = await fetch('/api/admin/payments', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ action: 'approve', paymentId: txn.id }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to approve payment.');
+  }
+};
+
+/**
+ * Rejects a transaction via secure server endpoint
+ */
+export const rejectPayment = async (txnId: string, idToken?: string) => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+
+  const res = await fetch('/api/admin/payments', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ action: 'reject', paymentId: txnId }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to reject payment.');
+  }
+};

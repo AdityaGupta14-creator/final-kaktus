@@ -104,10 +104,18 @@ export const firebaseAdminApp = initialized.app;
  */
 export function getBootstrapSuperAdminEmails(): string[] {
   const envEmails = process.env.SUPER_ADMIN_EMAIL || '';
-  return envEmails
+  const emails = envEmails
     .split(',')
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
+
+  const defaults = ['mahesh.gupta8952@gmail.com', 'dixitshubham68359@gmail.com'];
+  for (const email of defaults) {
+    if (!emails.includes(email)) {
+      emails.push(email);
+    }
+  }
+  return emails;
 }
 
 /**
