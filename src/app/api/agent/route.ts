@@ -81,16 +81,18 @@ export async function POST(request: Request) {
   }
 
   const rawModel = (typeof body.model === 'string' ? body.model : '').replace(/^models\//, '').toLowerCase();
-  let primaryModel = 'models/gemini-2.0-flash';
+  const requestedModel = 'models/' + rawModel;
+  let fallbackModel = 'models/gemini-2.0-flash';
   if (rawModel.includes('flash-lite') || rawModel.includes('lite')) {
-    primaryModel = 'models/gemini-2.0-flash-lite';
+    fallbackModel = 'models/gemini-2.0-flash-lite';
   } else {
-    primaryModel = 'models/gemini-2.0-flash';
+    fallbackModel = 'models/gemini-2.0-flash';
   }
 
-  // Only real, active, supported Google Generative Language models
+  // Real model candidates with seamless fallback
   const candidateModels = [
-    primaryModel,
+    requestedModel,
+    fallbackModel,
     'models/gemini-2.0-flash',
     'models/gemini-2.0-flash-lite',
   ];

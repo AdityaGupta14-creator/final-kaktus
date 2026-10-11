@@ -29,41 +29,94 @@ interface AgentRequest {
   abortSignal?: AbortSignal;
 }
 
+/**
+ * Smart key ordering: puts billing-enabled keys (labeled "payed" or "paid" in admin)
+ * LAST so they act as a guaranteed fallback. Free keys are shuffled and tried first.
+ */
+function getOrderedKeys(keys: string[]): string[] {
+  if (keys.length <= 1) return keys;
+
+  let billingKeys: string[] = [];
+  let freeKeys: string[] = [];
+
+  try {
+    const poolRaw = localStorage.getItem('kaktus_api_pool_meta');
+    if (poolRaw) {
+      const poolMeta: Array<{ key: string; label: string }> = JSON.parse(poolRaw);
+      const billingLabels = ['payed', 'paid', 'billing', 'premium'];
+      
+      for (const k of keys) {
+        const meta = poolMeta.find(m => m.key === k);
+        if (meta && billingLabels.some(bl => meta.label.toLowerCase().includes(bl))) {
+          billingKeys.push(k);
+        } else {
+          freeKeys.push(k);
+        }
+      }
+    } else {
+      freeKeys = [...keys];
+    }
+  } catch {
+    freeKeys = [...keys];
+  }
+
+  // Shuffle free keys for load balancing
+  for (let i = freeKeys.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [freeKeys[i], freeKeys[j]] = [freeKeys[j], freeKeys[i]];
+  }
+
+  return [...freeKeys, ...billingKeys];
+}
+
+function isKeyRecentlyExhausted(key: string, model: string): boolean {
+  try {
+    const errsRaw = localStorage.getItem('gemini_key_errors');
+    if (!errsRaw) return false;
+    const errs = JSON.parse(errsRaw);
+    const baseModel = model.replace('models/', '');
+    const entry = errs?.[key]?.[baseModel];
+    if (entry && entry.type === 'QUOTA_EXHAUSTED') {
+      return (Date.now() - entry.timestamp) < 60_000;
+    }
+  } catch {}
+  return false;
+}
+
 export async function requestAgent(request: AgentRequest): Promise<AgentResponse> {
-  // Check token limits before making the request
+  // Check token limits before making the request (TODAY only)
   if (typeof window !== 'undefined') {
     const uid = localStorage.getItem('kaktus_user_uid');
     if (uid) {
       const usageRaw = localStorage.getItem(`gemini_key_usage_stats_${uid}`);
-    if (usageRaw) {
-      try {
-        const usageObj = JSON.parse(usageRaw);
-        let currentTotal = 0;
-        const today = new Date().toISOString().substring(0, 16); // format: YYYY-MM-DDTHH:mm (resets every minute)
-        if (usageObj[today]) {
-          for (const key in usageObj[today]) {
-            for (const model in usageObj[today][key]) {
-              currentTotal += usageObj[today][key][model];
+      if (usageRaw) {
+        try {
+          const usageObj = JSON.parse(usageRaw);
+          let currentTotal = 0;
+          const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD (daily reset)
+          if (usageObj[today]) {
+            for (const key in usageObj[today]) {
+              for (const model in usageObj[today][key]) {
+                currentTotal += usageObj[today][key][model];
+              }
             }
           }
-        }
-        const plan = localStorage.getItem('kaktus_user_plan') || 'free';
-        const limit = plan === 'free' ? 5000000 : 20000000; // Reset limit: raised to 5M for free tier testing
-        
-        if (currentTotal >= limit) {
-          throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens limit. Please upgrade your plan to continue.`);
-        }
-      } catch (e) {
-        if (e instanceof Error && e.message.includes('Quota Reached')) {
-          throw e;
+          const plan = localStorage.getItem('kaktus_user_plan') || 'free';
+          const limit = plan === 'free' ? 5_000_000 : 20_000_000;
+          
+          if (currentTotal >= limit) {
+            throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens limit. Please upgrade your plan to continue.`);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message.includes('Quota Reached')) {
+            throw e;
+          }
         }
       }
-    }
     }
   }
 
   if (!request.apiKeys || request.apiKeys.length === 0) {
-    // Fallback to server-side default API key
     const payload = { ...request, apiKey: 'default_server_key' };
     delete (payload as any).apiKeys;
 
@@ -80,14 +133,24 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
     return data;
   }
 
-  // Shuffle keys for load balancing
-  const keys = [...request.apiKeys].sort(() => Math.random() - 0.5);
+  const orderedKeys = typeof window !== 'undefined' 
+    ? getOrderedKeys(request.apiKeys) 
+    : [...request.apiKeys];
+  
   let lastError: any = null;
+  let lastQuotaError: any = null;
+  let triedCount = 0;
 
-  for (const key of keys) {
+  for (const key of orderedKeys) {
+    if (typeof window !== 'undefined' && isKeyRecentlyExhausted(key, request.model)) {
+      console.log(`[Smart Handler] Skipping recently exhausted key ...${key.slice(-4)}`);
+      continue;
+    }
+
+    triedCount++;
+
     try {
       const payload = { ...request, apiKey: key };
-      // Remove apiKeys array from payload to avoid sending it to the server unnecessary
       delete (payload as any).apiKeys;
 
       const response = await fetch('/api/agent', {
@@ -101,10 +164,10 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
       if (!response.ok) {
         const errorMsg = data.error || 'Agent request failed.';
         
-        // Track exhaustion
         if (typeof window !== 'undefined') {
           const isQuota = response.status === 429 || (typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('quota'));
           if (isQuota) {
+            lastQuotaError = new Error(errorMsg);
             const errsRaw = localStorage.getItem('gemini_key_errors') || '{}';
             const errs = JSON.parse(errsRaw);
             if (!errs[key]) errs[key] = {};
@@ -118,12 +181,25 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
         throw new Error(errorMsg);
       }
       
+      // Clear error state on success
+      if (typeof window !== 'undefined') {
+        try {
+          const errsRaw = localStorage.getItem('gemini_key_errors') || '{}';
+          const errs = JSON.parse(errsRaw);
+          const baseModel = request.model.replace('models/', '');
+          if (errs[key]?.[baseModel]) {
+            delete errs[key][baseModel];
+            localStorage.setItem('gemini_key_errors', JSON.stringify(errs));
+          }
+        } catch {}
+      }
+
       // Track usage
       try {
         if (typeof window !== 'undefined') {
           const uid = localStorage.getItem('kaktus_user_uid');
           if (uid) {
-            const today = new Date().toISOString().substring(0, 16); // 1-minute reset for testing
+            const today = new Date().toISOString().split('T')[0];
             const usageRaw = localStorage.getItem(`gemini_key_usage_stats_${uid}`) || '{}';
             const usage = JSON.parse(usageRaw);
             if (!usage[today]) usage[today] = {};
@@ -143,7 +219,6 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
         console.error("Failed to track usage", e);
       }
 
-      // Success! Return the text
       return {
         text: data.text || '',
         sources: Array.isArray(data.sources) ? data.sources : [],
@@ -153,12 +228,16 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
     } catch (e: any) {
       console.warn(`[Smart Handler] Key ending in ${key.slice(-4)} failed for model ${request.model}:`, e.message);
       lastError = e;
-      // Continue to the next key...
     }
   }
 
-  // If all keys failed, throw the last error we got
-  throw new Error(`All keys failed. Last error: ${lastError?.message || 'Unknown error'}`);
+  if (triedCount === 0) {
+    localStorage.removeItem('gemini_key_errors');
+    throw new Error('All keys were recently rate-limited. Please wait a moment and try again.');
+  }
+
+  const finalError = lastQuotaError || lastError;
+  throw new Error(`All keys failed. Last error: ${finalError?.message || 'Gemini request failed. Please check your keys or quota.'}`);
 }
 
 export async function listAgentModels(apiKey: string): Promise<Array<{

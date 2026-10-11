@@ -79,6 +79,13 @@ export default function PCBDesignerPage() {
       } catch {}
 
       getApiPool().then(pool => {
+        if (pool && pool.length > 0) {
+          try {
+            localStorage.setItem('kaktus_api_pool_meta', JSON.stringify(
+              pool.map((p: any) => ({ key: p.key, label: p.label || '' }))
+            ));
+          } catch {}
+        }
         const poolKeys = (pool && pool.length > 0) ? pool.map((p: any) => p.key) : ['server_managed'];
         const merged = Array.from(new Set([...localKeys, ...poolKeys])).filter(Boolean);
         setApiKeys(merged.length > 0 ? merged : ['server_managed']);
