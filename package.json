@@ -18,6 +18,7 @@
     "@xterm/xterm": "^6.0.0",
     "clsx": "^2.1.1",
     "firebase": "^12.19.0",
+    "firebase-admin": "^13.10.0",
     "framer-motion": "^13.1.1",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
@@ -29,6 +30,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.8",
+    "@supabase/supabase-js": "^2.117.3",
     "tailwind-merge": "^3.7.0",
     "three": "^0.186.1",
     "ws": "^8.21.3"
@@ -38,9 +40,12 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^18.0.6",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
   }
 }

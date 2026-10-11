@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Core helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'ADMIN' ||
+        request.auth.token.role == 'SUPER_ADMIN' ||
+        request.auth.token.admin == true
+      );
+    }
+
+    // ── Users Collection ──
+    match /users/{userId} {
+      // User can read their own profile, admin can read any
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // User can create initial profile document on login
+      allow create: if isOwner(userId) && 
+        (!request.resource.data.keys().hasAny(['plan', 'proRuns', 'role', 'admin']) ||
+         (request.resource.data.plan == 'free' && request.resource.data.proRuns == 0));
+      
+      // User can update basic profile data, but CANNOT touch plan, proRuns, role, or admin
+      allow update: if (isOwner(userId) && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan', 'proRuns', 'role', 'admin']))
+        || isAdmin();
+
+      // Deletions reserved for admins
+      allow delete: if isAdmin();
+
+      // User workspace subcollections - strictly isolated to owner
+      match /workspaces/{workspaceId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      // User chat history subcollection - strictly isolated to owner
+      match /chats/{chatId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      // User session registry data - strictly isolated to owner
+      match /data/{dataDoc} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // ── Payments Collection ──
+    match /payments/{paymentId} {
+      // User can read only their own payments, admin can read all
+      allow read: if (isAuthenticated() && resource.data.uid == request.auth.uid) || isAdmin();
+      
+      // Authenticated user can submit payment verification with pending status
+      allow create: if isAuthenticated() && 
+        request.resource.data.uid == request.auth.uid && 
+        request.resource.data.status == 'pending';
+      
+      // Approvals, rejections, status modifications forbidden from client (admin server SDK only)
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Admin Collection ──
+    match /admin/{document=**} {
+      // Payment settings can be read publicly so pricing page displays UPI QR
+      allow read: if request.path[4] == 'settings';
+      
+      // Secret apiPool must NEVER be readable from client SDK
+      // Client direct writes to any admin collection are strictly forbidden
+      allow write: if false;
+    }
+
+    // ── API Usage Collection ──
+    match /api_usage/{usageId} {
+      // Ordinary clients cannot write or tamper with usage logs
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+  }
+}
