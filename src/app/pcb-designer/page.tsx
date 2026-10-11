@@ -35,7 +35,7 @@ const COMP_LIBRARY = [
 
 export default function PCBDesignerPage() {
   const [apiKeys, setApiKeys] = useState<string[]>(['server_managed']);
-  const [selectedModel, setSelectedModel] = useState('models/gemini-3.5-flash');
+  const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash-lite');
   
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const isDraggingSidebar = useRef(false);

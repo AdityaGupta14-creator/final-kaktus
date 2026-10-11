@@ -78,11 +78,17 @@ export async function POST(request: Request) {
     }, { status: 503 });
   }
 
-  const requestedModel = body.model.startsWith('models/') ? body.model : `models/${body.model}`;
-  
-  // Prioritize user's requested model, with fallback to active working models
+  const rawModel = body.model.startsWith('models/') ? body.model : `models/${body.model}`;
+  let primaryModel = rawModel;
+  if (rawModel.includes('2.5-flash-lite')) {
+    primaryModel = 'models/gemini-3.5-flash-lite';
+  } else if (rawModel.includes('2.5-flash')) {
+    primaryModel = 'models/gemini-3.5-flash';
+  }
+
+  // Prioritize requested model with fallback to healthy active engines
   const candidateModels = [
-    requestedModel,
+    primaryModel,
     'models/gemini-3.5-flash',
     'models/gemini-3.5-flash-lite',
     'models/gemini-flash-latest',

@@ -1,17 +1,29 @@
 export const runtime = 'nodejs';
 
-export const ACTIVE_MODELS = [
+export const ALL_MODELS = [
+  {
+    name: 'models/gemini-2.5-flash-lite',
+    displayName: 'Gemini 2.5 Flash Lite',
+    version: '2.5',
+    description: 'Fast, lightweight model for everyday circuit inquiries',
+  },
+  {
+    name: 'models/gemini-2.5-flash',
+    displayName: 'Gemini 2.5 Flash',
+    version: '2.5',
+    description: 'Balanced performance for electronics prototyping & debugging',
+  },
   {
     name: 'models/gemini-3.5-flash-lite',
     displayName: 'Gemini 3.5 Flash Lite',
     version: '3.5',
-    description: 'Fast, efficient model for basic hardware assistance',
+    description: 'Next-generation rapid response hardware copilot',
   },
   {
     name: 'models/gemini-3.5-flash',
     displayName: 'Gemini 3.5 Flash',
     version: '3.5',
-    description: 'High reasoning performance for complex circuit design',
+    description: 'High reasoning capabilities for complex multi-chip circuit design',
   },
   {
     name: 'models/gemini-3.6-flash',
@@ -34,5 +46,5 @@ export const ACTIVE_MODELS = [
 ];
 
 export async function GET() {
-  return Response.json({ models: ACTIVE_MODELS });
+  return Response.json({ models: ALL_MODELS });
 }
