@@ -7,13 +7,12 @@ export async function GET(request: Request) {
   if (!key) return Response.json({ error: 'No key' });
 
   const testModels = [
-    'models/gemini-2.5-flash',
-    'models/gemini-2.5-pro',
-    'models/gemini-2.5-flash-lite',
-    'models/gemini-1.5-flash',
-    'models/gemini-1.5-pro',
     'models/gemini-flash-latest',
+    'models/gemini-3.5-flash-lite',
     'models/gemini-3.5-flash',
+    'models/gemini-3.6-flash',
+    'models/gemini-3.7-flash',
+    'models/gemini-3.8-flash',
   ];
 
   const results: any[] = [];
