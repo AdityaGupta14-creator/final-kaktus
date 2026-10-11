@@ -126,9 +126,17 @@ export default function Home() {
   const [isPdfGeneratorOpen, setIsPdfGeneratorOpen] = useState(false);
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [userRole, setUserRole] = useState<string>('USER');
+
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/');
+    } else if (user) {
+      user.getIdTokenResult(true).then(result => {
+        if (result.claims?.role) {
+          setUserRole(result.claims.role as string);
+        }
+      }).catch(console.error);
     }
   }, [user, authLoading, router]);
 
@@ -674,22 +682,25 @@ export default function Home() {
 
               <div className="w-px h-4 bg-gray-700 mx-1"></div>
               
-              <div className="flex items-center gap-2 group relative">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-[11px] font-bold shadow-sm">
-                  {(user.displayName || user.email || "U")[0].toUpperCase()}
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[11px] text-gray-200 font-medium hidden md:block max-w-[120px] truncate">
-                    {user.email}
+              {(userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') ? (
+                <Link href="/admin" className="flex items-center gap-2 group cursor-pointer hover:bg-[#333333] p-1.5 rounded-md transition-colors" title="Admin Panel">
+                  <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">
+                    {(user.displayName || user.email || "A")[0].toUpperCase()}
+                  </div>
+                  <span className="text-[11px] text-gray-300 group-hover:text-white transition-colors font-medium hidden md:block">
+                    Admin Panel
                   </span>
-                  <span 
-                    onClick={() => { window.location.href = '/'; setTimeout(() => signOut(auth), 100); }}
-                    className="text-[9px] text-gray-500 hover:text-red-400 transition-colors uppercase tracking-widest hidden md:block cursor-pointer font-semibold"
-                  >
-                    Logout
+                </Link>
+              ) : (
+                <Link href="/profile" className="flex items-center gap-2 group cursor-pointer hover:bg-[#333333] p-1.5 rounded-md transition-colors" title="My Account">
+                  <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">
+                    {(user.displayName || user.email || "U")[0].toUpperCase()}
+                  </div>
+                  <span className="text-[11px] text-gray-300 group-hover:text-white transition-colors font-medium hidden md:block">
+                    My Account
                   </span>
-                </div>
-              </div>
+                </Link>
+              )}
               <div className="w-px h-4 bg-gray-700 mx-1"></div>
             </>
           )}
