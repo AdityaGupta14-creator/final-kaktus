@@ -85,14 +85,15 @@ function isKeyRecentlyExhausted(key: string, model: string): boolean {
 }
 
 export async function requestAgent(request: AgentRequest): Promise<AgentResponse> {
-  // Check token limits before making the request (TODAY only)
+  // Check token limits before making the request (1-minute window reset)
   if (typeof window !== 'undefined') {
-    const uid = localStorage.getItem('kaktus_user_uid');
-    const plan = localStorage.getItem('kaktus_user_plan') || 'free';
+    const uid = localStorage.getItem('kaktus_user_uid') || localStorage.getItem('kaktus_user_email');
+    const plan = (localStorage.getItem('kaktus_user_plan') || 'free').toLowerCase();
     const limit = getTokenLimit(plan);
     const currentTotal = getStoredTokensUsed(uid);
     
     if (currentTotal >= limit) {
+      window.dispatchEvent(new CustomEvent('geminiQuotaExceeded', { detail: { currentTotal, limit } }));
       throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens limit. Please upgrade your plan to continue.`);
     }
   }
@@ -190,8 +191,10 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
 
       // Track usage
       if (typeof window !== 'undefined') {
-        const uid = localStorage.getItem('kaktus_user_uid');
-        const tokensUsed = typeof data.usage === 'number' ? data.usage : (data.usage?.totalTokenCount || 0);
+        const uid = localStorage.getItem('kaktus_user_uid') || localStorage.getItem('kaktus_user_email');
+        const estimatedTokens = Math.max(350, Math.ceil((request.systemPrompt.length + JSON.stringify(request.contents).length + (data.text?.length || 0)) / 4));
+        const rawTokens = typeof data.usage === 'number' ? data.usage : (data.usage?.totalTokenCount || 0);
+        const tokensUsed = rawTokens > 0 ? rawTokens : estimatedTokens;
         recordTokensUsed(uid, key, request.model, tokensUsed);
       }
 

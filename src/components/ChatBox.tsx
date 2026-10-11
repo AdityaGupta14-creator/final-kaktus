@@ -1812,14 +1812,13 @@ RULES:
             <div 
               onClick={() => {
                 if (onQuotaReached) onQuotaReached();
-                window.location.href = '/#pricing';
               }}
               className="mb-1.5 mx-1 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 rounded-xl flex items-center justify-between text-xs text-red-300 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] group select-none shadow-sm"
             >
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
                 <span className="font-bold text-red-200">Quota Limit Reached!</span>
-                <span className="hidden sm:inline text-red-300/80">Click here to upgrade</span>
+                <span className="hidden sm:inline text-red-300/80">Messaging locked. Resets in 1 min or upgrade</span>
               </div>
               <span className="font-extrabold text-white bg-red-600 hover:bg-red-500 px-2.5 py-0.5 rounded-full text-[11px] uppercase tracking-wider flex items-center gap-1 shadow-sm">
                 Upgrade ₹1-₹3 →

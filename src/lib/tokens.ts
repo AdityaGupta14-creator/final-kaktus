@@ -11,10 +11,12 @@ export interface TokenUsageMap {
 }
 
 export const PLAN_TOKEN_LIMITS: Record<string, number> = {
-  free: 25_000,     // 25k tokens daily limit for free tier
-  starter: 50_000,  // 50k tokens quota for starter plan
-  booster: 75_000,  // 75k tokens quota for booster plan
-  pro: 100_000,     // 100k tokens quota for pro plan
+  free: 25_000,         // 25k tokens daily limit for free tier
+  starter: 50_000,      // 50k tokens quota for starter plan
+  booster: 75_000,      // 75k tokens quota for booster plan
+  pro: 100_000,         // 100k tokens quota for pro plan
+  super_admin: 1_000_000,
+  admin: 1_000_000,
 };
 
 export function getTokenLimit(plan?: string | null): number {
@@ -28,7 +30,7 @@ export function getTodayDateKey(): string {
 }
 
 export function getUserUsageStorageKey(uid?: string | null): string {
-  const targetUid = uid || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_uid') : null) || 'anonymous';
+  const targetUid = uid || (typeof window !== 'undefined' ? (localStorage.getItem('kaktus_user_uid') || localStorage.getItem('kaktus_user_email')) : null) || 'anonymous';
   return `gemini_key_usage_stats_${targetUid}`;
 }
 

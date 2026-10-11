@@ -75,6 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setPlanExpiresAt(expires);
             localStorage.setItem('kaktus_user_plan', p);
             localStorage.setItem('kaktus_user_uid', currentUser.uid);
+            localStorage.setItem('kaktus_user_email', (currentUser.email || '').toLowerCase().trim());
             setLoading(false);
           });
         });
@@ -84,6 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setPlanExpiresAt(null);
         localStorage.removeItem('kaktus_user_plan');
         localStorage.removeItem('kaktus_user_uid');
+        localStorage.removeItem('kaktus_user_email');
         const keysToRemove = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
