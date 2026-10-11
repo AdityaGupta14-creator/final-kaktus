@@ -173,11 +173,11 @@ export default function ProfilePage() {
             {profile.picture ? (
               <img src={profile.picture} alt="Profile" className="w-full h-full object-cover" />
             ) : (
-              profile.name[0]
+              (profile.name || profile.email || 'U')[0].toUpperCase()
             )}
           </div>
           <div className="flex-1 space-y-1">
-            <h2 className="text-2xl font-bold text-white">{profile.name}</h2>
+            <h2 className="text-2xl font-bold text-white">{profile.name || profile.email}</h2>
             <p className="text-gray-400">{profile.email}</p>
             <div className="flex flex-wrap items-center gap-4 mt-4 text-xs font-medium uppercase tracking-wider text-gray-500 pt-2">
               <span className="flex items-center gap-1"><Calendar size={12} /> Joined {profile.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'Unknown'}</span>

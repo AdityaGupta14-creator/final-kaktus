@@ -10,11 +10,18 @@ export async function GET(request: Request) {
     const uid = user.uid;
 
     // 1. Fetch Firebase Profile Data
-    const userRef = db.collection('users').doc(uid);
-    const userSnap = await userRef.get();
-    const userData = userSnap.data() || {};
+    let userData: any = {};
+    try {
+      const userRef = db.collection('users').doc(uid);
+      const userSnap = await userRef.get();
+      if (userSnap.exists) {
+        userData = userSnap.data() || {};
+      }
+    } catch (e) {
+      console.warn('[Profile API] Could not fetch Firestore user doc:', e);
+    }
     
-    // 1b. Fetch authoritative subscription from Supabase
+    // 1b. Fetch authoritative subscription from Supabase or fallback to Firestore
     let subscription = null;
     try {
       const { data: subData } = await adminSupabase
@@ -33,13 +40,25 @@ export async function GET(request: Request) {
         };
       }
     } catch (e) {
-      console.warn('[Profile API] Failed to fetch subscription:', e);
+      console.warn('[Profile API] Failed to fetch subscription from Supabase:', e);
+    }
+
+    if (!subscription) {
+      const planName = userData.plan || 'free';
+      const quota = userData.proRuns ?? (planName === 'pro' ? 50 : planName === 'booster' ? 20 : planName === 'starter' ? 10 : 5);
+      subscription = {
+        planId: planName,
+        status: 'active',
+        quotaRemaining: quota,
+        expiresAt: userData.planExpiresAt || null,
+        createdAt: userData.createdAt || new Date().toISOString()
+      };
     }
     
     const profile = {
       uid,
       email: user.email,
-      name: (user.claims?.name as string) || userData.displayName || user.email,
+      name: (user.claims?.name as string) || userData.displayName || user.email?.split('@')[0] || 'User',
       picture: (user.claims?.picture as string) || userData.photoURL || null,
       createdAt: user.claims?.auth_time ? new Date((user.claims.auth_time as number) * 1000).toISOString() : null,
       role: user.role || 'USER',

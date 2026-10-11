@@ -689,25 +689,38 @@ export default function Home() {
 
               <div className="w-px h-4 bg-gray-700 mx-1"></div>
               
-              {(userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') ? (
-                <Link href="/admin" className="flex items-center gap-2 group cursor-pointer hover:bg-[#333333] p-1.5 rounded-md transition-colors" title="Admin Panel">
-                  <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">
-                    {(user.displayName || user.email || "A")[0].toUpperCase()}
+              {(userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') && (
+                <Link href="/admin" className="flex items-center gap-1.5 group cursor-pointer bg-purple-950/40 border border-purple-500/30 hover:bg-purple-900/40 px-2.5 py-1 rounded-md transition-colors" title="Admin Panel">
+                  <div className="w-4 h-4 rounded-full bg-purple-600 flex items-center justify-center text-white text-[9px] font-bold shadow-sm">
+                    A
                   </div>
-                  <span className="text-[11px] text-gray-300 group-hover:text-white transition-colors font-medium hidden md:block">
+                  <span className="text-[11px] text-purple-300 group-hover:text-white transition-colors font-semibold hidden md:block">
                     Admin Panel
                   </span>
                 </Link>
-              ) : (
-                <Link href="/profile" className="flex items-center gap-2 group cursor-pointer hover:bg-[#333333] p-1.5 rounded-md transition-colors" title="My Account">
-                  <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">
-                    {(user.displayName || user.email || "U")[0].toUpperCase()}
-                  </div>
-                  <span className="text-[11px] text-gray-300 group-hover:text-white transition-colors font-medium hidden md:block">
+              )}
+
+              <Link href="/profile" className="flex items-center gap-2 group cursor-pointer hover:bg-[#333333] p-1.5 rounded-md transition-colors" title="My Account (User Profile)">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-[11px] font-bold shadow-sm">
+                  {(user.displayName || user.email || "U")[0].toUpperCase()}
+                </div>
+                <div className="flex flex-col text-left hidden md:block">
+                  <span className="text-[11px] text-gray-200 group-hover:text-white transition-colors font-medium max-w-[120px] truncate block leading-tight">
+                    {user.displayName || user.email?.split('@')[0] || "User"}
+                  </span>
+                  <span className="text-[9px] text-gray-400 group-hover:text-blue-300 uppercase tracking-wider block leading-tight">
                     My Account
                   </span>
-                </Link>
-              )}
+                </div>
+              </Link>
+
+              <button 
+                onClick={() => { router.push('/'); setTimeout(() => signOut(auth), 100); }}
+                className="text-[10px] text-gray-400 hover:text-red-400 transition-colors uppercase tracking-widest font-semibold px-1.5 hidden md:block cursor-pointer"
+                title="Logout"
+              >
+                Logout
+              </button>
               <div className="w-px h-4 bg-gray-700 mx-1"></div>
             </>
           )}
