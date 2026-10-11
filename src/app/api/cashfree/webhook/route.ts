@@ -91,18 +91,13 @@ export async function POST(req: Request) {
       }
 
       const userRef = db.collection('users').doc(uid);
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + (planConfig.durationMinutes || 10));
       
       if (!skipSupabase) {
         const userSnap = await userRef.get();
         const currentProRuns = (userSnap.exists && userSnap.data()?.proRuns) ? Number(userSnap.data()?.proRuns) : 0;
         const baseQuota = existingSub ? existingSub.quota_remaining : currentProRuns;
-
-        const expiresAt = new Date();
-        if (planConfig.durationDays > 0) {
-          expiresAt.setDate(expiresAt.getDate() + planConfig.durationDays);
-        } else {
-          expiresAt.setFullYear(expiresAt.getFullYear() + 100);
-        }
 
         const { error: subError } = await adminSupabase.from('subscriptions').upsert({
           user_uid: uid,
@@ -133,6 +128,7 @@ export async function POST(req: Request) {
       const legacyProRuns = (userSnap.exists && userSnap.data()?.proRuns) ? Number(userSnap.data()?.proRuns) : 0;
       batch.set(userRef, {
         plan: planConfig.id,
+        planExpiresAt: expiresAt.toISOString(),
         proRuns: legacyProRuns + planConfig.proRuns,
         planUpdatedAt: new Date().toISOString(),
       }, { merge: true });

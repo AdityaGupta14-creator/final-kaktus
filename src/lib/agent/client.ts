@@ -84,31 +84,36 @@ function isKeyRecentlyExhausted(key: string, model: string): boolean {
 }
 
 export async function requestAgent(request: AgentRequest): Promise<AgentResponse> {
-  // Check token limits before making the request (TODAY only)
+  // Check token limits before making the request (1-minute window reset)
   if (typeof window !== 'undefined') {
-    const uid = localStorage.getItem('kaktus_user_uid');
+    const uid = localStorage.getItem('kaktus_user_uid') || localStorage.getItem('kaktus_user_email');
     if (uid) {
       const usageRaw = localStorage.getItem(`gemini_key_usage_stats_${uid}`);
       if (usageRaw) {
         try {
           const usageObj = JSON.parse(usageRaw);
           let currentTotal = 0;
-          const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD (daily reset)
-          if (usageObj[today]) {
-            for (const key in usageObj[today]) {
-              for (const model in usageObj[today][key]) {
-                currentTotal += usageObj[today][key][model];
+          const currentWindow = new Date().toISOString().substring(0, 16); // YYYY-MM-DDTHH:mm (1-minute window reset)
+          if (usageObj[currentWindow]) {
+            for (const key in usageObj[currentWindow]) {
+              for (const model in usageObj[currentWindow][key]) {
+                currentTotal += usageObj[currentWindow][key][model];
               }
             }
           }
-          const plan = localStorage.getItem('kaktus_user_plan') || 'free';
-          const limit = plan === 'free' ? 5_000_000 : 20_000_000;
+          const plan = (localStorage.getItem('kaktus_user_plan') || 'free').toLowerCase();
+          let limit = 25000; // Free: 25k
+          if (plan === 'starter') limit = 50000;
+          else if (plan === 'booster') limit = 75000;
+          else if (plan === 'pro') limit = 100000;
+          else if (plan === 'super_admin' || plan === 'admin') limit = 1000000;
           
           if (currentTotal >= limit) {
-            throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens limit. Please upgrade your plan to continue.`);
+            window.dispatchEvent(new CustomEvent('geminiQuotaExceeded', { detail: { currentTotal, limit } }));
+            throw new Error(`Quota Exceeded: You have used all ${limit / 1000}k tokens for this 1-minute window. Resets in 1 minute or upgrade your plan.`);
           }
         } catch (e) {
-          if (e instanceof Error && e.message.includes('Quota Reached')) {
+          if (e instanceof Error && e.message.includes('Quota')) {
             throw e;
           }
         }
@@ -194,22 +199,23 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
         } catch {}
       }
 
-      // Track usage
+      // Track usage (1-minute window)
       try {
         if (typeof window !== 'undefined') {
-          const uid = localStorage.getItem('kaktus_user_uid');
+          const uid = localStorage.getItem('kaktus_user_uid') || localStorage.getItem('kaktus_user_email');
           if (uid) {
-            const today = new Date().toISOString().split('T')[0];
+            const currentWindow = new Date().toISOString().substring(0, 16);
             const usageRaw = localStorage.getItem(`gemini_key_usage_stats_${uid}`) || '{}';
             const usage = JSON.parse(usageRaw);
-            if (!usage[today]) usage[today] = {};
-            if (!usage[today][key]) usage[today][key] = {};
+            if (!usage[currentWindow]) usage[currentWindow] = {};
+            if (!usage[currentWindow][key]) usage[currentWindow][key] = {};
             
             const baseModel = request.model.replace('models/', '');
-            if (!usage[today][key][baseModel]) usage[today][key][baseModel] = 0;
+            if (!usage[currentWindow][key][baseModel]) usage[currentWindow][key][baseModel] = 0;
             
-            const tokensUsed = typeof data.usage === 'number' ? data.usage : 0;
-            usage[today][key][baseModel] += tokensUsed;
+            const estimatedTokens = Math.max(350, Math.ceil((request.systemPrompt.length + JSON.stringify(request.contents).length + (data.text?.length || 0)) / 4));
+            const tokensUsed = typeof data.usage === 'number' && data.usage > 0 ? data.usage : estimatedTokens;
+            usage[currentWindow][key][baseModel] += tokensUsed;
             
             localStorage.setItem(`gemini_key_usage_stats_${uid}`, JSON.stringify(usage));
             window.dispatchEvent(new Event('geminiUsageUpdated'));
