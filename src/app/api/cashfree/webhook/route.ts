@@ -76,6 +76,7 @@ export async function POST(req: Request) {
 
       const { uid, planId } = orderData.data as any;
       const planConfig = getPlanConfig(planId);
+      const userRef = db.collection('users').doc(uid);
 
       // Step 2: Supabase Provisioning (Partial Failure Recovery)
       const { data: existingSub } = await adminSupabase

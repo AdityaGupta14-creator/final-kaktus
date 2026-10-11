@@ -9,9 +9,8 @@ import { ChatBox, ImplementationPlanCard } from '@/components/ChatBox';
 import { ModelSelector } from '@/components/ModelSelector';
 import type { TerminalRef } from '@/components/Terminal';
 import type { TutorialData } from '@/components/CircuitCanvas';
-import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Settings, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, Download, AlertCircle } from 'lucide-react';
-import { FlashPanel } from '@/components/FlashPanel';
-import { PdfGenerator } from '@/components/PdfGenerator';
+import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
+import { HardwareInterfaceModal } from '@/components/HardwareInterfaceModal';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { extractProjectPlanResponse } from '@/lib/agent/protocol';
 import type { PlanBuildAction, ProjectPlan, ResearchSource } from '@/lib/agent/protocol';
@@ -124,7 +123,6 @@ export default function Home() {
   const [resetCountdown, setResetCountdown] = useState('12:00 AM');
   const [isQuotaModalDismissed, setIsQuotaModalDismissed] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
-  const [isPdfGeneratorOpen, setIsPdfGeneratorOpen] = useState(false);
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [userRole, setUserRole] = useState<string>('USER');
@@ -653,18 +651,10 @@ export default function Home() {
             <button 
               onClick={() => setIsFlashOpen(!isFlashOpen)}
               className={`px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors ${isFlashOpen ? 'bg-[#333333] text-white' : ''} gap-1.5`}
-              title="Arduino Connection"
+              title="Hardware Interface (Coming Soon)"
             >
               <Usb size={13} />
               Connect
-            </button>
-            <button 
-              onClick={() => setIsPdfGeneratorOpen(true)}
-              className="px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors gap-1.5 text-blue-400 hover:text-blue-300"
-              title="Export as PDF"
-            >
-              <Download size={13} />
-              Export PDF
             </button>
           </nav>
         </div>
@@ -772,9 +762,6 @@ export default function Home() {
               <div className="w-px h-4 bg-gray-700 mx-1"></div>
             </>
           )}
-          <Link href="/admin" className="px-2 h-full flex items-center text-gray-400 hover:text-gray-200 hover:bg-[#333333] rounded transition-colors" title="Settings">
-            <Settings size={14} />
-          </Link>
         </div>
       </header>
 
@@ -932,15 +919,11 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Flash Panel */}
-        <AnimatePresence>
-          {isFlashOpen && (
-            <FlashPanel 
-              code={generatedCode}
-              onClose={() => setIsFlashOpen(false)}
-            />
-          )}
-        </AnimatePresence>
+        {/* Hardware Interface Connect - Coming Soon Modal */}
+        <HardwareInterfaceModal 
+          isOpen={isFlashOpen}
+          onClose={() => setIsFlashOpen(false)}
+        />
 
         {/* Right/Bottom: Sliding Terminal Drawer */}
         <AnimatePresence>
@@ -992,15 +975,6 @@ export default function Home() {
           reason={totalTokens >= tokenLimit ? `You have exceeded your ${tokenLimit / 1000}k tokens limit. Upgrade to continue building and simulating.` : undefined}
         />
 
-        <PdfGenerator
-          isOpen={isPdfGeneratorOpen}
-          onClose={() => setIsPdfGeneratorOpen(false)}
-          circuitData={circuitData}
-          sessionTitle={sessions.find(session => session.id === sessionId)?.title || 'New Project'}
-          tabName={activeTab.name}
-          sessionId={sessionId}
-          workspaceTabId={activeTab.id}
-        />
 
         {/* Floating Corner Notification Widget */}
         <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2 pointer-events-auto select-none">
