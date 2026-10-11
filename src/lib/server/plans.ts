@@ -21,7 +21,7 @@ export const PLANS: Record<string, PlanConfig> = {
   starter: {
     id: 'starter',
     name: 'Starter',
-    price: 39,
+    price: 1,
     durationDays: 7,
     durationMinutes: 10,
     proRuns: 10,
@@ -30,7 +30,7 @@ export const PLANS: Record<string, PlanConfig> = {
   booster: {
     id: 'booster',
     name: 'Booster',
-    price: 69,
+    price: 2,
     durationDays: 14,
     durationMinutes: 10,
     proRuns: 20,
@@ -39,7 +39,7 @@ export const PLANS: Record<string, PlanConfig> = {
   pro: {
     id: 'pro',
     name: 'Pro',
-    price: 199,
+    price: 3,
     durationDays: 30,
     durationMinutes: 10,
     proRuns: 50,

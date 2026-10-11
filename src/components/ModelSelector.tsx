@@ -28,10 +28,11 @@ interface ModelSelectorProps {
   selectedModel: string;
   onModelChange: (model: string) => void;
   onAvailableModelsChange?: (models: Array<Pick<Model, 'name' | 'displayName'>>) => void;
+  onUpgradeClick?: () => void;
   variant?: 'default' | 'minimal';
 }
 
-export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailableModelsChange, variant = 'default' }: ModelSelectorProps) {
+export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailableModelsChange, onUpgradeClick, variant = 'default' }: ModelSelectorProps) {
   const [models, setModels] = useState<Model[]>(FALLBACK_MODELS);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -157,7 +158,8 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
                   onClick={() => {
                     if (locked) {
                       setIsOpen(false);
-                      router.push('/#pricing');
+                      if (onUpgradeClick) onUpgradeClick();
+                      else router.push('/#pricing');
                     } else {
                       onModelChange(model.name);
                       setIsOpen(false);
@@ -182,7 +184,8 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
                       onClick={(e) => {
                         e.stopPropagation();
                         setIsOpen(false);
-                        router.push('/#pricing');
+                        if (onUpgradeClick) onUpgradeClick();
+                        else router.push('/#pricing');
                       }}
                       className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 hover:text-orange-300 border border-orange-500/30 text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 flex-shrink-0"
                     >

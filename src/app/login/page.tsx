@@ -31,10 +31,12 @@ function LoginContent() {
       }
 
       let redirectTo = searchParams.get('redirect');
-      if (role === 'ADMIN' || role === 'SUPER_ADMIN' || isSuperAdmin) {
-        redirectTo = '/admin';
-      } else if (!redirectTo || redirectTo === '/') {
-        redirectTo = '/ide';
+      if (!redirectTo || redirectTo === '/') {
+        if (role === 'ADMIN' || role === 'SUPER_ADMIN' || isSuperAdmin) {
+          redirectTo = '/admin';
+        } else {
+          redirectTo = '/ide';
+        }
       }
 
       router.push(redirectTo);

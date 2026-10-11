@@ -83,14 +83,17 @@ export async function POST(request: Request) {
   const rawModel = body.model.startsWith('models/') ? body.model : `models/${body.model}`;
   let primaryModel = rawModel;
   if (rawModel.includes('2.5-flash-lite')) {
-    primaryModel = 'models/gemini-3.5-flash-lite';
+    primaryModel = 'models/gemini-2.0-flash-lite';
   } else if (rawModel.includes('2.5-flash')) {
-    primaryModel = 'models/gemini-3.5-flash';
+    primaryModel = 'models/gemini-2.0-flash';
   }
 
   // Prioritize requested model with fallback to healthy active engines
   const candidateModels = [
     primaryModel,
+    'models/gemini-2.0-flash',
+    'models/gemini-2.0-flash-lite',
+    'models/gemini-1.5-flash',
     'models/gemini-3.5-flash',
     'models/gemini-3.5-flash-lite',
     'models/gemini-flash-latest',
@@ -141,9 +144,15 @@ export async function POST(request: Request) {
           return Response.json({ text, sources, searchQueries, researched: body.research === true && sources.length > 0, usage });
         }
 
-        // If quota exceeded or auth failure on this key, try NEXT key in candidate pool!
-        if (upstream.status === 401 || upstream.status === 429) {
-          console.warn(`[AgentRoute] Key ending in ${activeApiKey.slice(-4)} failed with status ${upstream.status}. Trying next key...`);
+        // If rate limit/quota on this model (429), try NEXT model on this key before giving up!
+        if (upstream.status === 429) {
+          console.warn(`[AgentRoute] Model ${modelToTry} returned 429 rate limit. Trying next candidate model...`);
+          continue;
+        }
+
+        // If auth failure on this key (401), break to try next key in pool
+        if (upstream.status === 401) {
+          console.warn(`[AgentRoute] Key ending in ${activeApiKey.slice(-4)} failed with 401. Trying next key...`);
           break;
         }
       } catch (fetchErr) {

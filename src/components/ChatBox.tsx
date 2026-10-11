@@ -1329,6 +1329,9 @@ RULES:
         }]);
       } else {
         const errorMessage = error instanceof Error ? error.message : String(error);
+        if ((errorMessage.toLowerCase().includes('quota') || errorMessage.toLowerCase().includes('exceeded') || errorMessage.toLowerCase().includes('429')) && onQuotaReached) {
+          onQuotaReached();
+        }
         progressLog.push({ type: 'progress', text: `Request ended with an error: ${errorMessage}` });
         setMessages(prev => [...prev, {
           role: 'assistant', content: `Error: ${errorMessage}`, cleanText: `Error: ${errorMessage}`,
@@ -1780,7 +1783,7 @@ RULES:
             ))}
           </div>
         )}
-        <div className={`bg-[#212121] border border-gray-700/50 ${messages.length === 0 ? 'rounded-3xl shadow-xl' : 'rounded-3xl'} p-2 flex flex-col focus-within:border-gray-500/50 transition-all`}>
+        <div className={`bg-[#212121] border ${isQuotaReached ? 'border-red-500/60 bg-red-950/20 shadow-[0_0_20px_rgba(239,68,68,0.25)]' : 'border-gray-700/50'} ${messages.length === 0 ? 'rounded-3xl shadow-xl' : 'rounded-3xl'} p-2 flex flex-col focus-within:border-gray-500/50 transition-all`}>
           <input
             ref={imageInputRef}
             type="file"
@@ -1791,6 +1794,21 @@ RULES:
             disabled={isProcessing || isPreparingImages || isQuotaReached}
             aria-label="Choose images to analyze"
           />
+          {isQuotaReached && (
+            <div 
+              onClick={() => onQuotaReached?.()}
+              className="mb-1.5 mx-1 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 rounded-xl flex items-center justify-between text-xs text-red-300 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] group select-none shadow-sm"
+            >
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                <span className="font-bold text-red-200">Quota Limit Reached!</span>
+                <span className="hidden sm:inline text-red-300/80">Click here to upgrade</span>
+              </div>
+              <span className="font-extrabold text-white bg-red-600 hover:bg-red-500 px-2.5 py-0.5 rounded-full text-[11px] uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                Upgrade ₹1-₹3 →
+              </span>
+            </div>
+          )}
           {pendingImages.length > 0 && (
             <div className="flex flex-wrap gap-2 px-2 pt-2" aria-label="Attached images">
               {pendingImages.map((image, index) => (
@@ -1826,8 +1844,8 @@ RULES:
                 handleSend();
               }
             }}
-            placeholder={isQuotaReached ? "Quota exhausted. Click to upgrade." : "Message Agent..."}
-            className={`w-full bg-transparent text-gray-200 resize-none outline-none min-h-[44px] max-h-[150px] px-2 py-2 text-sm ${isQuotaReached ? 'cursor-pointer placeholder-red-400/70 text-red-400' : 'placeholder-gray-500'}`}
+            placeholder={isQuotaReached ? "Quota exhausted. Click here to upgrade plan (₹1 - ₹3)..." : "Message Agent..."}
+            className={`w-full bg-transparent resize-none outline-none min-h-[44px] max-h-[150px] px-2 py-2 text-sm ${isQuotaReached ? 'cursor-pointer placeholder-red-400 font-medium text-red-400' : 'text-gray-200 placeholder-gray-500'}`}
             rows={1}
             readOnly={isProcessing || isQuotaReached}
           />
