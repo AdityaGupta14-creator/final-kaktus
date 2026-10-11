@@ -21,6 +21,7 @@ import { getApiPool } from '@/lib/admin';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { syncToFirebase, loadFromFirebase } from '@/lib/firebase-sync';
+import { getTokenLimit, getStoredTokensUsed } from '@/lib/tokens';
 import {
   CHAT_SESSION_REGISTRY_KEY,
   chatSessionKey,
@@ -109,10 +110,7 @@ const CircuitCanvas = dynamic(() => import('@/components/CircuitCanvas').then((m
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading, plan, planExpiresAt } = useAuth();
-  let tokenLimit = 25000; // 25k for free
-  if (plan === 'starter') tokenLimit = 50000;
-  if (plan === 'booster') tokenLimit = 75000;
-  if (plan === 'pro') tokenLimit = 100000;
+  const tokenLimit = getTokenLimit(plan);
   const [apiKeys, setApiKeys] = useState<string[]>(['server_managed']);
   const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash-lite');
   const [availableModels, setAvailableModels] = useState<Array<{ name: string; displayName?: string }>>([]);
@@ -153,25 +151,9 @@ export default function Home() {
   useEffect(() => {
     const updateTokens = () => {
       try {
-        const uid = localStorage.getItem('kaktus_user_uid');
-        if (!uid) return;
-        const usageRaw = localStorage.getItem(`gemini_key_usage_stats_${uid}`);
-        if (usageRaw) {
-          const usage = JSON.parse(usageRaw);
-          let totalStoredTokens = 0;
-          const today = new Date().toISOString().substring(0, 16); // format: YYYY-MM-DDTHH:mm (1-minute reset)
-          if (usage[today]) {
-            for (const key in usage[today]) {
-              for (const model in usage[today][key]) {
-                totalStoredTokens += usage[today][key][model];
-              }
-            }
-          }
-          // Now usage reflects exact token count returned by Gemini API within current 1-minute window
-          setTotalTokens(totalStoredTokens);
-        } else {
-          setTotalTokens(0);
-        }
+        const uid = user?.uid || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_uid') : null);
+        const total = getStoredTokensUsed(uid);
+        setTotalTokens(total);
       } catch (e) {
         console.error(e);
       }
@@ -184,7 +166,7 @@ export default function Home() {
       clearInterval(interval);
       window.removeEventListener('geminiUsageUpdated', updateTokens);
     };
-  }, []);
+  }, [user?.uid]);
 
   // Auto-save to Firebase with debounce (3 seconds after last change)
   const triggerAutoSave = useCallback(() => {
@@ -688,15 +670,47 @@ export default function Home() {
           {user && (
             <>
               {/* Token Usage Bar */}
-              <div className="flex items-center gap-3 mr-2 bg-[#1a1a1a] px-3 py-1.5 rounded-md border border-[#333]">
+              <div 
+                onClick={() => { if (totalTokens >= tokenLimit) setIsUpgradeModalOpen(true); }}
+                className={`flex items-center gap-3 mr-2 px-3 py-1.5 rounded-md border transition-all ${
+                  totalTokens >= tokenLimit
+                    ? 'bg-red-950/50 border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.35)] cursor-pointer'
+                    : totalTokens / tokenLimit >= 0.8
+                      ? 'bg-amber-950/30 border-amber-500/40'
+                      : 'bg-[#1a1a1a] border-[#333]'
+                }`}
+                title={totalTokens >= tokenLimit ? 'Daily token limit exceeded. Click to upgrade plan.' : `${(totalTokens).toLocaleString()} / ${tokenLimit.toLocaleString()} tokens used today`}
+              >
                 <div className="flex flex-col items-end w-28">
                   <div className="flex justify-between w-full mb-1">
-                    <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">{plan === 'free' ? 'Free Trial' : 'Pro Plan'}</span>
-                    <span className="text-[9px] text-blue-400 font-medium">{(totalTokens / 1000).toFixed(1)}k / {tokenLimit / 1000}k</span>
+                    <span className={`text-[9px] font-semibold uppercase tracking-wider ${
+                      totalTokens >= tokenLimit
+                        ? 'text-red-400 font-bold'
+                        : totalTokens / tokenLimit >= 0.8
+                          ? 'text-amber-400'
+                          : 'text-gray-400'
+                    }`}>
+                      {totalTokens >= tokenLimit ? 'Exceeded' : (plan === 'free' ? 'Free Plan' : `${plan.toUpperCase()}`)}
+                    </span>
+                    <span className={`text-[9px] font-medium ${
+                      totalTokens >= tokenLimit
+                        ? 'text-red-400 font-bold'
+                        : totalTokens / tokenLimit >= 0.8
+                          ? 'text-amber-400'
+                          : 'text-blue-400'
+                    }`}>
+                      {(totalTokens / 1000).toFixed(1)}k / {tokenLimit / 1000}k
+                    </span>
                   </div>
                   <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-blue-600 to-blue-400 rounded-full transition-all duration-500" 
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        totalTokens >= tokenLimit
+                          ? 'bg-gradient-to-r from-red-600 to-red-500'
+                          : totalTokens / tokenLimit >= 0.8
+                            ? 'bg-gradient-to-r from-amber-500 to-amber-400'
+                            : 'bg-gradient-to-r from-blue-600 to-blue-400'
+                      }`} 
                       style={{ width: `${Math.min(100, (totalTokens / tokenLimit) * 100)}%` }}
                     />
                   </div>

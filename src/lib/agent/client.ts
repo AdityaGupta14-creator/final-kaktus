@@ -1,4 +1,5 @@
 import type { ImageAttachment } from './image-attachments';
+import { getTokenLimit, getStoredTokensUsed, recordTokensUsed } from '@/lib/tokens';
 
 export type AgentPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 
@@ -87,32 +88,12 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
   // Check token limits before making the request (TODAY only)
   if (typeof window !== 'undefined') {
     const uid = localStorage.getItem('kaktus_user_uid');
-    if (uid) {
-      const usageRaw = localStorage.getItem(`gemini_key_usage_stats_${uid}`);
-      if (usageRaw) {
-        try {
-          const usageObj = JSON.parse(usageRaw);
-          let currentTotal = 0;
-          const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD (daily reset)
-          if (usageObj[today]) {
-            for (const key in usageObj[today]) {
-              for (const model in usageObj[today][key]) {
-                currentTotal += usageObj[today][key][model];
-              }
-            }
-          }
-          const plan = localStorage.getItem('kaktus_user_plan') || 'free';
-          const limit = plan === 'free' ? 5_000_000 : 20_000_000;
-          
-          if (currentTotal >= limit) {
-            throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens limit. Please upgrade your plan to continue.`);
-          }
-        } catch (e) {
-          if (e instanceof Error && e.message.includes('Quota Reached')) {
-            throw e;
-          }
-        }
-      }
+    const plan = localStorage.getItem('kaktus_user_plan') || 'free';
+    const limit = getTokenLimit(plan);
+    const currentTotal = getStoredTokensUsed(uid);
+    
+    if (currentTotal >= limit) {
+      throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens limit. Please upgrade your plan to continue.`);
     }
   }
 
@@ -130,7 +111,20 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Agent request failed');
-    return data;
+
+    // Track usage for default server key
+    if (typeof window !== 'undefined') {
+      const tokensUsed = typeof data.usage === 'number' ? data.usage : (data.usage?.totalTokenCount || 0);
+      const uid = localStorage.getItem('kaktus_user_uid');
+      recordTokensUsed(uid, 'default_server_key', request.model, tokensUsed);
+    }
+
+    return {
+      text: data.text || '',
+      sources: Array.isArray(data.sources) ? data.sources : [],
+      searchQueries: Array.isArray(data.searchQueries) ? data.searchQueries : [],
+      researched: data.researched === true,
+    };
   }
 
   const orderedKeys = typeof window !== 'undefined' 
@@ -195,28 +189,10 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
       }
 
       // Track usage
-      try {
-        if (typeof window !== 'undefined') {
-          const uid = localStorage.getItem('kaktus_user_uid');
-          if (uid) {
-            const today = new Date().toISOString().split('T')[0];
-            const usageRaw = localStorage.getItem(`gemini_key_usage_stats_${uid}`) || '{}';
-            const usage = JSON.parse(usageRaw);
-            if (!usage[today]) usage[today] = {};
-            if (!usage[today][key]) usage[today][key] = {};
-            
-            const baseModel = request.model.replace('models/', '');
-            if (!usage[today][key][baseModel]) usage[today][key][baseModel] = 0;
-            
-            const tokensUsed = typeof data.usage === 'number' ? data.usage : 0;
-            usage[today][key][baseModel] += tokensUsed;
-            
-            localStorage.setItem(`gemini_key_usage_stats_${uid}`, JSON.stringify(usage));
-            window.dispatchEvent(new Event('geminiUsageUpdated'));
-          }
-        }
-      } catch(e) {
-        console.error("Failed to track usage", e);
+      if (typeof window !== 'undefined') {
+        const uid = localStorage.getItem('kaktus_user_uid');
+        const tokensUsed = typeof data.usage === 'number' ? data.usage : (data.usage?.totalTokenCount || 0);
+        recordTokensUsed(uid, key, request.model, tokensUsed);
       }
 
       return {

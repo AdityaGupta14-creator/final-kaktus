@@ -887,7 +887,11 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
   };
 
   const handleSend = async (overrideInput?: string, workflowOverride?: WorkflowOverride, allowLiteTask = false, modelOverride?: string) => {
-    if (isProcessing || isPreparingImages || isQuotaReached) return;
+    if (isQuotaReached) {
+      onQuotaReached?.();
+      return;
+    }
+    if (isProcessing || isPreparingImages) return;
     const textToSend = overrideInput || input;
     const attachedImages = pendingImages;
     const userMsg = textToSend.trim() || (attachedImages.length
