@@ -56,7 +56,8 @@ export default function VerifyPaymentPage() {
             createdAt: serverTimestamp()
           };
           
-          const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+          const durationDays = planId === 'pro' ? 30 : planId === 'booster' ? 14 : 7;
+          const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
           await setDoc(doc(db, 'payments', pId), txn);
           await setDoc(doc(db, 'users', user.uid), {
             plan: planId,

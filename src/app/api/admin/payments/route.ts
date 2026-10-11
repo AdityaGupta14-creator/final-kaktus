@@ -104,10 +104,10 @@ export async function POST(request: Request) {
     // Use existing quota from Supabase if available, else Firestore fallback
     const baseQuota = existingSub ? existingSub.quota_remaining : currentProRuns;
 
-    // Calculate expiry (10 minutes for testing/instant expiry)
+    // Calculate expiry based on plan duration
     const expiresAt = new Date();
     if (planConfig.id !== 'free') {
-      expiresAt.setMinutes(expiresAt.getMinutes() + (planConfig.durationMinutes || 10));
+      expiresAt.setDate(expiresAt.getDate() + (planConfig.durationDays || 7));
     } else {
       expiresAt.setFullYear(expiresAt.getFullYear() + 100); // effectively no expiry
     }

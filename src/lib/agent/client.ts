@@ -85,16 +85,17 @@ function isKeyRecentlyExhausted(key: string, model: string): boolean {
 }
 
 export async function requestAgent(request: AgentRequest): Promise<AgentResponse> {
-  // Check token limits before making the request (1-minute window reset)
+  // Check token limits before making the request
   if (typeof window !== 'undefined') {
     const uid = localStorage.getItem('kaktus_user_uid') || localStorage.getItem('kaktus_user_email');
     const plan = (localStorage.getItem('kaktus_user_plan') || 'free').toLowerCase();
-    const limit = getTokenLimit(plan);
+    const planExpiresAt = localStorage.getItem('kaktus_user_plan_expires_at');
+    const limit = getTokenLimit(plan, planExpiresAt);
     const currentTotal = getStoredTokensUsed(uid);
     
     if (currentTotal >= limit) {
       window.dispatchEvent(new CustomEvent('geminiQuotaExceeded', { detail: { currentTotal, limit } }));
-      throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens limit. Please upgrade your plan to continue.`);
+      throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens daily limit. Please upgrade your plan to continue.`);
     }
   }
 
