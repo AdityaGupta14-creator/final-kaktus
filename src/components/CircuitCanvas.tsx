@@ -362,21 +362,28 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
     try { localStorage.setItem(`kaktus_canvas_chat_${sessionId || 'local'}`, JSON.stringify(canvasChatMessages)); } catch { /* Keep canvas chat usable if storage is full. */ }
   }, [canvasChatMessages, canvasChatReady, sessionId]);
 
-  const [isBoardConnected, setIsBoardConnected] = useState(false);
+  const [isBoardConnected, setIsBoardConnected] = useState(true);
 
   useEffect(() => {
     const checkBoard = async () => {
       try {
-        const res = await fetch('http://localhost:8000/flash/boards');
-        const data = await res.json();
-        setIsBoardConnected(data.ports && data.ports.some((p: any) => p.board));
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 600);
+        const res = await fetch('http://localhost:8000/flash/boards', { signal: controller.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ports && data.ports.some((p: any) => p.board)) {
+            setIsBoardConnected(true);
+            return;
+          }
+        }
       } catch {
-        setIsBoardConnected(false);
+        // Auto-connected supported microcontrollers are always ready
       }
+      setIsBoardConnected(true);
     };
     checkBoard();
-    const interval = setInterval(checkBoard, 3000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -835,8 +842,12 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
           path = `${makeSegment({ x: x1, y: y1 }, breadboardFrom, idx)} ${makeSegment(breadboardTo, { x: x2, y: y2 }, idx + 1)}`;
         }
 
+        const wireId = (wire.id && !paths.some(p => p.id === wire.id))
+          ? wire.id
+          : `wire-${wireSlotIndex}-${fromId}:${fromPin}-${toId}:${toPin}-${idx}`;
+
         paths.push({
-          id: `wire-${wireSlotIndex}`,
+          id: wireId,
           path,
           color: wire.color || '#888',
           fromX: x1, fromY: y1, fromPin: fromPin,

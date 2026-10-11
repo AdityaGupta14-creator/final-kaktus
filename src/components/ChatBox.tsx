@@ -78,7 +78,7 @@ interface Message {
 }
 
 interface FirmwareBuildReport {
-  status: 'verified' | 'unverified';
+  status: 'verified' | 'unverified' | 'compile_failed';
   stepName: string;
   moduleName: string;
   stepNumber: number;
@@ -247,7 +247,7 @@ async function validateGeneratedFirmware({
   signal: AbortSignal;
   componentTypes: string[];
   onProgress: (message: string) => void;
-}): Promise<{ ok: boolean; reports: FirmwareBuildReport[] }> {
+}): Promise<{ reports: FirmwareBuildReport[] }> {
   const codeSteps = plan.steps
     .map((step, index) => ({ step, index }))
     .filter(({ step }) => {
@@ -256,7 +256,7 @@ async function validateGeneratedFirmware({
       return Boolean(step.code && (/\bvoid\s+setup\s*\(|\bvoid\s+loop\s*\(|\bpinMode\s*\(|#include\s*[<"]Arduino\.h/i.test(step.code)
         || /^(?:c\+\+|cpp|ino|arduino)$/.test(language)));
     });
-  if (!codeSteps.length) return { ok: true, reports: [] };
+  if (!codeSteps.length) return { reports: [] };
 
   const reports: FirmwareBuildReport[] = [];
   for (const { step, index } of codeSteps) {
@@ -287,11 +287,12 @@ async function validateGeneratedFirmware({
     }
 
     if (!selectedBoard) {
+      step.code = source;
       reports.push({
         status: 'unverified', stepName: step.phase || 'Firmware', ...testTarget, repairAttempts: 0,
-        note: 'Target board could not be identified. No firmware code was added to the canvas.',
+        note: 'The firmware source is saved and editable, but automatic compilation could not start because the target board was not identified. Select the board in Kaktus Flash to Board when it is available.',
       });
-      return { ok: false, reports };
+      return { reports };
     }
 
     const compile = async (code: string): Promise<FirmwareCompileResult> => {
@@ -369,35 +370,36 @@ async function validateGeneratedFirmware({
       });
     } catch (error) {
       if (signal.aborted) throw error;
+      step.code = source;
       reports.push({
         status: 'unverified', stepName: step.phase || 'Firmware', ...testTarget, boardName: selectedBoard.name,
-        repairAttempts, note: 'The compiler or repair service became unavailable. No firmware code was added to the canvas.',
+        repairAttempts, note: 'The firmware source is saved and editable, but the in-app compiler or repair service became unavailable before verification.',
       });
-      return { ok: false, reports };
+      return { reports };
     }
     source = repairLoop.source;
     repairAttempts = repairLoop.repairAttempts;
     const result = repairLoop.result;
+    step.code = source;
 
     if (!result.ok) {
       reports.push({
-        status: 'unverified', stepName: step.phase || 'Firmware', ...testTarget, boardName: selectedBoard.name,
+        status: result.infrastructureFailure ? 'unverified' : 'compile_failed', stepName: step.phase || 'Firmware', ...testTarget, boardName: selectedBoard.name,
         repairAttempts,
         note: result.infrastructureFailure
-          ? 'The local compiler or repair service became unavailable. No firmware code was added to the canvas.'
-          : `Automatic repair reached ${repairAttempts} attempt${repairAttempts === 1 ? '' : 's'} without a verified build. No firmware code was added to the canvas.`,
+          ? `The firmware source is saved and editable, but automatic compilation was unavailable: ${result.diagnostics.slice(0, 1200)}`
+          : `The firmware source is saved and editable, but compilation still reports errors after ${repairAttempts} repair attempt${repairAttempts === 1 ? '' : 's'}: ${result.diagnostics.slice(0, 1600)}`,
       });
-      return { ok: false, reports };
+      return { reports };
     }
 
-    step.code = source;
     const changes = diffArduinoSource(normalizeArduinoSource(originalSource), source);
     reports.push({
       status: 'verified', stepName: step.phase || 'Firmware', ...testTarget, boardName: selectedBoard.name,
       repairAttempts, changes: changes.length ? changes : undefined,
     });
   }
-  return { ok: true, reports };
+  return { reports };
 }
 
 // --- Subcomponents ---
@@ -493,10 +495,10 @@ function FirmwareBuildSummary({ builds }: { builds: FirmwareBuildReport[] }) {
   return (
     <div className="mb-2 mt-2 w-full max-w-[95%] space-y-2">
       {builds.map((build, index) => (
-        <section key={`${build.stepName}-${index}`} className={`border-l-2 pl-2.5 ${build.status === 'verified' ? 'border-emerald-700' : 'border-amber-700'}`}>
-          <p className={`flex items-center gap-1.5 text-[11px] ${build.status === 'verified' ? 'text-emerald-300' : 'text-amber-300'}`}>
+        <section key={`${build.stepName}-${index}`} className={`border-l-2 pl-2.5 ${build.status === 'verified' ? 'border-emerald-700' : build.status === 'compile_failed' ? 'border-red-700' : 'border-amber-700'}`}>
+          <p className={`flex items-center gap-1.5 text-[11px] ${build.status === 'verified' ? 'text-emerald-300' : build.status === 'compile_failed' ? 'text-red-300' : 'text-amber-300'}`}>
             {build.status === 'verified' ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
-            <span className="font-medium">{build.status === 'verified' ? 'Firmware compile verified' : 'Firmware held back'}</span>
+            <span className="font-medium">{build.status === 'verified' ? 'Firmware compile verified' : build.status === 'compile_failed' ? 'Firmware saved; compile failed' : 'Firmware saved; build unverified'}</span>
             {build.boardName && <span className="text-gray-500">· {build.boardName}</span>}
             {build.repairAttempts > 0 && <span className="text-gray-500">· {build.repairAttempts} repair{build.repairAttempts === 1 ? '' : 's'}</span>}
           </p>
@@ -1049,6 +1051,8 @@ EXACT FORMAT REQUIRED:
 
 RULES:
 - Every step needs instruction, detail, verify, add_components, add_wiring
+- Preserve the original user request and every applicable deliverable from the previous answer, including a complete firmware sketch in the corresponding step's code and code_language fields. Never drop code merely to repair the JSON format. When a requested test needs controller code, include the complete diagnostic sketch in that test step.
+- Do not invent a separate test phase unless the user requested testing or safe commissioning requires it. Keep objective step verification in verify.
 - CRITICAL LAYOUT RULE: Components are very large. Place them in a wide-open grid, spaced AT LEAST 600-800px apart (x/y coordinates 100-2000). NEVER overlap components or cram them together. Do not try to fit them into a small area.
 - Wires need from, to, color (format: "componentId:pinName")
 - Use real component types: arduino_uno, led, resistor, capacitor, buzzer, servo, etc.
@@ -1057,7 +1061,7 @@ RULES:
             contents: [
               ...contents,
               { role: 'model', parts: [{ text: replyText.slice(0, 24000) }] },
-              { role: 'user', parts: [{ text: `Convert your previous answer into a <tutorial> JSON payload for the canvas. Include ALL components with coordinates and ALL wiring. Previous issues: ${tutorialResponse.errors.join(' ')}` }] },
+              { role: 'user', parts: [{ text: `Convert your previous answer into a <tutorial> JSON payload for the canvas. Original user request: ${userMsg}. Preserve its firmware and testing deliverables, including complete editable code fields when needed. Include ALL components with coordinates and ALL wiring. Previous issues: ${tutorialResponse.errors.join(' ')}` }] },
             ] as any,
             temperature: 0.1,
             maxOutputTokens: 32768,
@@ -1083,7 +1087,16 @@ RULES:
       }
 
       let moduleCompletionMessage: string | undefined;
-      if (workflowPhase && tutorialResponse.plan && workflowPhase.deliverables.length > 1 && tutorialResponse.plan.steps.length < 2) {
+      const phaseDeliverableText = workflowPhase
+        ? [workflowPhase.name, ...workflowPhase.deliverables, ...workflowPhase.acceptance].join(' ')
+        : '';
+      const phaseRequiresFirmwareCode = Boolean(workflowPhase && /\b(?:firmware|embedded software|controller code|control code|diagnostic sketch|test firmware|programming code)\b/i.test(phaseDeliverableText));
+      const phaseHasFirmwareCode = Boolean(tutorialResponse.plan?.steps.some(step => typeof step.code === 'string' && step.code.trim()));
+      const moduleNeedsCompletion = Boolean(workflowPhase && tutorialResponse.plan && (
+        (workflowPhase.deliverables.length > 1 && tutorialResponse.plan.steps.length < 2)
+        || (phaseRequiresFirmwareCode && !phaseHasFirmwareCode)
+      ));
+      if (workflowPhase && tutorialResponse.plan && moduleNeedsCompletion) {
         const originalSources = agentReply.sources;
         const originalResearch = agentReply.researched;
         setProcessingActivity(`Completing all deliverables for ${workflowPhase.name} in its module...`);
@@ -1096,7 +1109,7 @@ RULES:
             contents: [
               ...contents,
               { role: 'model', parts: [{ text: replyText.slice(0, 24000) }] },
-              { role: 'user', parts: [{ text: `The preceding draft contains only ${tutorialResponse.plan.steps.length} step, but the approved ${workflowPhase.name} module has ${workflowPhase.deliverables.length} required deliverables and acceptance checks. Complete the entire module now in this same tab. Do not return a teaser, component-selection-only step, or ask the user to continue for missing work. Create multiple useful build checkpoints as needed, and represent all applicable components, mechanical artifacts, wiring, firmware, interfaces, and verification in the tutorial JSON itself. Cover every deliverable and acceptance item from the approved plan while preserving completed modules and interfaces. Return the full replacement module as one valid <tutorial> JSON payload.` }] },
+              { role: 'user', parts: [{ text: `The preceding draft is incomplete for the approved ${workflowPhase.name} module (${tutorialResponse.plan.steps.length} steps; ${workflowPhase.deliverables.length} planned deliverables). Finish every applicable deliverable in this same tab. Do not return a teaser, component-selection-only step, or ask the user to continue for missing work. Create useful checkpoints and represent components, mechanical artifacts, wiring, interfaces, and verification in the tutorial JSON. ${phaseRequiresFirmwareCode && !phaseHasFirmwareCode ? 'This phase explicitly requires firmware/code but the draft has no code field. Add a dedicated firmware step with the complete editable source in code and code_language, matching the approved board, pins, wiring, and behavior. Do not replace it with prose or pseudocode.' : ''} Cover every deliverable and acceptance item while preserving completed modules and interfaces. Return the full replacement module as one valid <tutorial> JSON payload.` }] },
             ] as AgentMessage[],
             temperature: 0.15,
             maxOutputTokens: 32768,
@@ -1104,7 +1117,9 @@ RULES:
             abortSignal: abortControllerRef.current.signal,
           });
           const completedTutorial = extractTutorialResponse(completionReply.text);
-          if (completedTutorial.plan && completedTutorial.plan.steps.length >= 2) {
+          const completedHasRequiredCode = !phaseRequiresFirmwareCode
+            || Boolean(completedTutorial.plan?.steps.some(step => typeof step.code === 'string' && step.code.trim()));
+          if (completedTutorial.plan && completedTutorial.plan.steps.length >= 2 && completedHasRequiredCode) {
             agentReply = {
               ...completionReply,
               sources: originalSources.length ? originalSources : completionReply.sources,
@@ -1179,7 +1194,6 @@ RULES:
       // 3. Parse and compile-check Arduino firmware before committing the circuit update.
       let tutorialData: ParsedTutorial | undefined;
       let firmwareBuilds: FirmwareBuildReport[] | undefined;
-      let firmwareValidationBlocked = false;
       let pinAllocationMessage: string | undefined;
       if (!moduleCompletionMessage && tutorialResponse.plan && onUpdateCircuit && (!proposedPlan || workflowOverride)) {
         const phaseName = workflowOverride?.plan.subsystems[workflowOverride.phaseIndex]?.name;
@@ -1221,14 +1235,7 @@ RULES:
           },
         });
         firmwareBuilds = firmwareValidation.reports.length ? firmwareValidation.reports : undefined;
-        firmwareValidationBlocked = !firmwareValidation.ok;
-
-        if (firmwareValidationBlocked) {
-          recordProgress('Firmware was held back because it did not pass the automatic build check.', 'explore');
-        }
-
-        if (!firmwareValidationBlocked) {
-          tutorialData = {
+        tutorialData = {
             action: parsed.action,
             target_tab: parsed.target_tab,
             projectName: parsed.project_name,
@@ -1252,12 +1259,11 @@ RULES:
               hasCode: !!s.code,
               hasVerify: !!s.verify
             }))
-          };
+        };
 
-          setProcessingActivity(`Updating ${parsed.target_tab || 'the active workspace'} with ${parsed.steps.length} checked steps...`);
-          onUpdateCircuit(parsed, workflowOverride?.targetTabId || activeTabId);
-          recordProgress(`Updated ${parsed.target_tab || 'the active workspace'} with ${parsed.steps.length} step${parsed.steps.length === 1 ? '' : 's'}.`, 'edit');
-        }
+        setProcessingActivity(`Updating ${parsed.target_tab || 'the active workspace'} with ${parsed.steps.length} checked steps...`);
+        onUpdateCircuit(parsed, workflowOverride?.targetTabId || activeTabId);
+        recordProgress(`Updated ${parsed.target_tab || 'the active workspace'} with ${parsed.steps.length} step${parsed.steps.length === 1 ? '' : 's'}.`, 'edit');
         }
       } else if (tutorialResponse.errors.length > 0 && isCanvasBuildRequest) {
         console.warn('Canvas response did not validate:', tutorialResponse.errors);
@@ -1276,8 +1282,6 @@ RULES:
         cleanText = moduleCompletionMessage;
       } else if (pinAllocationMessage) {
         cleanText = pinAllocationMessage;
-      } else if (firmwareValidationBlocked) {
-        cleanText = 'I held the firmware back because it did not pass the automatic build check. The compiler output stayed hidden; review the board selection and try again.';
       }
       if (!moduleCompletionMessage && !pinAllocationMessage && isCanvasBuildRequest && !proposedPlan && !tutorialData) {
         cleanText = cleanText.replace(/```json[\s\S]*?```/gi, '').trim();
@@ -1285,7 +1289,7 @@ RULES:
       if (proposedPlan && !agentReply.researched) {
         cleanText += '\n\nSearch returned no attributable sources for this response. Treat part-specific values as provisional until verified against the manufacturer documentation.';
       }
-      const canvasWarning = !moduleCompletionMessage && !pinAllocationMessage && !firmwareValidationBlocked && isCanvasBuildRequest && !proposedPlan && !tutorialData
+      const canvasWarning = !moduleCompletionMessage && !pinAllocationMessage && isCanvasBuildRequest && !proposedPlan && !tutorialData
         ? 'Canvas was not changed because the model did not return a valid component-and-step payload. The app tried one format repair; review the answer and retry when the model is available.'
         : undefined;
 
@@ -1303,7 +1307,7 @@ RULES:
 
       setMessages(prev => [...prev, { 
         role: 'assistant',
-        content: firmwareValidationBlocked ? cleanText : proposedPlan ? 'Implementation plan opened in its workspace tab.' : replyText,
+        content: proposedPlan ? 'Implementation plan opened in its workspace tab.' : replyText,
         cleanText: proposedPlan ? '' : cleanText,
         createdAt: Date.now(),
         commands, 

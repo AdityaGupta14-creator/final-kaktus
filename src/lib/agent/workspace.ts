@@ -3,14 +3,16 @@ import { canShareCircuitEndpoint, splitCircuitEndpoint } from '../circuit-networ
 
 const PROJECT_RESET_REQUEST = /\b(?:start|create|make|begin|open)\s+(?:a\s+)?new\s+project\b|\bnew\s+project\s+from\s+scratch\b|\bstart\s+over\b|\breset\s+(?:the\s+)?(?:current\s+)?project\b|\bfrom\s+scratch\b|\b(?:naya|nayi)\s+project\s+(?:shuru|start|banao)\b/i;
 const EXPLICIT_TAB_REQUEST = /\b(?:new|separate|own)\s+(?:workspace\s+)?(?:tab|module|subsystem|phase)\b|\b(?:naya|alag)\s+(?:tab|module|subsystem)\b/i;
-const EDIT_VERB = /\b(?:add|insert|include|remove|delete|edit|update|modify|change|fix|correct|replace|move|connect|wire|attach|extend|revise|append|adjust|jod(?:o|na)?|lagao|lagana|hatao|hatana|badlo|badalna|sudhar(?:o|na)?|theek|sahi|जोड़|लगाओ|हटाओ|बदलो|सुधार|ठीक|जाँच)\b/i;
+const EDIT_VERB = /\b(?:add|insert|include|remove|delete|edit|update|modify|change|fix|correct|replace|move|connect|wire|attach|extend|revise|append|adjust|test|testing|validate|verify|debug|check|jod(?:o|na)?|lagao|lagana|hatao|hatana|badlo|badalna|sudhar(?:o|na)?|theek|sahi|जोड़|लगाओ|हटाओ|बदलो|सुधार|ठीक|जाँच|जांच)\b/i;
 const EDIT_TARGET = /\b(?:step|test|testing|verification|validation|wire|wiring|component|part|pin|circuit|connection|firmware|code|sketch|sensor|motor|module|board|tab|diagram|design|led|resistors?|capacitors?|diodes?|transistors?|mosfets?|servos?|batter(?:y|ies)|drivers?|switch(?:es)?|relays?|breadboards?|arduino|esp32|l298n|controller|gpio)\b|स्टेप|टेस्ट|वायर|कंपोनेंट|सर्किट/i;
-const CODE_REQUEST = /\b(?:write|generate|create|update|change|fix|rewrite|implement|program)\b.{0,80}\b(?:code|firmware|sketch|program)\b/i;
+const CODE_REQUEST = /\b(?:write|generate|create|update|change|fix|rewrite|implement|program)\b.{0,80}\b(?:code|firmware|sketch|program)\b|\b(?:code|firmware|sketch)\b.{0,60}\b(?:write|generate|create|update|change|fix|rewrite|implement|program|likh(?:o|na)?|bana(?:o|na)?|de|do)\b|(?:कोड|फर्मवेयर|स्केच).{0,40}(?:लिख|बना|दे|दो)/i;
+const DIRECT_TEST_REQUEST = /\b(?:test|testing|validate|validation|verify|verification|debug|troubleshoot|check)\b.{0,45}\b(?:this|it|current|the|my)\b|\b(?:test|testing|check|verify|validate|debug)\s*(?:kar|karo|kare|karke|do|please)\b|\b(?:isko|isse|ise)\s*(?:test|check|verify|validate|debug)\b/i;
 
 export function isCanvasMutationRequest(request: string): boolean {
   if (PROJECT_RESET_REQUEST.test(request)) return true;
   return /\b(?:build|make|design|wire|create|construct|assemble|implement|prototype|draw|diagram)\b/i.test(request)
     || CODE_REQUEST.test(request)
+    || DIRECT_TEST_REQUEST.test(request)
     || (EDIT_VERB.test(request) && EDIT_TARGET.test(request));
 }
 
