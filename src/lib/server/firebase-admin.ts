@@ -28,21 +28,21 @@ function initFirebaseAdmin(): { app: App; auth: Auth; db: Firestore } {
   if (rawServiceAccount) {
     try {
       let parsed: any;
-      // 1. Check if it's a file path pointing to a json file
-      const potentialFilePath = path.isAbsolute(rawServiceAccount)
-        ? rawServiceAccount
-        : path.resolve(process.cwd(), rawServiceAccount);
-
-      if (fs.existsSync(potentialFilePath) && fs.statSync(potentialFilePath).isFile()) {
-        const fileContent = fs.readFileSync(potentialFilePath, 'utf8');
-        parsed = JSON.parse(fileContent);
-      } else if (rawServiceAccount.startsWith('{') || rawServiceAccount.startsWith('[') || rawServiceAccount.startsWith('"') || rawServiceAccount.startsWith("'")) {
-        // Strip surrounding single/double quotes if present
+      // 1. Check if it is a JSON string or base64 first
+      if (rawServiceAccount.startsWith('{') || rawServiceAccount.startsWith('[') || rawServiceAccount.startsWith('"') || rawServiceAccount.startsWith("'")) {
         let cleanJson = rawServiceAccount;
         if ((cleanJson.startsWith("'") && cleanJson.endsWith("'")) || (cleanJson.startsWith('"') && cleanJson.endsWith('"'))) {
           cleanJson = cleanJson.slice(1, -1);
         }
         parsed = JSON.parse(cleanJson);
+      } else if (!rawServiceAccount.includes('\n') && (rawServiceAccount.endsWith('.json') || rawServiceAccount.startsWith('./') || rawServiceAccount.startsWith('/'))) {
+        const potentialFilePath = path.isAbsolute(rawServiceAccount)
+          ? rawServiceAccount
+          : path.join(/*turbopackIgnore: true*/ process.cwd(), rawServiceAccount);
+        if (fs.existsSync(potentialFilePath) && fs.statSync(potentialFilePath).isFile()) {
+          const fileContent = fs.readFileSync(potentialFilePath, 'utf8');
+          parsed = JSON.parse(fileContent);
+        }
       } else {
         // Attempt base64 decode if not plain json
         try {
@@ -97,6 +97,7 @@ function initFirebaseAdmin(): { app: App; auth: Auth; db: Firestore } {
 const initialized = initFirebaseAdmin();
 export const auth = initialized.auth;
 export const db = initialized.db;
+export const firebaseAdminApp = initialized.app;
 
 /**
  * Returns configured bootstrap SUPER_ADMIN email from SUPER_ADMIN_EMAIL env
