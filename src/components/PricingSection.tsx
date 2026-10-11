@@ -114,7 +114,7 @@ export function PricingSection() {
             <p className="text-zinc-400 mb-6 text-sm">Perfect for learning and simple circuits.</p>
             <div className="text-5xl font-black mb-8 text-white">₹0<span className="text-lg text-zinc-500 font-normal">/mo</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">25k Tokens Daily</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">75k Tokens Daily</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400 font-medium">Standard Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">Gemini 2.5 Flash & 2.5 Flash Lite</span></li>
             </ul>
@@ -133,7 +133,7 @@ export function PricingSection() {
             <p className="text-zinc-400 mb-6 text-sm">Unlock better reasoning (10 mins).</p>
             <div className="text-5xl font-black mb-8 text-white">₹1<span className="text-lg text-zinc-500 font-normal">/plan</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">50k Tokens Quota</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">165k Tokens Quota</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-zinc-300 font-medium">Fast Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">Unlocks Gemini 3.5 Flash</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-zinc-400">15x Reasoning Capacity</span></li>
@@ -157,7 +157,7 @@ export function PricingSection() {
             <p className="text-zinc-400 mb-6 text-sm">For your mid-term projects (10 mins).</p>
             <div className="text-5xl font-black mb-8 text-white">₹2<span className="text-lg text-zinc-500 font-normal">/plan</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">75k Tokens Quota</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">255k Tokens Quota</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400 font-medium">Priority Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">Unlocks 3.5 & 3.6 Flash</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">30x Reasoning Capacity</span></li>
@@ -181,7 +181,7 @@ export function PricingSection() {
             <p className="text-zinc-400 mb-6 text-sm">For serious builders and engineers (10 mins).</p>
             <div className="text-5xl font-black mb-8 text-white">₹3<span className="text-lg text-zinc-500 font-normal">/plan</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">100k Tokens Quota</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">335k Tokens Quota</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400 font-medium">Max Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">Unlocks 3.7 & 3.8 Flash</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">100x Reasoning Capacity</span></li>

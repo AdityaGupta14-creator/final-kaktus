@@ -11,10 +11,10 @@ export interface TokenUsageMap {
 }
 
 export const PLAN_TOKEN_LIMITS: Record<string, number> = {
-  free: 25_000,         // 25k tokens daily limit for free tier
-  starter: 50_000,      // 50k tokens quota for starter plan
-  booster: 75_000,      // 75k tokens quota for booster plan
-  pro: 100_000,         // 100k tokens quota for pro plan
+  free: 75_000,         // 75k tokens daily limit for free tier
+  starter: 165_000,     // 165k tokens quota for starter plan
+  booster: 255_000,     // 255k tokens quota for booster plan
+  pro: 335_000,         // 335k tokens quota for pro plan
   super_admin: 1_000_000,
   admin: 1_000_000,
 };
