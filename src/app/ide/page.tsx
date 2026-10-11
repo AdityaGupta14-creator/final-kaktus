@@ -157,7 +157,7 @@ export default function Home() {
         if (usageRaw) {
           const usage = JSON.parse(usageRaw);
           let totalStoredTokens = 0;
-          const today = new Date().toISOString().substring(0, 10); // 24-hour reset (daily)
+          const today = new Date().toISOString().substring(0, 16); // format: YYYY-MM-DDTHH:mm (1-minute reset)
           if (usage[today]) {
             for (const key in usage[today]) {
               for (const model in usage[today][key]) {
@@ -165,7 +165,7 @@ export default function Home() {
               }
             }
           }
-          // Now usage reflects exact token count returned by Gemini API
+          // Now usage reflects exact token count returned by Gemini API within current 1-minute window
           setTotalTokens(totalStoredTokens);
         } else {
           setTotalTokens(0);
@@ -175,7 +175,7 @@ export default function Home() {
       }
     };
     updateTokens();
-    const interval = setInterval(updateTokens, 5000);
+    const interval = setInterval(updateTokens, 1000);
     window.addEventListener('geminiUsageUpdated', updateTokens);
     
     return () => {

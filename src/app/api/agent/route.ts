@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { getServerApiKey } from '@/lib/server/api-keys';
+import { getServerApiKey, getServerApiKeys } from '@/lib/server/api-keys';
 
 const MAX_BODY_BYTES = 1_500_000;
 const MODEL_PATTERN = /^(?:models\/)?gemini-[a-zA-Z0-9._-]+$/;
@@ -52,27 +52,29 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Invalid agent context.' }, { status: 400 });
   }
 
-  // Resolve API Key: check body key or resolve server managed key
-  let activeApiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+  // Resolve API Key: gather candidate keys
+  const candidateKeys: string[] = [];
+  const directKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
 
-  if (!activeApiKey || activeApiKey === 'server_managed' || activeApiKey === 'default_server_key') {
-    try {
-      const serverKey = await getServerApiKey();
-      if (serverKey) {
-        activeApiKey = serverKey;
-      }
-    } catch (err) {
-      console.warn('[AgentRoute] Could not get server key from manager:', err);
-    }
-
-    if (!activeApiKey || activeApiKey === 'server_managed' || activeApiKey === 'default_server_key') {
-      if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
-        activeApiKey = process.env.GEMINI_API_KEY.trim();
-      }
-    }
+  if (directKey && directKey !== 'server_managed' && directKey !== 'default_server_key') {
+    candidateKeys.push(directKey);
   }
 
-  if (!activeApiKey || activeApiKey === 'server_managed' || activeApiKey === 'default_server_key') {
+  try {
+    const serverKeys = await getServerApiKeys();
+    serverKeys.forEach(k => {
+      if (!candidateKeys.includes(k)) candidateKeys.push(k);
+    });
+  } catch (err) {
+    console.warn('[AgentRoute] Could not get server keys from manager:', err);
+  }
+
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
+    const envKey = process.env.GEMINI_API_KEY.trim();
+    if (!candidateKeys.includes(envKey)) candidateKeys.push(envKey);
+  }
+
+  if (candidateKeys.length === 0) {
     return Response.json({
       error: 'No active Gemini API key found. Please add a Gemini key in the Admin Panel or set GEMINI_API_KEY.',
     }, { status: 503 });
@@ -98,51 +100,55 @@ export async function POST(request: Request) {
   let lastResponse: Response | null = null;
   let lastResult: GeminiResponse = {};
 
-  for (const modelToTry of uniqueCandidateModels) {
-    try {
-      const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/' + modelToTry + ':generateContent?key=' + encodeURIComponent(activeApiKey), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: body.systemPrompt }] },
-          contents: body.contents,
-          ...(body.research === true ? { tools: [{ google_search: {} }] } : {}),
-          generationConfig: {
-            temperature: typeof body.temperature === 'number' ? Math.min(Math.max(body.temperature, 0), 1) : 0.2,
-            maxOutputTokens: typeof body.maxOutputTokens === 'number' ? Math.min(Math.max(body.maxOutputTokens, 256), 32768) : 16384,
-            responseMimeType: 'text/plain',
-          },
-        }),
-      });
+  // Try candidate keys in pool
+  for (const activeApiKey of candidateKeys) {
+    for (const modelToTry of uniqueCandidateModels) {
+      try {
+        const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/' + modelToTry + ':generateContent?key=' + encodeURIComponent(activeApiKey), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: body.systemPrompt }] },
+            contents: body.contents,
+            ...(body.research === true ? { tools: [{ google_search: {} }] } : {}),
+            generationConfig: {
+              temperature: typeof body.temperature === 'number' ? Math.min(Math.max(body.temperature, 0), 1) : 0.2,
+              maxOutputTokens: typeof body.maxOutputTokens === 'number' ? Math.min(Math.max(body.maxOutputTokens, 256), 32768) : 16384,
+              responseMimeType: 'text/plain',
+            },
+          }),
+        });
 
-      const result: GeminiResponse = await upstream.json().catch((): GeminiResponse => ({}));
-      lastResponse = upstream;
-      lastResult = result;
+        const result: GeminiResponse = await upstream.json().catch((): GeminiResponse => ({}));
+        lastResponse = upstream;
+        lastResult = result;
 
-      // If model not found (404) or temporarily overloaded (503), try next active candidate
-      if (upstream.status === 404 || upstream.status === 503) {
-        continue;
+        // If model not found (404) or temporarily overloaded (503), try next active candidate
+        if (upstream.status === 404 || upstream.status === 503) {
+          continue;
+        }
+
+        if (upstream.ok && !result.error) {
+          const text = result.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('') || '';
+          const grounding = result.candidates?.[0]?.groundingMetadata;
+          const sources = Array.isArray(grounding?.groundingChunks)
+            ? grounding.groundingChunks.flatMap(chunk => chunk.web?.uri && chunk.web?.title
+              ? [{ title: chunk.web.title.slice(0, 240), uri: chunk.web.uri }]
+              : []).filter((source: { uri: string }, index: number, all: { uri: string }[]) => all.findIndex(item => item.uri === source.uri) === index).slice(0, 20)
+            : [];
+          const searchQueries = Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries.slice(0, 12) : [];
+          const usage = result.usageMetadata?.totalTokenCount || 0;
+          return Response.json({ text, sources, searchQueries, researched: body.research === true && sources.length > 0, usage });
+        }
+
+        // If quota exceeded or auth failure on this key, try NEXT key in candidate pool!
+        if (upstream.status === 401 || upstream.status === 429) {
+          console.warn(`[AgentRoute] Key ending in ${activeApiKey.slice(-4)} failed with status ${upstream.status}. Trying next key...`);
+          break;
+        }
+      } catch (fetchErr) {
+        console.warn('[AgentRoute] Upstream fetch error for model:', modelToTry, fetchErr);
       }
-
-      if (upstream.ok && !result.error) {
-        const text = result.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('') || '';
-        const grounding = result.candidates?.[0]?.groundingMetadata;
-        const sources = Array.isArray(grounding?.groundingChunks)
-          ? grounding.groundingChunks.flatMap(chunk => chunk.web?.uri && chunk.web?.title
-            ? [{ title: chunk.web.title.slice(0, 240), uri: chunk.web.uri }]
-            : []).filter((source: { uri: string }, index: number, all: { uri: string }[]) => all.findIndex(item => item.uri === source.uri) === index).slice(0, 20)
-          : [];
-        const searchQueries = Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries.slice(0, 12) : [];
-        const usage = result.usageMetadata?.totalTokenCount || 0;
-        return Response.json({ text, sources, searchQueries, researched: body.research === true && sources.length > 0, usage });
-      }
-
-      // If auth failure or quota limit, don't keep looping models
-      if (upstream.status === 401 || upstream.status === 429) {
-        break;
-      }
-    } catch (fetchErr) {
-      console.warn('[AgentRoute] Upstream fetch error for model:', modelToTry, fetchErr);
     }
   }
 

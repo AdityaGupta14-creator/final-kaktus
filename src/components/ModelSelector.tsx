@@ -40,11 +40,12 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
   const router = useRouter();
 
   const isModelLocked = (id: string, currentPlan: string) => {
-    if (currentPlan === 'pro') return false;
-    if (currentPlan === 'booster') {
+    const p = (currentPlan || 'free').toLowerCase();
+    if (p === 'pro' || p === 'super_admin' || p === 'admin') return false;
+    if (p === 'booster') {
       return ['models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
     }
-    if (currentPlan === 'starter') {
+    if (p === 'starter') {
       return ['models/gemini-3.5-flash', 'models/gemini-3.6-flash', 'models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
     }
     // Free: only gets Gemini 2.5 Flash Lite & Gemini 2.5 Flash
@@ -141,33 +142,56 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
       </button>
 
       {isOpen && models.length > 0 && (
-        <div className="absolute bottom-full left-0 mb-2 w-64 bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
-          <div className="px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-[#2a2a2a]">
-            Model
+        <div className="absolute bottom-full left-0 mb-2 w-72 bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
+          <div className="px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-[#2a2a2a] flex items-center justify-between">
+            <span>Model</span>
+            <span className="text-[10px] text-gray-400 uppercase font-mono">{plan || 'FREE'} PLAN</span>
           </div>
-          <div className="flex flex-col p-1.5 max-h-[300px] overflow-y-auto custom-scrollbar">
+          <div className="flex flex-col p-1.5 max-h-[320px] overflow-y-auto custom-scrollbar">
             {models.map((model) => {
               const isActive = selectedModel === model.name;
               const locked = isModelLocked(model.name, plan);
               return (
-                <button
+                <div
                   key={model.name}
                   onClick={() => {
                     if (locked) {
+                      setIsOpen(false);
                       router.push('/#pricing');
                     } else {
                       onModelChange(model.name);
                       setIsOpen(false);
                     }
                   }}
-                  className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition-colors ${isActive ? 'bg-[#2a2a2a] text-white' : 'text-gray-400 hover:bg-[#222] hover:text-gray-200'}`}
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition-colors cursor-pointer select-none ${
+                    isActive && !locked 
+                      ? 'bg-[#2a2a2a] text-white' 
+                      : locked
+                      ? 'text-gray-400 hover:bg-[#222]'
+                      : 'text-gray-300 hover:bg-[#222] hover:text-white'
+                  }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className={`font-medium text-left ${locked ? 'opacity-50' : ''}`}>{getCleanLabel(model)}</span>
-                    {locked && <span className="bg-orange-500/20 text-orange-400 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-1"><Lock size={8} /> Upgrade</span>}
+                  <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+                    <span className={`font-medium truncate ${locked ? 'text-gray-400' : 'text-gray-200'}`}>
+                      {getCleanLabel(model)}
+                    </span>
                   </div>
-                  {isActive && !locked && <ChevronRight size={14} className="opacity-100 flex-shrink-0" />}
-                </button>
+                  {locked ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsOpen(false);
+                        router.push('/#pricing');
+                      }}
+                      className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 hover:text-orange-300 border border-orange-500/30 text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 flex-shrink-0"
+                    >
+                      <Lock size={10} /> Upgrade
+                    </button>
+                  ) : (
+                    isActive && <ChevronRight size={14} className="opacity-100 flex-shrink-0 text-blue-400" />
+                  )}
+                </div>
               );
             })}
           </div>

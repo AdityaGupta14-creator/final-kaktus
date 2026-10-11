@@ -108,6 +108,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [pathname, router]);
 
+  // Active check for plan expiration (e.g. 10-minute expiry)
+  useEffect(() => {
+    if (!user || plan === 'free' || !planExpiresAt) return;
+    const interval = setInterval(() => {
+      if (new Date() > planExpiresAt) {
+        setPlan('free');
+        setPlanExpiresAt(null);
+        localStorage.setItem('kaktus_user_plan', 'free');
+        toast.info('Your plan validity has ended (10-minute expiry). Reverted to Free tier.');
+        import('firebase/firestore').then(({ doc, updateDoc }) => {
+          updateDoc(doc(db, 'users', user.uid), { plan: 'free', planExpiresAt: null }).catch(console.error);
+        });
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [user, plan, planExpiresAt]);
+
   // Separate effect for intervals
   useEffect(() => {
     if (!user) return;

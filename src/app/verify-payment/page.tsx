@@ -56,8 +56,18 @@ export default function VerifyPaymentPage() {
             createdAt: serverTimestamp()
           };
           
+          const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
           await setDoc(doc(db, 'payments', pId), txn);
-          await approvePayment(txn);
+          await setDoc(doc(db, 'users', user.uid), {
+            plan: planId,
+            planExpiresAt: expiresAt,
+            planUpdatedAt: serverTimestamp(),
+          }, { merge: true });
+          try {
+            await approvePayment(txn);
+          } catch (err) {
+            console.warn('[VerifyPayment] Server approve fallback note:', err);
+          }
           
           setStatus('success');
           setTimeout(() => {

@@ -420,9 +420,10 @@ function WorkAccordion({ actions, timeMs, active = false, currentActivity, start
     return () => window.clearInterval(interval);
   }, [active, startedAt]);
 
-  if (!active && (!actions || actions.length === 0)) return null;
+  if (!active && (!actions || actions.length === 0) && !timeMs) return null;
 
-  const seconds = Math.floor((active ? elapsedMs : timeMs || actions.length * 2000) / 1000);
+  const rawSeconds = Math.floor((active ? elapsedMs : timeMs || ((actions && actions.length) ? actions.length * 2000 : 1500)) / 1000);
+  const seconds = Math.max(1, rawSeconds);
   const timeStr = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds/60)}m ${seconds%60}s`;
 
   return (
