@@ -9,9 +9,8 @@ import { ChatBox, ImplementationPlanCard } from '@/components/ChatBox';
 import { ModelSelector } from '@/components/ModelSelector';
 import type { TerminalRef } from '@/components/Terminal';
 import type { TutorialData } from '@/components/CircuitCanvas';
-import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Settings, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, Download, AlertCircle } from 'lucide-react';
-import { FlashPanel } from '@/components/FlashPanel';
-import { PdfGenerator } from '@/components/PdfGenerator';
+import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
+import { HardwareInterfaceModal } from '@/components/HardwareInterfaceModal';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { extractProjectPlanResponse } from '@/lib/agent/protocol';
 import type { PlanBuildAction, ProjectPlan, ResearchSource } from '@/lib/agent/protocol';
@@ -21,7 +20,7 @@ import { getApiPool } from '@/lib/admin';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { syncToFirebase, loadFromFirebase } from '@/lib/firebase-sync';
-import { getTokenLimit, getStoredTokensUsed } from '@/lib/tokens';
+import { getTokenLimit, getStoredTokensUsed, getTimeUntilMidnight, checkAndResetDailyTokens } from '@/lib/tokens';
 import {
   CHAT_SESSION_REGISTRY_KEY,
   chatSessionKey,
@@ -110,7 +109,7 @@ const CircuitCanvas = dynamic(() => import('@/components/CircuitCanvas').then((m
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading, plan, planExpiresAt } = useAuth();
-  const tokenLimit = getTokenLimit(plan);
+  const tokenLimit = getTokenLimit(plan, planExpiresAt);
   const [apiKeys, setApiKeys] = useState<string[]>(['server_managed']);
   const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash-lite');
   const [availableModels, setAvailableModels] = useState<Array<{ name: string; displayName?: string }>>([]);
@@ -121,10 +120,9 @@ export default function Home() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSaved, setLastSaved] = useState<string>('');
   const [totalTokens, setTotalTokens] = useState(0);
-  const [secondsUntilReset, setSecondsUntilReset] = useState(60);
+  const [resetCountdown, setResetCountdown] = useState('12:00 AM');
   const [isQuotaModalDismissed, setIsQuotaModalDismissed] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
-  const [isPdfGeneratorOpen, setIsPdfGeneratorOpen] = useState(false);
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [userRole, setUserRole] = useState<string>('USER');
@@ -148,7 +146,7 @@ export default function Home() {
     }
   }, [user, authLoading, router]);
 
-  // Reset modal dismissal when minute rolls over and tokens drop below limit
+  // Reset modal dismissal when day rolls over and tokens drop below limit
   useEffect(() => {
     if (totalTokens < tokenLimit && isQuotaModalDismissed) {
       setIsQuotaModalDismissed(false);
@@ -159,10 +157,10 @@ export default function Home() {
     const updateTokens = () => {
       try {
         const uid = user?.uid || (typeof window !== 'undefined' ? (localStorage.getItem('kaktus_user_uid') || localStorage.getItem('kaktus_user_email')) : null);
-        const now = new Date();
-        const secsLeft = 60 - now.getSeconds();
-        setSecondsUntilReset(secsLeft === 0 ? 60 : secsLeft);
+        const { formatted } = getTimeUntilMidnight();
+        setResetCountdown(formatted);
 
+        checkAndResetDailyTokens(uid);
         const total = getStoredTokensUsed(uid);
         setTotalTokens(total);
       } catch (e) {
@@ -653,18 +651,10 @@ export default function Home() {
             <button 
               onClick={() => setIsFlashOpen(!isFlashOpen)}
               className={`px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors ${isFlashOpen ? 'bg-[#333333] text-white' : ''} gap-1.5`}
-              title="Arduino Connection"
+              title="Hardware Interface (Coming Soon)"
             >
               <Usb size={13} />
               Connect
-            </button>
-            <button 
-              onClick={() => setIsPdfGeneratorOpen(true)}
-              className="px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors gap-1.5 text-blue-400 hover:text-blue-300"
-              title="Export as PDF"
-            >
-              <Download size={13} />
-              Export PDF
             </button>
           </nav>
         </div>
@@ -772,9 +762,6 @@ export default function Home() {
               <div className="w-px h-4 bg-gray-700 mx-1"></div>
             </>
           )}
-          <Link href="/admin" className="px-2 h-full flex items-center text-gray-400 hover:text-gray-200 hover:bg-[#333333] rounded transition-colors" title="Settings">
-            <Settings size={14} />
-          </Link>
         </div>
       </header>
 
@@ -932,15 +919,11 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Flash Panel */}
-        <AnimatePresence>
-          {isFlashOpen && (
-            <FlashPanel 
-              code={generatedCode}
-              onClose={() => setIsFlashOpen(false)}
-            />
-          )}
-        </AnimatePresence>
+        {/* Hardware Interface Connect - Coming Soon Modal */}
+        <HardwareInterfaceModal 
+          isOpen={isFlashOpen}
+          onClose={() => setIsFlashOpen(false)}
+        />
 
         {/* Right/Bottom: Sliding Terminal Drawer */}
         <AnimatePresence>
@@ -992,15 +975,6 @@ export default function Home() {
           reason={totalTokens >= tokenLimit ? `You have exceeded your ${tokenLimit / 1000}k tokens limit. Upgrade to continue building and simulating.` : undefined}
         />
 
-        <PdfGenerator
-          isOpen={isPdfGeneratorOpen}
-          onClose={() => setIsPdfGeneratorOpen(false)}
-          circuitData={circuitData}
-          sessionTitle={sessions.find(session => session.id === sessionId)?.title || 'New Project'}
-          tabName={activeTab.name}
-          sessionId={sessionId}
-          workspaceTabId={activeTab.id}
-        />
 
         {/* Floating Corner Notification Widget */}
         <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2 pointer-events-auto select-none">
@@ -1014,7 +988,7 @@ export default function Home() {
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-xs tracking-wide text-red-300 uppercase">Quota Exceeded</span>
                     <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-red-950/90 text-red-300 border border-red-800/60">
-                      Resets in {secondsUntilReset}s
+                      Resets in {resetCountdown} (12:00 AM)
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-300 mt-1 leading-snug">
@@ -1029,7 +1003,7 @@ export default function Home() {
                       className="w-full bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-md flex items-center justify-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
                     >
                       <Zap size={13} className="fill-white" />
-                      Upgrade Plan (₹1 - ₹3)
+                      Upgrade Plan (₹39 - ₹169)
                     </button>
                   </div>
                 </div>
@@ -1042,7 +1016,13 @@ export default function Home() {
                 <span className="font-bold text-amber-300 uppercase tracking-wider">{plan} Pack</span>
                 <span className="text-gray-400 mx-1.5">•</span>
                 <span className="text-gray-300 font-mono">
-                  {Math.max(0, Math.floor((new Date(planExpiresAt).getTime() - Date.now()) / 60000))}m left
+                  {(() => {
+                    const ms = Math.max(0, new Date(planExpiresAt).getTime() - Date.now());
+                    const d = Math.floor(ms / (24 * 3600 * 1000));
+                    const h = Math.floor((ms % (24 * 3600 * 1000)) / (3600 * 1000));
+                    const m = Math.floor((ms % (3600 * 1000)) / 60000);
+                    return d > 0 ? `${d}d ${h}h left` : (h > 0 ? `${h}h ${m}m left` : `${m}m left`);
+                  })()}
                 </span>
               </div>
               <button

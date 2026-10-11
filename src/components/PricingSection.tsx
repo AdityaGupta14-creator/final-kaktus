@@ -130,23 +130,23 @@ export function PricingSection() {
           <FadeIn delay={0.2} className="flex flex-col p-8 bg-[#16161a] rounded-3xl border-2 border-zinc-500 shadow-2xl relative z-10">
             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-800 border border-zinc-600 text-zinc-200 px-4 py-1 rounded-full text-xs font-mono font-bold tracking-wider">POPULAR</div>
             <h3 className="text-2xl font-bold mb-2 text-white">Starter</h3>
-            <p className="text-zinc-400 mb-6 text-sm">Unlock better reasoning (10 mins).</p>
-            <div className="text-5xl font-black mb-8 text-white">₹1<span className="text-lg text-zinc-500 font-normal">/plan</span></div>
+            <p className="text-zinc-400 mb-6 text-sm">Unlock better reasoning (1 week).</p>
+            <div className="text-5xl font-black mb-8 text-white">₹39<span className="text-lg text-zinc-500 font-normal">/1 week</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">165k Tokens Quota</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">165k Daily Tokens Quota</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-zinc-300 font-medium">Fast Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">Unlocks Gemini 3.5 Flash</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-zinc-400">15x Reasoning Capacity</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-zinc-400">7 Days Full Access</span></li>
             </ul>
             <button 
               disabled={loadingPlanId !== null}
-              onClick={() => handlePlanClick('starter', 'Starter', '1')} 
+              onClick={() => handlePlanClick('starter', 'Starter', '39')} 
               className="w-full py-4 text-center rounded-xl bg-white hover:bg-zinc-200 text-black font-bold transition-colors shadow-md flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
             >
               {loadingPlanId === 'starter' ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Opening Checkout...</>
               ) : (
-                'Pay ₹1 Now'
+                'Pay ₹39 Now'
               )}
             </button>
           </FadeIn>
@@ -154,23 +154,23 @@ export function PricingSection() {
           {/* Booster Plan */}
           <FadeIn delay={0.3} className="flex flex-col p-8 bg-[#111114] rounded-3xl border border-zinc-800/90 hover:border-zinc-700 shadow-sm relative">
             <h3 className="text-2xl font-bold mb-2 text-white">Booster</h3>
-            <p className="text-zinc-400 mb-6 text-sm">For your mid-term projects (10 mins).</p>
-            <div className="text-5xl font-black mb-8 text-white">₹2<span className="text-lg text-zinc-500 font-normal">/plan</span></div>
+            <p className="text-zinc-400 mb-6 text-sm">For mid-term projects (2 weeks).</p>
+            <div className="text-5xl font-black mb-8 text-white">₹69<span className="text-lg text-zinc-500 font-normal">/2 weeks</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">255k Tokens Quota</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">255k Daily Tokens Quota</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400 font-medium">Priority Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">Unlocks 3.5 & 3.6 Flash</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">30x Reasoning Capacity</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">14 Days Full Access</span></li>
             </ul>
             <button 
               disabled={loadingPlanId !== null}
-              onClick={() => handlePlanClick('booster', 'Booster', '2')} 
+              onClick={() => handlePlanClick('booster', 'Booster', '69')} 
               className="w-full py-4 text-center rounded-xl bg-white hover:bg-zinc-200 text-black font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
             >
               {loadingPlanId === 'booster' ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Opening Checkout...</>
               ) : (
-                'Pay ₹2 Now'
+                'Pay ₹69 Now'
               )}
             </button>
           </FadeIn>
@@ -178,23 +178,23 @@ export function PricingSection() {
           {/* Pro Plan */}
           <FadeIn delay={0.4} className="flex flex-col p-8 bg-[#111114] rounded-3xl border border-zinc-800/90 hover:border-zinc-700 shadow-sm relative">
             <h3 className="text-2xl font-bold mb-2 text-white">Pro</h3>
-            <p className="text-zinc-400 mb-6 text-sm">For serious builders and engineers (10 mins).</p>
-            <div className="text-5xl font-black mb-8 text-white">₹3<span className="text-lg text-zinc-500 font-normal">/plan</span></div>
+            <p className="text-zinc-400 mb-6 text-sm">For serious builders and engineers (1 month).</p>
+            <div className="text-5xl font-black mb-8 text-white">₹169<span className="text-lg text-zinc-500 font-normal">/1 month</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">335k Tokens Quota</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">335k Daily Tokens Quota</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400 font-medium">Max Processing Speed</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">Unlocks 3.7 & 3.8 Flash</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">100x Reasoning Capacity</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">30 Days Full Access</span></li>
             </ul>
             <button 
               disabled={loadingPlanId !== null}
-              onClick={() => handlePlanClick('pro', 'Pro', '3')} 
+              onClick={() => handlePlanClick('pro', 'Pro', '169')} 
               className="w-full py-4 text-center rounded-xl bg-white hover:bg-zinc-200 text-black font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
             >
               {loadingPlanId === 'pro' ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Opening Checkout...</>
               ) : (
-                'Pay ₹3 Now'
+                'Pay ₹169 Now'
               )}
             </button>
           </FadeIn>

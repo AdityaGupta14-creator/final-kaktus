@@ -5,7 +5,11 @@ import {
   getStoredTokensUsed, 
   recordTokensUsed, 
   isUserQuotaExceeded,
-  getTodayDateKey 
+  getTodayDateKey,
+  isPlanExpired,
+  getEffectiveUserPlan,
+  checkAndResetDailyTokens,
+  getTimeUntilMidnight
 } from '../src/lib/tokens';
 
 // Mock localStorage for node environment
@@ -39,12 +43,33 @@ describe('Token Limits & Usage Blocking Logic', () => {
   });
 
   it('correctly resolves token limits for each plan tier', () => {
-    expect(getTokenLimit('free')).toBe(25_000);
-    expect(getTokenLimit('starter')).toBe(50_000);
-    expect(getTokenLimit('booster')).toBe(75_000);
-    expect(getTokenLimit('pro')).toBe(100_000);
-    expect(getTokenLimit(null)).toBe(25_000);
-    expect(getTokenLimit('unknown')).toBe(25_000);
+    expect(getTokenLimit('free')).toBe(75_000);
+    expect(getTokenLimit('starter')).toBe(165_000);
+    expect(getTokenLimit('booster')).toBe(255_000);
+    expect(getTokenLimit('pro')).toBe(335_000);
+    expect(getTokenLimit(null)).toBe(75_000);
+    expect(getTokenLimit('unknown')).toBe(75_000);
+  });
+
+  it('reverts to free plan limit (75k) once planExpiresAt has passed', () => {
+    const expiredDate = new Date(Date.now() - 60_000); // Expired 1 minute ago
+    const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 1 week in future
+
+    expect(isPlanExpired(expiredDate)).toBe(true);
+    expect(isPlanExpired(futureDate)).toBe(false);
+
+    // Expired starter plan reverts to free limit
+    expect(getEffectiveUserPlan('starter', expiredDate)).toBe('free');
+    expect(getTokenLimit('starter', expiredDate)).toBe(75_000);
+
+    // Active starter plan retains 165k limit
+    expect(getEffectiveUserPlan('starter', futureDate)).toBe('starter');
+    expect(getTokenLimit('starter', futureDate)).toBe(165_000);
+
+    // Expired pro plan reverts to free limit
+    expect(getTokenLimit('pro', expiredDate)).toBe(75_000);
+    // Active pro plan gets 335k
+    expect(getTokenLimit('pro', futureDate)).toBe(335_000);
   });
 
   it('starts with 0 tokens used for a new user', () => {
@@ -88,5 +113,25 @@ describe('Token Limits & Usage Blocking Logic', () => {
     const today = getTodayDateKey();
     expect(parsed[today]).toBeDefined();
     expect(parsed[today]['server_managed']['gemini-2.5-flash-lite']).toBe(1200);
+  });
+
+  it('calculates time until 12:00 AM midnight', () => {
+    const untilMidnight = getTimeUntilMidnight();
+    expect(untilMidnight.ms).toBeGreaterThan(0);
+    expect(untilMidnight.hours).toBeGreaterThanOrEqual(0);
+    expect(untilMidnight.hours).toBeLessThanOrEqual(24);
+    expect(untilMidnight.formatted).toBeTruthy();
+  });
+
+  it('handles daily midnight rollover check correctly', () => {
+    const today = getTodayDateKey();
+    // First run registers today's date
+    const resetTriggered = checkAndResetDailyTokens(testUid);
+    expect(resetTriggered).toBe(true);
+    expect(localStorageMock.getItem(`kaktus_last_daily_token_reset_${testUid}`)).toBe(today);
+
+    // Consecutive run on same day returns false
+    const secondRun = checkAndResetDailyTokens(testUid);
+    expect(secondRun).toBe(false);
   });
 });

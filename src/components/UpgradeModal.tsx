@@ -26,40 +26,40 @@ export const UPGRADE_PLANS: PlanInfo[] = [
   {
     id: 'starter',
     name: 'Starter',
-    price: 1,
+    price: 39,
     badge: 'POPULAR',
-    description: 'Quick reasoning boost (10 mins)',
+    description: '1-Week reasoning boost',
     features: [
       '165k Daily Tokens Quota',
       'Unlocks Gemini 3.5 Flash',
       'Fast Processing Speed',
-      '10-Minute Full Access',
+      '1 Week Full Access',
     ],
   },
   {
     id: 'booster',
     name: 'Booster',
-    price: 2,
+    price: 69,
     badge: 'RECOMMENDED',
-    description: 'For mid-size circuit assemblies',
+    description: 'For mid-size circuit assemblies (2 weeks)',
     features: [
       '255k Daily Tokens Quota',
       'Unlocks Gemini 3.5 & 3.6 Flash',
       'Priority Queue Execution',
-      '10-Minute Full Access',
+      '2 Weeks Full Access',
     ],
   },
   {
     id: 'pro',
     name: 'Pro',
-    price: 3,
+    price: 169,
     badge: 'MAX POWER',
-    description: 'Full unconstrained reasoning',
+    description: 'Full unconstrained reasoning (1 month)',
     features: [
       '335k Daily Tokens Quota',
       'Unlocks Gemini 3.7 & 3.8 Flash',
       'Maximum Reasoning Depth',
-      '10-Minute Full Access',
+      '1 Month Full Access',
     ],
   },
 ];
@@ -187,7 +187,7 @@ export function UpgradeModal({ isOpen, onClose, reason }: UpgradeModalProps) {
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Instant Checkout (₹1, ₹2, ₹3)
+                Instant Checkout (₹39, ₹69, ₹169)
               </button>
               <button
                 type="button"
@@ -241,7 +241,9 @@ export function UpgradeModal({ isOpen, onClose, reason }: UpgradeModalProps) {
 
                     <div className="flex items-baseline gap-1.5 mb-5 pb-4 border-b border-zinc-800">
                       <span className="text-3xl font-black text-white tracking-tight">₹{p.price}</span>
-                      <span className="text-zinc-400 text-xs font-normal">/ 10 mins</span>
+                      <span className="text-zinc-400 text-xs font-normal">
+                        {p.id === 'pro' ? '/ 1 month' : p.id === 'booster' ? '/ 2 weeks' : '/ 1 week'}
+                      </span>
                     </div>
 
                     <ul className="flex flex-col gap-2.5 mb-6 text-xs flex-grow">
@@ -273,7 +275,7 @@ export function UpgradeModal({ isOpen, onClose, reason }: UpgradeModalProps) {
                         onClick={(e) => handleInstantUnlock(e, p)}
                         disabled={isActivatingInstant}
                         className="w-full py-1.5 px-3 rounded-lg text-[11px] font-medium text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40 transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                        title="Directly activate plan for 10 minutes"
+                        title={`Directly activate plan (${p.id === 'pro' ? '1 month' : p.id === 'booster' ? '2 weeks' : '1 week'})`}
                       >
                         <Zap size={11} className="text-zinc-400" />
                         <span>Instant Test Unlock</span>

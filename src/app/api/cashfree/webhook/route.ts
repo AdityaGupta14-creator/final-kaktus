@@ -76,6 +76,7 @@ export async function POST(req: Request) {
 
       const { uid, planId } = orderData.data as any;
       const planConfig = getPlanConfig(planId);
+      const userRef = db.collection('users').doc(uid);
 
       // Step 2: Supabase Provisioning (Partial Failure Recovery)
       const { data: existingSub } = await adminSupabase
@@ -90,9 +91,12 @@ export async function POST(req: Request) {
         skipSupabase = true; // Supabase succeeded previously, but Firestore batch failed.
       }
 
-      const userRef = db.collection('users').doc(uid);
       const expiresAt = new Date();
-      expiresAt.setMinutes(expiresAt.getMinutes() + (planConfig.durationMinutes || 10));
+      if (planConfig.id !== 'free') {
+        expiresAt.setDate(expiresAt.getDate() + (planConfig.durationDays || 7));
+      } else {
+        expiresAt.setFullYear(expiresAt.getFullYear() + 100);
+      }
       
       if (!skipSupabase) {
         const userSnap = await userRef.get();

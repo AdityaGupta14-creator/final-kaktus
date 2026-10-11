@@ -1653,7 +1653,7 @@ RULES:
                 className="mt-2.5 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 font-semibold text-xs cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-sm"
               >
                 <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
-                <span>Quota Exceeded • Click to Upgrade Plan (₹1 - ₹3) →</span>
+                <span>Quota Exceeded • Click to Upgrade Plan (₹39 - ₹169) →</span>
               </div>
             )}
 
@@ -1821,11 +1821,11 @@ RULES:
             >
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                <span className="font-bold text-red-200">Quota Limit Reached!</span>
-                <span className="hidden sm:inline text-red-300/80">Messaging locked. Resets in 1 min or upgrade</span>
+                <span className="font-bold text-red-200">Daily Quota Limit Reached!</span>
+                <span className="hidden sm:inline text-red-300/80">Messaging locked. Resets daily at 12:00 AM or upgrade</span>
               </div>
               <span className="font-extrabold text-white bg-red-600 hover:bg-red-500 px-2.5 py-0.5 rounded-full text-[11px] uppercase tracking-wider flex items-center gap-1 shadow-sm">
-                Upgrade ₹1-₹3 →
+                Upgrade ₹39-₹169 →
               </span>
             </div>
           )}
@@ -1864,7 +1864,7 @@ RULES:
                 handleSend();
               }
             }}
-            placeholder={isQuotaReached ? "Quota exhausted. Click here to upgrade plan (₹1 - ₹3)..." : "Message Agent..."}
+            placeholder={isQuotaReached ? "Daily quota exhausted. Click here to upgrade plan (₹39 - ₹169)..." : "Message Agent..."}
             className={`w-full bg-transparent resize-none outline-none min-h-[44px] max-h-[150px] px-2 py-2 text-sm ${isQuotaReached ? 'cursor-pointer placeholder-red-400 font-medium text-red-400' : 'text-gray-200 placeholder-gray-500'}`}
             rows={1}
             readOnly={isProcessing || isQuotaReached}

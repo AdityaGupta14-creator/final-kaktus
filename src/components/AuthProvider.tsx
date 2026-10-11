@@ -74,6 +74,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setPlan(p);
             setPlanExpiresAt(expires);
             localStorage.setItem('kaktus_user_plan', p);
+            if (expires) {
+              localStorage.setItem('kaktus_user_plan_expires_at', expires.toISOString());
+            } else {
+              localStorage.removeItem('kaktus_user_plan_expires_at');
+            }
             localStorage.setItem('kaktus_user_uid', currentUser.uid);
             localStorage.setItem('kaktus_user_email', (currentUser.email || '').toLowerCase().trim());
             setLoading(false);
@@ -110,89 +115,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [pathname, router]);
 
-  // Active check for plan expiration (e.g. 10-minute expiry)
+  // Active check for plan expiration
   useEffect(() => {
     if (!user || plan === 'free' || !planExpiresAt) return;
     const interval = setInterval(() => {
-      if (new Date() > planExpiresAt) {
+      if (new Date() >= planExpiresAt) {
         setPlan('free');
         setPlanExpiresAt(null);
         localStorage.setItem('kaktus_user_plan', 'free');
-        toast.info('Your plan validity has ended (10-minute expiry). Reverted to Free tier.');
+        localStorage.removeItem('kaktus_user_plan_expires_at');
+        toast.info('Your plan validity period has ended. Reverted to Free tier.');
         import('firebase/firestore').then(({ doc, updateDoc }) => {
           updateDoc(doc(db, 'users', user.uid), { plan: 'free', planExpiresAt: null }).catch(console.error);
         });
       }
-    }, 3000);
+    }, 2000);
     return () => clearInterval(interval);
   }, [user, plan, planExpiresAt]);
 
-  // Separate effect for intervals
+  // Separate effect for intervals: Expiry warning & 12:00 AM Midnight Token Reset
   useEffect(() => {
     if (!user) return;
-    
-    let lastRestored = parseInt(localStorage.getItem(`lastTokenReset_${user.uid}`) || '0');
-    if (lastRestored === 0) {
-      lastRestored = Date.now();
-      localStorage.setItem(`lastTokenReset_${user.uid}`, lastRestored.toString());
-    }
-    
+
     let warningGiven = false;
 
     const interval = setInterval(() => {
       const now = Date.now();
       
-      // 1. Expiry & 45s Warning Logic
+      // 1. Expiry Check
       if (planExpiresAt) {
         const expires = planExpiresAt.getTime();
         const diffSeconds = Math.floor((expires - now) / 1000);
 
-        // Auto-downgrade
+        // Auto-downgrade when period ends
         if (diffSeconds <= 0) {
           clearInterval(interval);
           import('firebase/firestore').then(async ({ updateDoc, doc }) => {
-            await updateDoc(doc(db, 'users', user.uid), { plan: 'free' });
+            await updateDoc(doc(db, 'users', user.uid), { plan: 'free', planExpiresAt: null }).catch(console.error);
             setPlan('free');
-            toast.error('Your subscription has expired!', { duration: Infinity });
+            setPlanExpiresAt(null);
+            localStorage.setItem('kaktus_user_plan', 'free');
+            localStorage.removeItem('kaktus_user_plan_expires_at');
+            toast.error('Your subscription period has ended. Returned to Free plan.', { duration: 8000 });
           });
           return;
         }
 
-        // 45 sec warning
-        if (diffSeconds <= 45 && !warningGiven) {
+        // 1-minute warning before final expiry
+        if (diffSeconds <= 60 && !warningGiven) {
           warningGiven = true;
-          toast.error('Attention: Your subscription is expiring in 45 seconds!', {
-            duration: 10000,
+          toast.warning('Attention: Your subscription validity is ending in 1 minute!', {
+            duration: 8000,
             position: 'top-center',
           });
         }
       }
 
-      // 2. 24-Hour Daily Quota (Tokens) Restore Logic
-      if (now - lastRestored >= 24 * 60 * 60 * 1000) {
-        lastRestored = now;
-        localStorage.setItem(`lastTokenReset_${user.uid}`, now.toString());
+      // 2. Midnight (12:00 AM) Token & Quota Reset for ALL plans
+      const nowObj = new Date();
+      const todayKey = `${nowObj.getFullYear()}-${String(nowObj.getMonth() + 1).padStart(2, '0')}-${String(nowObj.getDate()).padStart(2, '0')}`;
+      const lastResetKey = localStorage.getItem(`lastTokenMidnightReset_${user.uid}`);
+      
+      if (lastResetKey !== todayKey) {
+        localStorage.setItem(`lastTokenMidnightReset_${user.uid}`, todayKey);
         
-        let maxRuns = 0;
-        if (plan === 'free') maxRuns = 5;
+        let maxRuns = 5;
         if (plan === 'starter') maxRuns = 10;
         if (plan === 'booster') maxRuns = 20;
         if (plan === 'pro') maxRuns = 50;
 
-        if (maxRuns > 0) {
-          import('firebase/firestore').then(async ({ updateDoc, doc }) => {
-            await updateDoc(doc(db, 'users', user.uid), { proRuns: maxRuns });
-            
-            // Clear local storage token usage to reset the UI token bar
-            localStorage.removeItem(`gemini_key_usage_stats_${user.uid}`);
-            window.dispatchEvent(new Event('geminiUsageUpdated'));
-            
-            toast.success(`Daily Quota Renewed: Your tokens and runs have been refreshed.`, {
-              duration: 10000,
-              position: 'bottom-right'
-            });
+        import('firebase/firestore').then(async ({ updateDoc, doc }) => {
+          await updateDoc(doc(db, 'users', user.uid), { proRuns: maxRuns }).catch(() => {});
+          
+          window.dispatchEvent(new CustomEvent('geminiUsageUpdated', { detail: { resetDate: todayKey } }));
+          
+          toast.success(`Daily Quota Renewed (12:00 AM Reset): Your tokens and runs have been refreshed.`, {
+            duration: 6000,
+            position: 'bottom-right'
           });
-        }
+        });
       }
     }, 1000);
 
