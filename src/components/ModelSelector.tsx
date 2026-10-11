@@ -16,7 +16,6 @@ export interface Model {
 export const FALLBACK_MODELS: Model[] = [
   { name: 'models/gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash Lite', version: '2.5', description: 'Fast and lightweight' },
   { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', version: '2.5', description: 'Balanced performance' },
-  { name: 'models/gemini-3.5-flash-lite', displayName: 'Gemini 3.5 Flash Lite', version: '3.5', description: 'Next-gen fast' },
   { name: 'models/gemini-3.5-flash', displayName: 'Gemini 3.5 Flash', version: '3.5', description: 'High reasoning' },
   { name: 'models/gemini-3.6-flash', displayName: 'Gemini 3.6 Flash', version: '3.6', description: 'Advanced multimodal' },
   { name: 'models/gemini-3.7-flash', displayName: 'Gemini 3.7 Flash', version: '3.7', description: 'State of the art' },
@@ -55,13 +54,15 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
     const p = (currentPlan || 'free').toLowerCase();
     if (p === 'pro' || p === 'super_admin' || p === 'admin') return false;
     if (p === 'booster') {
+      // Booster unlocks up to Gemini 3.6 Flash
       return ['models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
     }
     if (p === 'starter') {
-      return ['models/gemini-3.5-flash', 'models/gemini-3.6-flash', 'models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
+      // Starter unlocks Gemini 3.5 Flash
+      return ['models/gemini-3.6-flash', 'models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
     }
     // Free: only gets Gemini 2.5 Flash Lite & Gemini 2.5 Flash
-    return ['models/gemini-3.5-flash-lite', 'models/gemini-3.5-flash', 'models/gemini-3.6-flash', 'models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
+    return ['models/gemini-3.5-flash', 'models/gemini-3.6-flash', 'models/gemini-3.7-flash', 'models/gemini-3.8-flash'].includes(id);
   };
 
   useEffect(() => {
@@ -84,7 +85,6 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
         const allowedIds = [
           'models/gemini-2.5-flash-lite',
           'models/gemini-2.5-flash',
-          'models/gemini-3.5-flash-lite',
           'models/gemini-3.5-flash',
           'models/gemini-3.6-flash',
           'models/gemini-3.7-flash',

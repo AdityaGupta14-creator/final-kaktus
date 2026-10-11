@@ -116,7 +116,7 @@ export function PricingSection() {
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">25k Tokens Daily</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400 font-medium">Standard Processing Speed</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">Gemini 2.5 Flash / Lite</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">Gemini 2.5 Flash & 2.5 Flash Lite</span></li>
             </ul>
             <button 
               onClick={() => handlePlanClick('free', 'Free', '0')} 
@@ -135,7 +135,7 @@ export function PricingSection() {
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">50k Tokens Quota</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-zinc-300 font-medium">Fast Processing Speed</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">Unlocks 3.5 Flash-Lite</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">Unlocks Gemini 3.5 Flash</span></li>
               <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-zinc-400">15x Reasoning Capacity</span></li>
             </ul>
             <button 

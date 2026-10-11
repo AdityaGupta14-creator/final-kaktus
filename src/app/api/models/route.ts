@@ -14,12 +14,6 @@ const ALL_MODELS = [
     description: 'Balanced performance for electronics prototyping & debugging',
   },
   {
-    name: 'models/gemini-3.5-flash-lite',
-    displayName: 'Gemini 3.5 Flash Lite',
-    version: '3.5',
-    description: 'Next-generation rapid response hardware copilot',
-  },
-  {
     name: 'models/gemini-3.5-flash',
     displayName: 'Gemini 3.5 Flash',
     version: '3.5',

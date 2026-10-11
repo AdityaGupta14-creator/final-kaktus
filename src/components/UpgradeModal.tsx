@@ -31,7 +31,7 @@ export const UPGRADE_PLANS: PlanInfo[] = [
     description: 'Quick reasoning boost (10 mins)',
     features: [
       '50k Tokens Quota (1-min reset)',
-      'Unlocks Gemini 3.5 Flash-Lite',
+      'Unlocks Gemini 3.5 Flash',
       'Fast Processing Speed',
       '10-Minute Full Access',
     ],

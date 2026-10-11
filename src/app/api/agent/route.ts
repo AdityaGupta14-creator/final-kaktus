@@ -84,25 +84,21 @@ export async function POST(request: Request) {
   let primaryModel = 'models/gemini-2.0-flash';
   if (rawModel.includes('flash-lite') || rawModel.includes('lite')) {
     primaryModel = 'models/gemini-2.0-flash-lite';
-  } else if (rawModel.includes('3.7') || rawModel.includes('3.8') || rawModel.includes('pro')) {
-    primaryModel = 'models/gemini-2.0-flash';
-  } else if (rawModel.includes('flash') || rawModel.includes('3.5') || rawModel.includes('3.6') || rawModel.includes('2.5')) {
+  } else {
     primaryModel = 'models/gemini-2.0-flash';
   }
 
-  // Real, active Google Generative Language models with separate quota buckets
+  // Only real, active, supported Google Generative Language models
   const candidateModels = [
     primaryModel,
     'models/gemini-2.0-flash',
-    'models/gemini-1.5-flash',
-    'models/gemini-1.5-flash-8b',
     'models/gemini-2.0-flash-lite',
-    'models/gemini-1.5-pro',
   ];
   const uniqueCandidateModels = Array.from(new Set(candidateModels));
 
-  let lastResponse: Response | null = null;
-  let lastResult: GeminiResponse = {};
+  let lastQuotaError: { message: string; status: number } | null = null;
+  let lastAuthError: { message: string; status: number } | null = null;
+  let lastGeneralError: { message: string; status: number } | null = null;
 
   // Try candidate keys in pool
   for (const activeApiKey of candidateKeys) {
@@ -126,10 +122,8 @@ export async function POST(request: Request) {
         });
 
         const result: GeminiResponse = await upstream.json().catch((): GeminiResponse => ({}));
-        lastResponse = upstream;
-        lastResult = result;
 
-        // If model not found (404), try next active candidate
+        // If model not found (404), skip it immediately without overwriting last error
         if (upstream.status === 404) {
           continue;
         }
@@ -152,6 +146,10 @@ export async function POST(request: Request) {
 
         if (isQuotaHit) {
           console.warn(`[AgentRoute] Model ${modelToTry} quota hit on key ...${activeApiKey.slice(-4)}: ${result.error?.message}`);
+          lastQuotaError = {
+            message: result.error?.message || 'You exceeded your current quota, please check your plan and billing details.',
+            status: 429,
+          };
           if (errMsg.includes('exceeded your current quota') || errMsg.includes('billing')) {
             // Entire key billing quota exhausted, switch to next key immediately
             keyQuotaBilledExhausted = true;
@@ -160,10 +158,21 @@ export async function POST(request: Request) {
           continue;
         }
 
-        // If auth failure on this key (401 / 403), break to try next key in pool
+        // If auth failure on this key (401 / 403), record and break to try next key in pool
         if (upstream.status === 401 || (upstream.status === 403 && (errMsg.includes('api key') || errMsg.includes('credential')))) {
           console.warn(`[AgentRoute] Key ending in ${activeApiKey.slice(-4)} failed with auth error ${upstream.status}. Trying next key...`);
+          lastAuthError = {
+            message: result.error?.message || 'Invalid Gemini API key or credentials.',
+            status: upstream.status,
+          };
           break;
+        }
+
+        if (result.error?.message) {
+          lastGeneralError = {
+            message: result.error.message,
+            status: upstream.status,
+          };
         }
       } catch (fetchErr) {
         console.warn('[AgentRoute] Upstream fetch error for model:', modelToTry, fetchErr);
@@ -171,9 +180,12 @@ export async function POST(request: Request) {
     }
   }
 
+  // Prioritize returning quota error if all keys were exhausted so UI can trigger plan upgrade
+  const finalError = lastQuotaError || lastGeneralError || lastAuthError;
+
   return Response.json({
-    error: lastResult?.error?.message || 'Gemini request failed.',
-  }, { status: lastResponse?.status || 502 });
+    error: finalError?.message || 'Gemini request failed. Please check your keys or quota.',
+  }, { status: finalError?.status || 502 });
 }
 
 export async function GET() {
