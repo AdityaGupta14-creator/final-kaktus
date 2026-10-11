@@ -12,6 +12,7 @@ import type { TutorialData } from '@/components/CircuitCanvas';
 import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Settings, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, Download } from 'lucide-react';
 import { FlashPanel } from '@/components/FlashPanel';
 import { PdfGenerator } from '@/components/PdfGenerator';
+import { UpgradeModal } from '@/components/UpgradeModal';
 import { extractProjectPlanResponse } from '@/lib/agent/protocol';
 import type { PlanBuildAction, ProjectPlan, ResearchSource } from '@/lib/agent/protocol';
 import { buildChatProjectMemory, insertStepsAfter, mergeCircuitSteps } from '@/lib/agent/workspace';
@@ -123,6 +124,7 @@ export default function Home() {
   const [lastSaved, setLastSaved] = useState<string>('');
   const [totalTokens, setTotalTokens] = useState(0);
   const [isQuotaModalDismissed, setIsQuotaModalDismissed] = useState(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [isPdfGeneratorOpen, setIsPdfGeneratorOpen] = useState(false);
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -607,7 +609,7 @@ export default function Home() {
         <div className="bg-orange-500/10 text-orange-400 border-b border-orange-500/20 px-4 py-1.5 text-[12px] flex items-center justify-center gap-2 flex-shrink-0">
           <AlertTriangle size={14} />
           Your {plan.toUpperCase()} plan is ending soon. Renew to continue benefits.
-          <Link href="/#pricing" className="underline font-medium hover:text-orange-300 ml-2">Renew now</Link>
+          <button onClick={() => setIsUpgradeModalOpen(true)} className="underline font-medium hover:text-orange-300 ml-2 cursor-pointer bg-transparent border-none p-0 text-[12px]">Renew now</button>
         </div>
       )}
       {/* Top Navbar */}
@@ -780,9 +782,12 @@ export default function Home() {
               onOpenImplementationPlan={handleOpenImplementationPlan}
               pendingPlanAction={pendingPlanAction}
               onPlanActionConsumed={handlePlanActionConsumed}
-              onQuotaReached={() => setIsQuotaModalDismissed(false)}
+              onQuotaReached={() => {
+                setIsQuotaModalDismissed(false);
+                setIsUpgradeModalOpen(true);
+              }}
               isQuotaReached={totalTokens >= tokenLimit}
-              modelSelectorNode={<ModelSelector apiKey={apiKeys[0] || ''} selectedModel={selectedModel} onModelChange={setSelectedModel} onAvailableModelsChange={setAvailableModels} variant="minimal" />}
+              modelSelectorNode={<ModelSelector apiKey={apiKeys[0] || ''} selectedModel={selectedModel} onModelChange={setSelectedModel} onAvailableModelsChange={setAvailableModels} onUpgradeClick={() => setIsUpgradeModalOpen(true)} variant="minimal" />}
             />}
           </div>
         </div>
@@ -938,57 +943,15 @@ export default function Home() {
           )}
         </AnimatePresence>
 
-        {/* Token Limit Modal */}
-        <AnimatePresence>
-          {totalTokens >= tokenLimit && !isQuotaModalDismissed && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#111111]/80 backdrop-blur-sm"
-            >
-              <motion.div 
-                initial={{ scale: 0.95, opacity: 0, y: 10 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                className="relative bg-[#1c1c1c] rounded-2xl p-8 max-w-md w-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col items-center text-center"
-              >
-                {/* Modal Stitching */}
-                <div className="absolute inset-2 rounded-xl border border-dashed border-gray-700/60 pointer-events-none" />
-                
-                <button
-                  onClick={() => setIsQuotaModalDismissed(true)}
-                  className="absolute top-5 right-5 text-gray-600 hover:text-gray-400 transition-colors z-10"
-                >
-                  <X size={16} strokeWidth={2.5} />
-                </button>
-                
-                <div className="relative w-16 h-16 bg-[#111] shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] rounded-full flex items-center justify-center mb-5 mt-2">
-                  {/* Icon Stitching */}
-                  <div className="absolute inset-1.5 rounded-full border border-dashed border-red-900/40 pointer-events-none" />
-                  <ShieldAlert className="w-6 h-6 text-red-500/90 z-10" strokeWidth={1.5} />
-                </div>
-                
-                <h2 className="text-[22px] font-semibold text-[#f5f4e6] mb-3 tracking-wide">Daily Quota Reached</h2>
-                <p className="text-[#9ca3af] mb-8 text-[15px] leading-relaxed px-2">
-                  You have exceeded your {tokenLimit / 1000}k tokens limit for today.<br/>
-                  Please upgrade your plan to continue chatting,<br/> building, and simulating.
-                </p>
-                
-                <button
-                  onClick={() => { window.location.href = '/#pricing'; }}
-                  className="relative w-full py-3.5 px-4 bg-[#2b64d2] hover:bg-[#2353b3] text-white rounded-xl font-medium transition-all shadow-[0_4px_14px_0_rgba(43,100,210,0.39)] flex items-center justify-center gap-2 group overflow-hidden"
-                >
-                  {/* Button Stitching */}
-                  <div className="absolute inset-[3px] rounded-lg border border-dashed border-white/20 pointer-events-none transition-colors group-hover:border-white/30" />
-                  <span className="z-10 flex items-center gap-2 tracking-wide text-[15px]">
-                    Upgrade Plan to Continue
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-x-1"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                  </span>
-                </button>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* In-IDE Upgrade & Payment Modal */}
+        <UpgradeModal
+          isOpen={isUpgradeModalOpen || (totalTokens >= tokenLimit && !isQuotaModalDismissed)}
+          onClose={() => {
+            setIsUpgradeModalOpen(false);
+            setIsQuotaModalDismissed(true);
+          }}
+          reason={totalTokens >= tokenLimit ? `You have exceeded your ${tokenLimit / 1000}k tokens limit. Upgrade to continue building and simulating.` : undefined}
+        />
 
         <PdfGenerator
           isOpen={isPdfGeneratorOpen}

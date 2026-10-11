@@ -29,15 +29,27 @@ interface ModelSelectorProps {
   onModelChange: (model: string) => void;
   onAvailableModelsChange?: (models: Array<Pick<Model, 'name' | 'displayName'>>) => void;
   variant?: 'default' | 'minimal';
+  onUpgradeClick?: () => void;
 }
 
-export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailableModelsChange, variant = 'default' }: ModelSelectorProps) {
+export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailableModelsChange, variant = 'default', onUpgradeClick }: ModelSelectorProps) {
   const [models, setModels] = useState<Model[]>(FALLBACK_MODELS);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { plan } = useAuth();
   const router = useRouter();
+
+  const handleUpgradeTrigger = () => {
+    setIsOpen(false);
+    if (onUpgradeClick) {
+      onUpgradeClick();
+    } else if (typeof window !== 'undefined') {
+      window.location.href = '/#pricing';
+    } else {
+      router.push('/#pricing');
+    }
+  };
 
   const isModelLocked = (id: string, currentPlan: string) => {
     const p = (currentPlan || 'free').toLowerCase();
@@ -142,10 +154,10 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
       </button>
 
       {isOpen && models.length > 0 && (
-        <div className="absolute bottom-full left-0 mb-2 w-72 bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
-          <div className="px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-[#2a2a2a] flex items-center justify-between">
+        <div className="absolute bottom-full left-0 mb-2 w-72 bg-[#141417] border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50">
+          <div className="px-3 py-2 text-[11px] font-semibold text-zinc-500 uppercase tracking-wider border-b border-zinc-800 flex items-center justify-between">
             <span>Model</span>
-            <span className="text-[10px] text-gray-400 uppercase font-mono">{plan || 'FREE'} PLAN</span>
+            <span className="text-[10px] text-zinc-400 uppercase font-mono">{plan || 'FREE'} PLAN</span>
           </div>
           <div className="flex flex-col p-1.5 max-h-[320px] overflow-y-auto custom-scrollbar">
             {models.map((model) => {
@@ -156,8 +168,7 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
                   key={model.name}
                   onClick={() => {
                     if (locked) {
-                      setIsOpen(false);
-                      router.push('/#pricing');
+                      handleUpgradeTrigger();
                     } else {
                       onModelChange(model.name);
                       setIsOpen(false);
@@ -165,14 +176,14 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
                   }}
                   className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition-colors cursor-pointer select-none ${
                     isActive && !locked 
-                      ? 'bg-[#2a2a2a] text-white' 
+                      ? 'bg-zinc-800 text-white' 
                       : locked
-                      ? 'text-gray-400 hover:bg-[#222]'
-                      : 'text-gray-300 hover:bg-[#222] hover:text-white'
+                      ? 'text-zinc-400 hover:bg-zinc-900/80'
+                      : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
-                    <span className={`font-medium truncate ${locked ? 'text-gray-400' : 'text-gray-200'}`}>
+                    <span className={`font-medium truncate ${locked ? 'text-zinc-400' : 'text-zinc-200'}`}>
                       {getCleanLabel(model)}
                     </span>
                   </div>
@@ -181,15 +192,14 @@ export function ModelSelector({ apiKey, selectedModel, onModelChange, onAvailabl
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setIsOpen(false);
-                        router.push('/#pricing');
+                        handleUpgradeTrigger();
                       }}
-                      className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 hover:text-orange-300 border border-orange-500/30 text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 flex-shrink-0"
+                      className="bg-zinc-800 hover:bg-white text-zinc-200 hover:text-black border border-zinc-700 hover:border-white text-[10px] px-2.5 py-0.5 rounded-md font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 flex-shrink-0"
                     >
                       <Lock size={10} /> Upgrade
                     </button>
                   ) : (
-                    isActive && <ChevronRight size={14} className="opacity-100 flex-shrink-0 text-blue-400" />
+                    isActive && <ChevronRight size={14} className="opacity-100 flex-shrink-0 text-zinc-400" />
                   )}
                 </div>
               );

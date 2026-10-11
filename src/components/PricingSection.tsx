@@ -98,50 +98,50 @@ export function PricingSection() {
   };
 
   return (
-    <section id="pricing" className="w-full py-32 px-6 md:px-12 bg-white border-t border-gray-100">
+    <section id="pricing" className="w-full py-32 px-6 md:px-12 bg-[#09090b] text-white border-t border-zinc-900">
       <div className="max-w-7xl mx-auto flex flex-col items-center">
         <FadeIn className="text-center mb-20 max-w-3xl">
-          <h2 className="text-4xl md:text-6xl font-bold tracking-tight mb-6">Simple, transparent pricing.</h2>
-          <p className="text-xl text-gray-500 leading-relaxed">
+          <h2 className="text-4xl md:text-6xl font-bold tracking-tight mb-6 text-white">Simple, transparent pricing.</h2>
+          <p className="text-xl text-zinc-400 leading-relaxed">
             Start building for free. Upgrade for advanced reasoning and complex projects using our Pro models.
           </p>
         </FadeIn>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 w-full max-w-6xl">
           {/* Free Plan */}
-          <FadeIn delay={0.1} className="flex flex-col p-8 bg-gray-50 rounded-3xl border border-gray-100 shadow-sm relative">
-            <h3 className="text-2xl font-bold mb-2">Free</h3>
-            <p className="text-gray-500 mb-6">Perfect for learning and simple circuits.</p>
-            <div className="text-5xl font-black mb-8">₹0<span className="text-lg text-gray-400 font-normal">/mo</span></div>
+          <FadeIn delay={0.1} className="flex flex-col p-8 bg-[#111114] rounded-3xl border border-zinc-850 shadow-sm relative">
+            <h3 className="text-2xl font-bold mb-2 text-white">Free</h3>
+            <p className="text-zinc-400 mb-6 text-sm">Perfect for learning and simple circuits.</p>
+            <div className="text-5xl font-black mb-8 text-white">₹0<span className="text-lg text-zinc-500 font-normal">/mo</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">25k Tokens Daily</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Standard Processing Speed</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">Gemini 2.5 Flash / Lite</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">25k Tokens Daily</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400 font-medium">Standard Processing Speed</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">Gemini 2.5 Flash / Lite</span></li>
             </ul>
             <button 
               onClick={() => handlePlanClick('free', 'Free', '0')} 
-              className="w-full py-4 text-center rounded-xl bg-gray-200 text-gray-800 font-bold hover:bg-gray-300 transition-colors"
+              className="w-full py-4 text-center rounded-xl bg-zinc-800 text-zinc-300 font-bold hover:bg-zinc-700 transition-colors"
             >
               Current Plan
             </button>
           </FadeIn>
 
           {/* Starter Plan */}
-          <FadeIn delay={0.2} className="flex flex-col p-8 bg-white rounded-3xl border-2 border-green-500 shadow-xl relative z-10">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-green-500 text-white px-4 py-1 rounded-full text-xs font-bold tracking-wide">POPULAR</div>
-            <h3 className="text-2xl font-bold mb-2">Starter</h3>
-            <p className="text-gray-500 mb-6">Unlock better reasoning (10 mins).</p>
-            <div className="text-5xl font-black mb-8">₹1<span className="text-lg text-gray-400 font-normal">/plan</span></div>
+          <FadeIn delay={0.2} className="flex flex-col p-8 bg-[#16161a] rounded-3xl border-2 border-zinc-500 shadow-2xl relative z-10">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-800 border border-zinc-600 text-zinc-200 px-4 py-1 rounded-full text-xs font-mono font-bold tracking-wider">POPULAR</div>
+            <h3 className="text-2xl font-bold mb-2 text-white">Starter</h3>
+            <p className="text-zinc-400 mb-6 text-sm">Unlock better reasoning (10 mins).</p>
+            <div className="text-5xl font-black mb-8 text-white">₹1<span className="text-lg text-zinc-500 font-normal">/plan</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">50k Tokens Quota</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Fast Processing Speed</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-blue-600 font-bold">Unlocks 3.5 Flash-Lite</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">15x Reasoning Capacity</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">50k Tokens Quota</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-zinc-300 font-medium">Fast Processing Speed</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-white font-bold">Unlocks 3.5 Flash-Lite</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-300 flex-shrink-0" /><span className="text-zinc-400">15x Reasoning Capacity</span></li>
             </ul>
             <button 
               disabled={loadingPlanId !== null}
               onClick={() => handlePlanClick('starter', 'Starter', '1')} 
-              className="w-full py-4 text-center rounded-xl bg-green-500 text-white font-bold hover:bg-green-600 transition-colors shadow-md flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
+              className="w-full py-4 text-center rounded-xl bg-white hover:bg-zinc-200 text-black font-bold transition-colors shadow-md flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
             >
               {loadingPlanId === 'starter' ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Opening Checkout...</>
@@ -152,20 +152,20 @@ export function PricingSection() {
           </FadeIn>
 
           {/* Booster Plan */}
-          <FadeIn delay={0.3} className="flex flex-col p-8 bg-gray-50 rounded-3xl border border-gray-100 shadow-sm relative">
-            <h3 className="text-2xl font-bold mb-2">Booster</h3>
-            <p className="text-gray-500 mb-6">For your mid-term projects (10 mins).</p>
-            <div className="text-5xl font-black mb-8">₹2<span className="text-lg text-gray-400 font-normal">/plan</span></div>
+          <FadeIn delay={0.3} className="flex flex-col p-8 bg-[#111114] rounded-3xl border border-zinc-800/90 hover:border-zinc-700 shadow-sm relative">
+            <h3 className="text-2xl font-bold mb-2 text-white">Booster</h3>
+            <p className="text-zinc-400 mb-6 text-sm">For your mid-term projects (10 mins).</p>
+            <div className="text-5xl font-black mb-8 text-white">₹2<span className="text-lg text-zinc-500 font-normal">/plan</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">75k Tokens Quota</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Priority Processing Speed</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-blue-600 font-bold">Unlocks 3.5 & 3.6 Flash</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">30x Reasoning Capacity</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">75k Tokens Quota</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400 font-medium">Priority Processing Speed</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">Unlocks 3.5 & 3.6 Flash</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">30x Reasoning Capacity</span></li>
             </ul>
             <button 
               disabled={loadingPlanId !== null}
               onClick={() => handlePlanClick('booster', 'Booster', '2')} 
-              className="w-full py-4 text-center rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
+              className="w-full py-4 text-center rounded-xl bg-white hover:bg-zinc-200 text-black font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
             >
               {loadingPlanId === 'booster' ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Opening Checkout...</>
@@ -176,20 +176,20 @@ export function PricingSection() {
           </FadeIn>
 
           {/* Pro Plan */}
-          <FadeIn delay={0.4} className="flex flex-col p-8 bg-gray-50 rounded-3xl border border-gray-100 shadow-sm relative">
-            <h3 className="text-2xl font-bold mb-2">Pro</h3>
-            <p className="text-gray-500 mb-6">For serious builders and engineers (10 mins).</p>
-            <div className="text-5xl font-black mb-8">₹3<span className="text-lg text-gray-400 font-normal">/plan</span></div>
+          <FadeIn delay={0.4} className="flex flex-col p-8 bg-[#111114] rounded-3xl border border-zinc-800/90 hover:border-zinc-700 shadow-sm relative">
+            <h3 className="text-2xl font-bold mb-2 text-white">Pro</h3>
+            <p className="text-zinc-400 mb-6 text-sm">For serious builders and engineers (10 mins).</p>
+            <div className="text-5xl font-black mb-8 text-white">₹3<span className="text-lg text-zinc-500 font-normal">/plan</span></div>
             <ul className="flex flex-col gap-4 mb-8 flex-grow text-sm">
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-bold text-black">100k Tokens Quota</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600 font-medium">Max Processing Speed</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-blue-600 font-bold">Unlocks 3.7 & 3.8 Flash</span></li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" /><span className="text-gray-600">100x Reasoning Capacity</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">100k Tokens Quota</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400 font-medium">Max Processing Speed</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-200 font-bold">Unlocks 3.7 & 3.8 Flash</span></li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-zinc-400 flex-shrink-0" /><span className="text-zinc-400">100x Reasoning Capacity</span></li>
             </ul>
             <button 
               disabled={loadingPlanId !== null}
               onClick={() => handlePlanClick('pro', 'Pro', '3')} 
-              className="w-full py-4 text-center rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
+              className="w-full py-4 text-center rounded-xl bg-white hover:bg-zinc-200 text-black font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
             >
               {loadingPlanId === 'pro' ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Opening Checkout...</>
@@ -202,16 +202,16 @@ export function PricingSection() {
 
         {/* Enterprise / Custom Plan */}
         <FadeIn delay={0.5} className="mt-8 w-full max-w-6xl">
-          <div className="bg-gradient-to-r from-gray-900 to-black rounded-3xl p-8 md:p-12 flex flex-col md:flex-row items-center justify-between text-white shadow-2xl">
+          <div className="bg-[#111114] border border-zinc-800 rounded-3xl p-8 md:p-12 flex flex-col md:flex-row items-center justify-between text-white shadow-2xl">
             <div className="mb-6 md:mb-0 text-center md:text-left">
               <h3 className="text-3xl font-bold mb-2">Need Custom Tokens?</h3>
-              <p className="text-gray-400 max-w-xl">
+              <p className="text-zinc-400 max-w-xl">
                 Require massive token limits, custom enterprise models, or team API access? Contact our admin to get a personalized pricing plan tailored for your heavy workloads.
               </p>
             </div>
             <a 
               href="mailto:admin@kaktus.com?subject=Custom Enterprise Pricing Inquiry" 
-              className="bg-white text-black hover:bg-gray-200 font-bold py-4 px-8 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 shadow-xl whitespace-nowrap"
+              className="bg-white text-black hover:bg-zinc-200 font-bold py-4 px-8 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 shadow-xl whitespace-nowrap cursor-pointer"
             >
               Contact Admin
             </a>
@@ -230,45 +230,45 @@ export function PricingSection() {
             />
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="relative w-full max-w-md bg-white rounded-3xl p-6 md:p-8 shadow-2xl flex flex-col overflow-hidden"
+              className="relative w-full max-w-md bg-[#111114] border border-zinc-800 rounded-3xl p-6 md:p-8 shadow-[0_25px_60px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden text-white"
             >
-              <button onClick={() => setSelectedPlan(null)} className="absolute top-4 right-4 text-gray-400 hover:text-black">
-                <X size={24} />
+              <button onClick={() => setSelectedPlan(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors cursor-pointer">
+                <X size={20} />
               </button>
               
-              <h2 className="text-2xl font-bold mb-2 text-center text-black">Complete Payment</h2>
-              <p className="text-gray-500 text-center mb-6">Plan: {selectedPlan.name} (₹{selectedPlan.price})</p>
+              <h2 className="text-2xl font-bold mb-2 text-center text-white">Complete Payment</h2>
+              <p className="text-zinc-400 text-center mb-6 text-sm">Plan: {selectedPlan.name} (₹{selectedPlan.price})</p>
 
-              <div className="flex flex-col items-center bg-gray-50 p-6 rounded-2xl border border-gray-100 mb-6">
-                <p className="text-sm text-gray-500 mb-2 font-medium uppercase tracking-wider">Total Amount</p>
-                <div className="text-5xl font-black text-black">₹{selectedPlan.price}</div>
+              <div className="flex flex-col items-center bg-[#16161a] p-6 rounded-2xl border border-zinc-800 mb-6">
+                <p className="text-xs text-zinc-400 mb-2 font-medium uppercase tracking-wider">Total Amount</p>
+                <div className="text-5xl font-black text-white">₹{selectedPlan.price}</div>
               </div>
 
               {!user ? (
                 <div className="flex flex-col gap-2 mt-2">
-                  <p className="text-sm text-gray-600 text-center mb-2">You must be logged in to proceed with payment.</p>
+                  <p className="text-sm text-zinc-400 text-center mb-2">You must be logged in to proceed with payment.</p>
                   <button 
                     onClick={() => router.push('/login?redirect=' + encodeURIComponent('/#pricing'))}
-                    className="w-full bg-gray-900 hover:bg-black text-white font-bold py-3.5 rounded-xl transition-all duration-300 ease-in-out hover:scale-[1.02] active:scale-[0.98] shadow-md flex items-center justify-center"
+                    className="w-full bg-white hover:bg-zinc-200 text-black font-bold py-3.5 rounded-xl transition-all shadow-md flex items-center justify-center cursor-pointer"
                   >
                     Log In to Continue
                   </button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-4 mt-2">
-                  {error && <p className="text-red-600 text-sm text-center bg-red-50 p-3 rounded-lg border border-red-200">{error}</p>}
+                  {error && <p className="text-zinc-300 text-xs text-center bg-zinc-900 p-3 rounded-lg border border-zinc-800">{error}</p>}
                   <button 
                     onClick={() => handlePlanClick(selectedPlan.id, selectedPlan.name, selectedPlan.price)}
                     disabled={loadingPlanId !== null}
-                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl transition-all duration-300 ease-in-out shadow-lg flex items-center justify-center text-lg gap-2 cursor-pointer"
+                    className="w-full bg-white hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-black font-bold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center text-sm gap-2 cursor-pointer"
                   >
                     {loadingPlanId !== null ? (
                       <><Loader2 className="w-5 h-5 animate-spin" /> Opening Gateway...</>
                     ) : (
-                      'Pay Now with Cashfree'
+                      `Pay ₹${selectedPlan.price} with Cashfree`
                     )}
                   </button>
-                  <p className="text-xs text-gray-400 text-center mt-1">Payment will securely open in a popup.</p>
+                  <p className="text-xs text-zinc-500 text-center mt-1">Payment will securely open in Cashfree checkout.</p>
                 </div>
               )}
             </motion.div>
