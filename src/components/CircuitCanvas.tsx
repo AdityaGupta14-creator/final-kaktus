@@ -842,8 +842,12 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
           path = `${makeSegment({ x: x1, y: y1 }, breadboardFrom, idx)} ${makeSegment(breadboardTo, { x: x2, y: y2 }, idx + 1)}`;
         }
 
+        const wireId = (wire.id && !paths.some(p => p.id === wire.id))
+          ? wire.id
+          : `wire-${wireSlotIndex}-${fromId}:${fromPin}-${toId}:${toPin}-${idx}`;
+
         paths.push({
-          id: `wire-${wireSlotIndex}`,
+          id: wireId,
           path,
           color: wire.color || '#888',
           fromX: x1, fromY: y1, fromPin: fromPin,
