@@ -25,7 +25,7 @@ function initFirebaseAdmin(): { app: App; auth: Auth; db: Firestore } {
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
   const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim();
 
-  if (rawServiceAccount) {
+  if (rawServiceAccount && !rawServiceAccount.includes('[SENSITIVE]')) {
     try {
       let parsed: any;
       // 1. Check if it is a JSON string or base64 first
