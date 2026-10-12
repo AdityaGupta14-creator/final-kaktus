@@ -193,7 +193,20 @@ export async function POST(request: Request) {
         if (Array.isArray(chatData)) {
           for (let index = 0; index < chatData.length; index++) {
             const msg = chatData[index];
-            const metadata = msg.metadata || {};
+            const metadata: Record<string, any> = {
+              cleanText: msg.cleanText,
+              createdAt: msg.createdAt,
+              commands: msg.commands,
+              tutorialData: msg.tutorialData,
+              workActions: msg.workActions,
+              workTimeMs: msg.workTimeMs,
+              optionsBlock: msg.optionsBlock,
+              nextStepsBlock: msg.nextStepsBlock,
+              sources: msg.sources,
+              phasePlan: msg.phasePlan,
+              phaseIndex: msg.phaseIndex,
+              ...(msg.metadata || {})
+            };
 
             // Upload binary attachments before touching the database
             if (msg.imageAttachments && Array.isArray(msg.imageAttachments)) {

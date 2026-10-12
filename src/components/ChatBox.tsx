@@ -149,6 +149,7 @@ interface ChatBoxProps {
   modelSelectorNode?: React.ReactNode;
   onQuotaReached?: () => void;
   isQuotaReached?: boolean;
+  onMessagesChange?: (messages: Message[]) => void;
 }
 
 
@@ -775,7 +776,7 @@ function printResponseAsPdf(content: string, title: string) {
 }
 
 // --- Main Component ---
-export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, onExecuteCommand, onUpdateCircuit, onStepChange, currentStep, totalSteps, circuitData, allTabs, projectMemory, activeTabId, targetWorkspaceTabId, sessionId, sessionTitle, sessions, onNewChat, onSelectSession, onUpdateSessionTitle, onDeleteSession, onOpenImplementationPlan, pendingPlanAction, onPlanActionConsumed, modelSelectorNode, onQuotaReached, isQuotaReached }: ChatBoxProps) {
+export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, onExecuteCommand, onUpdateCircuit, onStepChange, currentStep, totalSteps, circuitData, allTabs, projectMemory, activeTabId, targetWorkspaceTabId, sessionId, sessionTitle, sessions, onNewChat, onSelectSession, onUpdateSessionTitle, onDeleteSession, onOpenImplementationPlan, pendingPlanAction, onPlanActionConsumed, modelSelectorNode, onQuotaReached, isQuotaReached, onMessagesChange }: ChatBoxProps) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatReady, setChatReady] = useState(false);
@@ -785,7 +786,8 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
   useEffect(() => {
     queueMicrotask(() => {
       try {
-        const saved = localStorage.getItem(chatSessionKey(sessionId, user?.uid));
+        const saved = localStorage.getItem(chatSessionKey(sessionId, user?.uid))
+          || (user?.uid ? localStorage.getItem(chatSessionKey(sessionId, 'local')) : null);
         if (saved) {
           const parsed: unknown = JSON.parse(saved);
           if (Array.isArray(parsed)) {
@@ -793,12 +795,27 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
               !!message && typeof message === 'object' &&
               ((message as Message).role === 'user' || (message as Message).role === 'assistant') &&
               typeof (message as Message).content === 'string'
-            ).map(message => ({
-              ...message,
-              imageAttachments: Array.isArray(message.imageAttachments)
-                ? message.imageAttachments.filter(isImageAttachment).slice(0, MAX_IMAGE_ATTACHMENTS)
-                : undefined,
-            }));
+            ).map(message => {
+              const content = (message as Message).content;
+              const role = (message as Message).role;
+              let clean = (message as Message).cleanText;
+              if (!clean && typeof content === 'string') {
+                if (role === 'user') {
+                  clean = content;
+                } else {
+                  clean = content.replace(/<tutorial>[\s\S]*?<\/tutorial>/gi, '').replace(/<cmd[\s>][\s\S]*?<\/cmd>/gi, '').trim();
+                  if (!clean) clean = 'Updated the circuit design.';
+                }
+              }
+              return {
+                ...message,
+                cleanText: clean || content,
+                createdAt: (message as Message).createdAt || Date.now(),
+                imageAttachments: Array.isArray((message as Message).imageAttachments)
+                  ? (message as Message).imageAttachments!.filter(isImageAttachment).slice(0, MAX_IMAGE_ATTACHMENTS)
+                  : undefined,
+              };
+            });
             const recoveredMessages = recoverPersistedProjectPlans(validMessages);
             setMessages(recoveredMessages.map(message => {
               if (message.role !== 'assistant' || !message.implementationPlan) return message;
@@ -824,9 +841,12 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
 
   useEffect(() => {
     if (chatReady) {
-      try { localStorage.setItem(chatSessionKey(sessionId, user?.uid), JSON.stringify(messages)); } catch { /* Keep the chat usable if storage is full. */ }
+      try {
+        localStorage.setItem(chatSessionKey(sessionId, user?.uid), JSON.stringify(messages));
+      } catch { /* Keep the chat usable if storage is full. */ }
+      onMessagesChange?.(messages);
     }
-  }, [chatReady, messages, sessionId]);
+  }, [chatReady, messages, sessionId, user?.uid, onMessagesChange]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1531,67 +1551,71 @@ RULES:
                   <figcaption className="mt-1 max-w-56 truncate text-[10px] text-gray-500">{image.name}</figcaption>
                 </figure>
               ))}
-              {msg.cleanText && (
-                <div className={`leading-relaxed ${msg.role === 'user' ? 'whitespace-pre-wrap' : ''}`}>
-                  {msg.role === 'user' ? (
-                    msg.cleanText
-                  ) : (
-                    <ReactMarkdown 
-                      remarkPlugins={[remarkGfm]}
-                      components={{
+              {(() => {
+                const displayText = msg.cleanText || (typeof msg.content === 'string' ? msg.content.replace(/<tutorial>[\s\S]*?<\/tutorial>/gi, '').replace(/<cmd[\s>][\s\S]*?<\/cmd>/gi, '').trim() : '') || msg.content;
+                if (!displayText) return null;
+                return (
+                  <div className={`leading-relaxed ${msg.role === 'user' ? 'whitespace-pre-wrap' : ''}`}>
+                    {msg.role === 'user' ? (
+                      displayText
+                    ) : (
+                      <ReactMarkdown 
+                        remarkPlugins={[remarkGfm]}
+                        components={{
 
-                        code: ({node, inline, className, children, ...props}: any) => {
-                          const match = /language-(\w+)/.exec(className || '');
-                          if (!inline && match) {
-                            return (
-                              <div className="relative my-4 rounded-xl overflow-hidden border border-gray-700 bg-[#0d0d0d] shadow-lg">
-                                <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
-                                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">{match[1]}</span>
-                                  <button 
-                                    onClick={(e) => {
-                                      navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
-                                      const btn = e.currentTarget;
-                                      const oldHtml = btn.innerHTML;
-                                      btn.innerHTML = '<span class="text-[10px] text-green-400">Copied!</span>';
-                                      setTimeout(() => btn.innerHTML = oldHtml, 2000);
-                                    }} 
-                                    className="text-gray-500 hover:text-white transition-colors flex items-center gap-1"
-                                    title="Copy code"
-                                  >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                    <span className="text-[10px]">Copy</span>
-                                  </button>
+                          code: ({node, inline, className, children, ...props}: any) => {
+                            const match = /language-(\w+)/.exec(className || '');
+                            if (!inline && match) {
+                              return (
+                                <div className="relative my-4 rounded-xl overflow-hidden border border-gray-700 bg-[#0d0d0d] shadow-lg">
+                                  <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
+                                    <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">{match[1]}</span>
+                                    <button 
+                                      onClick={(e) => {
+                                        navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
+                                        const btn = e.currentTarget;
+                                        const oldHtml = btn.innerHTML;
+                                        btn.innerHTML = '<span class="text-[10px] text-green-400">Copied!</span>';
+                                        setTimeout(() => btn.innerHTML = oldHtml, 2000);
+                                      }} 
+                                      className="text-gray-500 hover:text-white transition-colors flex items-center gap-1"
+                                      title="Copy code"
+                                    >
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                      <span className="text-[10px]">Copy</span>
+                                    </button>
+                                  </div>
+                                  <pre className="p-4 overflow-x-auto text-[12px] leading-relaxed">
+                                    <code className={className} {...props}>{children}</code>
+                                  </pre>
                                 </div>
-                                <pre className="p-4 overflow-x-auto text-[12px] leading-relaxed">
-                                  <code className={className} {...props}>{children}</code>
-                                </pre>
-                              </div>
-                            );
-                          }
-                          return <code className="bg-gray-800 text-blue-300 px-1.5 py-0.5 rounded text-[11px] font-mono whitespace-pre-wrap" {...props}>{children}</code>;
-                        },
+                              );
+                            }
+                            return <code className="bg-gray-800 text-blue-300 px-1.5 py-0.5 rounded text-[11px] font-mono whitespace-pre-wrap" {...props}>{children}</code>;
+                          },
 
-                        p: ({node, ...props}) => <p className="mb-3 last:mb-0" {...props} />,
-                        ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1 marker:text-blue-500" {...props} />,
-                        ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1 marker:text-blue-500" {...props} />,
-                        li: ({node, ...props}) => <li className="text-gray-300" {...props} />,
-                        strong: ({node, ...props}) => <strong className="font-semibold text-white" {...props} />,
-                        a: ({node, ...props}) => <a className="text-blue-400 hover:underline" {...props} />,
-                        h1: ({node, ...props}) => <h1 className="text-xl font-bold text-white mb-3 mt-4" {...props} />,
-                        h2: ({node, ...props}) => <h2 className="text-lg font-bold text-white mb-2 mt-3 border-b border-gray-800 pb-1" {...props} />,
-                        h3: ({node, ...props}) => <h3 className="text-base font-semibold text-white mb-2 mt-3" {...props} />,
-                        table: ({node, ...props}) => <div className="overflow-x-auto mb-3"><table className="w-full text-left border-collapse border border-gray-800" {...props} /></div>,
-                        th: ({node, ...props}) => <th className="border border-gray-800 bg-gray-900/50 px-3 py-2 font-semibold text-gray-200" {...props} />,
-                        td: ({node, ...props}) => <td className="border border-gray-800 px-3 py-2 text-gray-300" {...props} />,
-                        blockquote: ({node, ...props}) => <blockquote className="border-l-2 border-blue-500 pl-3 italic text-gray-400 my-2" {...props} />,
-                        pre: ({node, ...props}) => <pre className="bg-[#0a0a0a] border border-gray-800 rounded-md p-3 overflow-x-auto mb-3" {...props} />
-                      }}
-                    >
-                      {msg.cleanText}
-                    </ReactMarkdown>
-                  )}
-                </div>
-              )}
+                          p: ({node, ...props}) => <p className="mb-3 last:mb-0" {...props} />,
+                          ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1 marker:text-blue-500" {...props} />,
+                          ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1 marker:text-blue-500" {...props} />,
+                          li: ({node, ...props}) => <li className="text-gray-300" {...props} />,
+                          strong: ({node, ...props}) => <strong className="font-semibold text-white" {...props} />,
+                          a: ({node, ...props}) => <a className="text-blue-400 hover:underline" {...props} />,
+                          h1: ({node, ...props}) => <h1 className="text-xl font-bold text-white mb-3 mt-4" {...props} />,
+                          h2: ({node, ...props}) => <h2 className="text-lg font-bold text-white mb-2 mt-3 border-b border-gray-800 pb-1" {...props} />,
+                          h3: ({node, ...props}) => <h3 className="text-base font-semibold text-white mb-2 mt-3" {...props} />,
+                          table: ({node, ...props}) => <div className="overflow-x-auto mb-3"><table className="w-full text-left border-collapse border border-gray-800" {...props} /></div>,
+                          th: ({node, ...props}) => <th className="border border-gray-800 bg-gray-900/50 px-3 py-2 font-semibold text-gray-200" {...props} />,
+                          td: ({node, ...props}) => <td className="border border-gray-800 px-3 py-2 text-gray-300" {...props} />,
+                          blockquote: ({node, ...props}) => <blockquote className="border-l-2 border-blue-500 pl-3 italic text-gray-400 my-2" {...props} />,
+                          pre: ({node, ...props}) => <pre className="bg-[#0a0a0a] border border-gray-800 rounded-md p-3 overflow-x-auto mb-3" {...props} />
+                        }}
+                      >
+                        {displayText}
+                      </ReactMarkdown>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Message Tools (Time, Copy, Undo) */}

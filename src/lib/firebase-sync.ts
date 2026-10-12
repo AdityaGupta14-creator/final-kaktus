@@ -76,7 +76,25 @@ export async function loadFromSupabase(userOrUid: any): Promise<boolean> {
       if (chats && typeof chats === 'object') {
         for (const [id, payload] of Object.entries(chats)) {
           if (payload) {
-            localStorage.setItem(chatSessionKey(id, uid), typeof payload === 'string' ? payload : JSON.stringify(payload));
+            const remoteStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+            const localStr = localStorage.getItem(chatSessionKey(id, uid));
+            if (!localStr) {
+              localStorage.setItem(chatSessionKey(id, uid), remoteStr);
+            } else {
+              try {
+                const localMsgs = JSON.parse(localStr);
+                const remoteMsgs = JSON.parse(remoteStr);
+                if (Array.isArray(remoteMsgs) && Array.isArray(localMsgs)) {
+                  if (remoteMsgs.length >= localMsgs.length) {
+                    localStorage.setItem(chatSessionKey(id, uid), remoteStr);
+                  }
+                } else {
+                  localStorage.setItem(chatSessionKey(id, uid), remoteStr);
+                }
+              } catch {
+                localStorage.setItem(chatSessionKey(id, uid), remoteStr);
+              }
+            }
             hasData = true;
           }
         }
@@ -157,7 +175,21 @@ export async function loadFromFirebase(userOrUid: any) {
     const chatSnap = await getDocs(collection(db, 'users', uid, 'chats')); 
     const chatMap: Record<string, any> = {};
     chatSnap.forEach((d: any) => {
-      localStorage.setItem(chatSessionKey(d.id, uid), d.data().payload);
+      const remotePayload = d.data().payload;
+      const localPayload = localStorage.getItem(chatSessionKey(d.id, uid));
+      if (!localPayload) {
+        localStorage.setItem(chatSessionKey(d.id, uid), remotePayload);
+      } else {
+        try {
+          const lMsgs = JSON.parse(localPayload);
+          const rMsgs = JSON.parse(remotePayload);
+          if (Array.isArray(rMsgs) && Array.isArray(lMsgs) && rMsgs.length >= lMsgs.length) {
+            localStorage.setItem(chatSessionKey(d.id, uid), remotePayload);
+          }
+        } catch {
+          localStorage.setItem(chatSessionKey(d.id, uid), remotePayload);
+        }
+      }
       try { chatMap[d.id] = JSON.parse(d.data().payload); } catch {}
     }); 
 

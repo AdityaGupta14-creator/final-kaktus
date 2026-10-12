@@ -197,7 +197,8 @@ export default function Home() {
         if (registry && registry.sessions) {
           registry.sessions.forEach((s: any) => {
             const ws = localStorage.getItem(workspaceSessionKey(s.id, user.uid));
-            const chat = localStorage.getItem(chatSessionKey(s.id, user.uid));
+            const chat = localStorage.getItem(chatSessionKey(s.id, user.uid))
+              || localStorage.getItem(chatSessionKey(s.id, 'local'));
             if (ws) workspaces[s.id] = JSON.parse(ws);
             if (chat) chats[s.id] = JSON.parse(chat);
           });
@@ -834,6 +835,7 @@ export default function Home() {
                 setIsUpgradeModalOpen(true);
               }}
               isQuotaReached={totalTokens >= tokenLimit}
+              onMessagesChange={triggerAutoSave}
               modelSelectorNode={<ModelSelector apiKey={apiKeys[0] || ''} selectedModel={selectedModel} onModelChange={setSelectedModel} onAvailableModelsChange={setAvailableModels} onUpgradeClick={() => setIsUpgradeModalOpen(true)} variant="minimal" />}
             />}
           </div>

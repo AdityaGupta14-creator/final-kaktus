@@ -49,12 +49,33 @@ export async function GET(request: Request) {
         
         messagesData.forEach(msg => {
           if (grouped[msg.session_id]) {
+            const meta = (msg.metadata && typeof msg.metadata === 'object') ? msg.metadata : {};
+            let cleanText = meta.cleanText;
+            if (!cleanText && typeof msg.content === 'string') {
+              if (msg.message_role === 'user') {
+                cleanText = msg.content;
+              } else {
+                cleanText = msg.content.replace(/<tutorial>[\s\S]*?<\/tutorial>/gi, '').replace(/<cmd[\s>][\s\S]*?<\/cmd>/gi, '').trim();
+                if (!cleanText) cleanText = 'Updated the circuit design.';
+              }
+            }
             grouped[msg.session_id].push({
               id: msg.id,
               role: msg.message_role,
               content: msg.content,
-              metadata: msg.metadata,
-              imageAttachments: msg.metadata?.imageAttachments || undefined
+              cleanText: cleanText || msg.content,
+              createdAt: meta.createdAt || (msg.created_at ? new Date(msg.created_at).getTime() : Date.now()),
+              commands: meta.commands,
+              tutorialData: meta.tutorialData,
+              workActions: meta.workActions,
+              workTimeMs: meta.workTimeMs,
+              optionsBlock: meta.optionsBlock,
+              nextStepsBlock: meta.nextStepsBlock,
+              sources: meta.sources,
+              phasePlan: meta.phasePlan,
+              phaseIndex: meta.phaseIndex,
+              imageAttachments: meta.imageAttachments || undefined,
+              metadata: meta
             });
           }
         });
