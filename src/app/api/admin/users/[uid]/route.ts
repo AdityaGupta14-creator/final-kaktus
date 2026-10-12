@@ -89,7 +89,10 @@ export async function GET(request: Request, props: { params: Promise<{ uid: stri
         if (row.success) successfulRequests++;
         else failedRequests++;
         
-        if (row.total_tokens) totalTokens += row.total_tokens;
+        const rowTokens = (typeof row.total_tokens === 'number')
+          ? row.total_tokens
+          : ((row.input_tokens || 0) + (row.output_tokens || 0));
+        totalTokens += rowTokens;
         
         if (row.model) {
           modelBreakdown[row.model] = (modelBreakdown[row.model] || 0) + 1;
@@ -100,7 +103,7 @@ export async function GET(request: Request, props: { params: Promise<{ uid: stri
           model: row.model,
           success: row.success,
           durationMs: row.duration_ms,
-          tokens: row.total_tokens,
+          tokens: rowTokens,
           createdAt: row.created_at
         };
       });

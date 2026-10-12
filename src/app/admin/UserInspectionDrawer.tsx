@@ -21,10 +21,10 @@ export function UserInspectionDrawer({ uid, onClose }: UserInspectionDrawerProps
     if (!user || !data) return;
     if (newMode === 'UNLIMITED') {
       const ok = window.confirm(
-        'Confirm UNLIMITED Token Allowance:\n\n' +
-        'This will remove application-level token quota restrictions for this TEST account.\n' +
+        'Confirm 500k Token Allowance:\n\n' +
+        'This will apply an elevated 500k token / 500 run quota for this TEST account.\n' +
         'Provider rate limits, API key exhaustion, and safety controls will still be enforced.\n\n' +
-        'Proceed with granting UNLIMITED allowance?'
+        'Proceed with granting 500k allowance?'
       );
       if (!ok) return;
     }
@@ -198,7 +198,7 @@ export function UserInspectionDrawer({ uid, onClose }: UserInspectionDrawerProps
                   <div className="mt-3 text-xs bg-amber-50 text-amber-900 border border-amber-200 rounded-md p-2 flex items-center gap-1.5">
                     <AlertTriangle size={14} className="text-amber-600 shrink-0" />
                     <span>
-                      <strong>Provider Protection Active:</strong> UNLIMITED allowance bypasses application-level token quotas only. Provider-level Gemini API rate limits (RPM/TPM) and key pool availability remain strictly enforced.
+                      <strong>Provider Protection Active:</strong> TEST allowance elevates application-level token quotas to 500k. Provider-level Gemini API rate limits (RPM/TPM) and key pool availability remain strictly enforced.
                     </span>
                   </div>
                 )}
@@ -294,7 +294,7 @@ export function UserInspectionDrawer({ uid, onClose }: UserInspectionDrawerProps
                             <tr key={log.id} className="hover:bg-gray-50">
                               <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{new Date(log.createdAt).toLocaleString()}</td>
                               <td className="px-5 py-3 font-medium text-gray-900">{log.model || 'Unknown'}</td>
-                              <td className="px-5 py-3 text-gray-600">{log.tokens ? log.tokens : 'Unknown'}</td>
+                              <td className="px-5 py-3 text-gray-600">{typeof log.tokens === 'number' ? log.tokens.toLocaleString() : (log.tokens || '0')}</td>
                               <td className="px-5 py-3">
                                 {log.success ? (
                                   <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded">OK</span>

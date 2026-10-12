@@ -6,6 +6,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { Cpu, Calendar, CreditCard, Activity, ArrowLeft, MessageSquare, Database, ExternalLink, Plus, Sparkles } from 'lucide-react';
 import { CHAT_SESSION_REGISTRY_KEY } from '@/lib/session-store';
+import { getStoredTokensUsed } from '@/lib/tokens';
 
 interface UserProfile {
   uid: string;
@@ -187,7 +188,7 @@ export default function ProfilePage() {
               </span>
               {profile.role === 'TEST' && (
                 <span className="flex items-center gap-1 px-2 py-0.5 bg-purple-950/60 rounded-full border border-purple-500/50 text-purple-200">
-                  Quota Mode: <strong className="text-white">{profile.testQuotaMode || 'HIGH'}</strong>
+                  Quota Mode: <strong className="text-white">{profile.testQuotaMode === 'STANDARD' ? 'STANDARD' : '500K'}</strong>
                 </span>
               )}
               <span className="flex items-center gap-1"><CreditCard size={12} /> Plan: <span className="text-blue-400 font-bold">{profile.plan}</span></span>
@@ -198,7 +199,7 @@ export default function ProfilePage() {
                   </span>
                   <span>
                     Quota: <span className="text-white font-mono">
-                      {profile.role === 'TEST' && profile.testQuotaMode === 'UNLIMITED' ? 'UNLIMITED' : profile.subscription.quotaRemaining}
+                      {profile.role === 'TEST' ? '500k Tokens / 500 Runs' : profile.subscription.quotaRemaining}
                     </span>
                   </span>
                   {profile.subscription.expiresAt && (
@@ -211,7 +212,7 @@ export default function ProfilePage() {
             </div>
             {profile.role === 'TEST' && (
               <p className="text-[11px] text-amber-400/80 pt-1">
-                Notice: Application-level quota is elevated or bypassed for this testing account. Provider rate limits (Gemini API RPM/TPM) and key pool availability still apply.
+                Notice: Application-level quota is elevated to 500k tokens for this testing account. Provider rate limits (Gemini API RPM/TPM) and key pool availability still apply.
               </p>
             )}
           </div>
@@ -268,20 +269,28 @@ export default function ProfilePage() {
             )}
             {usage && !usageError ? (
               <div className="space-y-6">
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="bg-black/50 p-3 rounded-lg border border-white/5">
-                    <div className="text-xs text-gray-500 uppercase">Requests</div>
-                    <div className="text-xl font-medium text-gray-200">{usage.totalRequests}</div>
-                  </div>
-                  <div className="bg-black/50 p-3 rounded-lg border border-white/5">
-                    <div className="text-xs text-gray-500 uppercase">Tokens</div>
-                    <div className="text-xl font-medium text-gray-200">{usage.totalTokens ? usage.totalTokens : 'Unknown'}</div>
-                  </div>
-                  <div className="bg-black/50 p-3 rounded-lg border border-white/5">
-                    <div className="text-xs text-gray-500 uppercase">Failed</div>
-                    <div className="text-xl font-medium text-red-400">{usage.failedRequests}</div>
-                  </div>
-                </div>
+                {(() => {
+                  const localTokens = user ? getStoredTokensUsed(user.uid) : 0;
+                  const totalTokensUsed = (typeof usage.totalTokens === 'number' && usage.totalTokens > 0)
+                    ? usage.totalTokens
+                    : (localTokens > 0 ? localTokens : (usage.totalTokens ?? 0));
+                  return (
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-black/50 p-3 rounded-lg border border-white/5">
+                        <div className="text-xs text-gray-500 uppercase">Requests</div>
+                        <div className="text-xl font-medium text-gray-200">{usage.totalRequests}</div>
+                      </div>
+                      <div className="bg-black/50 p-3 rounded-lg border border-white/5">
+                        <div className="text-xs text-gray-500 uppercase">Tokens</div>
+                        <div className="text-xl font-medium text-gray-200">{totalTokensUsed.toLocaleString()}</div>
+                      </div>
+                      <div className="bg-black/50 p-3 rounded-lg border border-white/5">
+                        <div className="text-xs text-gray-500 uppercase">Failed</div>
+                        <div className="text-xl font-medium text-red-400">{usage.failedRequests}</div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {Object.keys(usage.modelBreakdown).length > 0 && (
                   <div className="space-y-2">

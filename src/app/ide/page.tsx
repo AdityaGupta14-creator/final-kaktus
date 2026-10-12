@@ -20,7 +20,7 @@ import { getApiPool } from '@/lib/admin';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { syncToFirebase, loadFromFirebase } from '@/lib/firebase-sync';
-import { getTokenLimit, getStoredTokensUsed, getTimeUntilMidnight, checkAndResetDailyTokens, isUnlimitedQuota } from '@/lib/tokens';
+import { getTokenLimit, getStoredTokensUsed, getTimeUntilMidnight, checkAndResetDailyTokens } from '@/lib/tokens';
 import {
   CHAT_SESSION_REGISTRY_KEY,
   chatSessionKey,
@@ -109,7 +109,6 @@ const CircuitCanvas = dynamic(() => import('@/components/CircuitCanvas').then((m
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading, plan, planExpiresAt, role, testQuotaMode } = useAuth();
-  const isUnlimited = isUnlimitedQuota(role, testQuotaMode);
   const tokenLimit = getTokenLimit(plan, planExpiresAt, role, testQuotaMode);
   const [apiKeys, setApiKeys] = useState<string[]>(['server_managed']);
   const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash-lite');
@@ -683,9 +682,9 @@ export default function Home() {
             <>
               {/* Token Usage Bar */}
               <div 
-                onClick={() => { if (!isUnlimited && totalTokens >= tokenLimit) setIsUpgradeModalOpen(true); }}
+                onClick={() => { if (role !== 'TEST' && totalTokens >= tokenLimit) setIsUpgradeModalOpen(true); }}
                 className={`flex items-center gap-3 mr-2 px-3 py-1.5 rounded-md border transition-all ${
-                  isUnlimited
+                  role === 'TEST'
                     ? 'bg-purple-950/40 border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
                     : totalTokens >= tokenLimit
                       ? 'bg-red-950/50 border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.35)] cursor-pointer'
@@ -694,8 +693,8 @@ export default function Home() {
                         : 'bg-[#1a1a1a] border-[#333]'
                 }`}
                 title={
-                  isUnlimited
-                    ? `TEST Account (UNLIMITED Allowance): ${(totalTokens).toLocaleString()} tokens used today. Gemini provider rate limits & safety controls apply.`
+                  role === 'TEST'
+                    ? `TEST Account (500k Allowance): ${(totalTokens).toLocaleString()} / ${tokenLimit.toLocaleString()} tokens used today. Gemini provider rate limits & safety controls apply.`
                     : totalTokens >= tokenLimit
                       ? 'Daily token limit exceeded. Click to upgrade plan.'
                       : `${(totalTokens).toLocaleString()} / ${tokenLimit.toLocaleString()} tokens used today`
@@ -704,7 +703,7 @@ export default function Home() {
                 <div className="flex flex-col items-end w-32">
                   <div className="flex justify-between w-full mb-1">
                     <span className={`text-[9px] font-semibold uppercase tracking-wider ${
-                      isUnlimited
+                      role === 'TEST'
                         ? 'text-purple-300 font-bold'
                         : totalTokens >= tokenLimit
                           ? 'text-red-400 font-bold'
@@ -712,16 +711,14 @@ export default function Home() {
                             ? 'text-amber-400'
                             : 'text-gray-400'
                     }`}>
-                      {isUnlimited
-                        ? 'TEST (UNLIMITED)'
-                        : role === 'TEST'
-                          ? `TEST (${testQuotaMode || 'HIGH'})`
-                          : totalTokens >= tokenLimit
-                            ? 'Exceeded'
-                            : (plan === 'free' ? 'Free Plan' : `${plan.toUpperCase()}`)}
+                      {role === 'TEST'
+                        ? 'TEST (500K)'
+                        : totalTokens >= tokenLimit
+                          ? 'Exceeded'
+                          : (plan === 'free' ? 'Free Plan' : `${plan.toUpperCase()}`)}
                     </span>
                     <span className={`text-[9px] font-medium ${
-                      isUnlimited
+                      role === 'TEST'
                         ? 'text-purple-300'
                         : totalTokens >= tokenLimit
                           ? 'text-red-400 font-bold'
@@ -729,13 +726,13 @@ export default function Home() {
                             ? 'text-amber-400'
                             : 'text-blue-400'
                     }`}>
-                      {isUnlimited ? `${(totalTokens / 1000).toFixed(1)}k / ∞` : `${(totalTokens / 1000).toFixed(1)}k / ${tokenLimit / 1000}k`}
+                      {`${(totalTokens / 1000).toFixed(1)}k / ${tokenLimit / 1000}k`}
                     </span>
                   </div>
                   <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
                     <div 
                       className={`h-full rounded-full transition-all duration-500 ${
-                        isUnlimited
+                        role === 'TEST'
                           ? 'bg-gradient-to-r from-purple-500 to-indigo-400'
                           : totalTokens >= tokenLimit
                             ? 'bg-gradient-to-r from-red-600 to-red-500'
@@ -743,7 +740,7 @@ export default function Home() {
                               ? 'bg-gradient-to-r from-amber-500 to-amber-400'
                               : 'bg-gradient-to-r from-blue-600 to-blue-400'
                       }`} 
-                      style={{ width: `${isUnlimited ? Math.min(100, Math.max(8, (totalTokens / 500000) * 100)) : Math.min(100, (totalTokens / tokenLimit) * 100)}%` }}
+                      style={{ width: `${Math.min(100, (totalTokens / tokenLimit) * 100)}%` }}
                     />
                   </div>
                 </div>
