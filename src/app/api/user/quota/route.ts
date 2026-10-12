@@ -44,17 +44,14 @@ export async function GET(request: Request) {
     const role = user.role;
     const testQuotaMode = user.testQuotaMode || 'STANDARD';
     const isTest = role === 'TEST';
-    const isUnlimited = isTest && testQuotaMode === 'UNLIMITED';
+    const isUnlimited = false; // Capped at 500k tokens / 500 runs
 
     let effectiveRemaining: number | string = Math.max(0, quotaRemaining);
     let effectiveMaxRuns: number | string = planConfig.proRuns;
 
     if (isTest) {
-      if (testQuotaMode === 'UNLIMITED') {
-        effectiveRemaining = 'UNLIMITED';
-        effectiveMaxRuns = 'UNLIMITED';
-      } else if (testQuotaMode === 'HIGH') {
-        // High test allowance (e.g. 500 runs / 500k tokens)
+      if (testQuotaMode === 'UNLIMITED' || testQuotaMode === 'HIGH') {
+        // Test allowance capped at 500 runs / 500k tokens
         effectiveRemaining = Math.max(quotaRemaining, 500);
         effectiveMaxRuns = 500;
       }

@@ -32,9 +32,8 @@ export const PLAN_TOKEN_LIMITS: Record<string, number> = {
  * Checks whether the current user has explicit UNLIMITED application quota
  */
 export function isUnlimitedQuota(role?: string | null, testQuotaMode?: string | null): boolean {
-  const resolvedRole = (role || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_role') : null) || '').toUpperCase();
-  const resolvedMode = (testQuotaMode || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_test_quota_mode') : null) || '').toUpperCase();
-  return resolvedRole === 'TEST' && resolvedMode === 'UNLIMITED';
+  // TEST role is capped at 500k tokens (not unlimited)
+  return false;
 }
 
 /**
@@ -75,11 +74,9 @@ export function getTokenLimit(
   const resolvedMode = (testQuotaMode || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_test_quota_mode') : null) || 'HIGH').toUpperCase();
 
   if (resolvedRole === 'TEST') {
-    if (resolvedMode === 'UNLIMITED') {
-      return Number.POSITIVE_INFINITY;
-    }
-    if (resolvedMode === 'HIGH') {
-      return TEST_HIGH_TOKEN_LIMIT;
+    // Both HIGH and UNLIMITED modes are capped at 500,000 tokens (500k limit)
+    if (resolvedMode === 'UNLIMITED' || resolvedMode === 'HIGH') {
+      return TEST_HIGH_TOKEN_LIMIT; // 500_000
     }
     // STANDARD mode follows normal plan rules
   }

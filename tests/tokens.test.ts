@@ -90,17 +90,17 @@ describe('Token Limits & Usage Blocking Logic', () => {
   });
 
   it('triggers quota exceeded and blocking when usage reaches or passes limit', () => {
-    // Record up to 25,000 for free tier
-    recordTokensUsed(testUid, 'key1', 'gemini-2.5-flash', 25000);
-    expect(getStoredTokensUsed(testUid)).toBe(25000);
+    // Record up to 75,000 for free tier
+    recordTokensUsed(testUid, 'key1', 'gemini-2.5-flash', 75000);
+    expect(getStoredTokensUsed(testUid)).toBe(75000);
     expect(isUserQuotaExceeded(testUid, 'free')).toBe(true);
 
-    // But should not exceed starter tier (50k limit)
+    // But should not exceed starter tier (165k limit)
     expect(isUserQuotaExceeded(testUid, 'starter')).toBe(false);
 
     // Consume up to starter limit
-    recordTokensUsed(testUid, 'key2', 'gemini-3.5-flash', 25000);
-    expect(getStoredTokensUsed(testUid)).toBe(50000);
+    recordTokensUsed(testUid, 'key2', 'gemini-3.5-flash', 90000);
+    expect(getStoredTokensUsed(testUid)).toBe(165000);
     expect(isUserQuotaExceeded(testUid, 'starter')).toBe(true);
     expect(isUserQuotaExceeded(testUid, 'booster')).toBe(false);
   });

@@ -167,7 +167,7 @@ export function UserInspectionDrawer({ uid, onClose }: UserInspectionDrawerProps
                       >
                         <option value="STANDARD">STANDARD (Plan Quota)</option>
                         <option value="HIGH">HIGH (500k Tokens / 500 Runs)</option>
-                        <option value="UNLIMITED">UNLIMITED (Application Bypass)</option>
+                        <option value="UNLIMITED">TEST LIMIT (500k Tokens / 500 Runs)</option>
                       </select>
                       {updatingQuota && <Loader2 size={12} className="animate-spin text-purple-600" />}
                     </div>

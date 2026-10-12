@@ -54,23 +54,23 @@ describe('TEST Role & Quota Allowance Regression Suite', () => {
 
   // 1. Existing USER quota behavior remains unchanged
   it('1. maintains existing USER quota limits across free/starter/booster/pro', () => {
-    expect(getTokenLimit('free', null, 'USER')).toBe(25_000);
-    expect(getTokenLimit('starter', null, 'USER')).toBe(50_000);
-    expect(getTokenLimit('booster', null, 'USER')).toBe(75_000);
-    expect(getTokenLimit('pro', null, 'USER')).toBe(100_000);
+    expect(getTokenLimit('free', null, 'USER')).toBe(75_000);
+    expect(getTokenLimit('starter', null, 'USER')).toBe(165_000);
+    expect(getTokenLimit('booster', null, 'USER')).toBe(255_000);
+    expect(getTokenLimit('pro', null, 'USER')).toBe(335_000);
     
-    // Normal user with 30k used exceeds free plan
-    recordTokensUsed(normalUid, 'key1', 'gemini-2.5-flash', 30_000);
+    // Normal user with 80k used exceeds free plan
+    recordTokensUsed(normalUid, 'key1', 'gemini-2.5-flash', 80_000);
     expect(isUserQuotaExceeded(normalUid, 'free', null, 'USER')).toBe(true);
   });
 
   // 2. TEST with STANDARD mode follows normal quota rules
   it('2. enforces normal plan quota rules for TEST accounts in STANDARD mode', () => {
     const limit = getTokenLimit('free', null, 'TEST', 'STANDARD');
-    expect(limit).toBe(25_000);
+    expect(limit).toBe(75_000);
     expect(isUnlimitedQuota('TEST', 'STANDARD')).toBe(false);
 
-    recordTokensUsed(testUid, 'key1', 'gemini-2.5-flash', 26_000);
+    recordTokensUsed(testUid, 'key1', 'gemini-2.5-flash', 76_000);
     expect(isUserQuotaExceeded(testUid, 'free', null, 'TEST', 'STANDARD')).toBe(true);
   });
 
@@ -91,25 +91,28 @@ describe('TEST Role & Quota Allowance Regression Suite', () => {
     expect(isUserQuotaExceeded(testUid, 'free', null, 'TEST', 'HIGH')).toBe(true);
   });
 
-  // 4. TEST with UNLIMITED mode is not blocked by standard token limits
-  it('4. ensures TEST account with UNLIMITED mode is not blocked by any application token limit', () => {
+  // 4. TEST with UNLIMITED / HIGH mode is capped at 500,000 tokens
+  it('4. ensures TEST account is capped at 500,000 tokens limit (not unlimited)', () => {
     const limit = getTokenLimit('free', null, 'TEST', 'UNLIMITED');
-    expect(limit).toBe(Number.POSITIVE_INFINITY);
-    expect(isUnlimitedQuota('TEST', 'UNLIMITED')).toBe(true);
+    expect(limit).toBe(500_000);
+    expect(isUnlimitedQuota('TEST', 'UNLIMITED')).toBe(false);
 
-    // Record millions of tokens
-    recordTokensUsed(testUid, 'key1', 'gemini-2.5-flash', 5_000_000);
-    expect(getStoredTokensUsed(testUid)).toBe(5_000_000);
-    // Never blocked by application quota
+    // Record up to 500,000 tokens
+    recordTokensUsed(testUid, 'key1', 'gemini-2.5-flash', 499_999);
     expect(isUserQuotaExceeded(testUid, 'free', null, 'TEST', 'UNLIMITED')).toBe(false);
+
+    // Exceeding 500k blocks the user
+    recordTokensUsed(testUid, 'key1', 'gemini-2.5-flash', 2);
+    expect(getStoredTokensUsed(testUid)).toBe(500_001);
+    expect(isUserQuotaExceeded(testUid, 'free', null, 'TEST', 'UNLIMITED')).toBe(true);
   });
 
-  // 5. UNLIMITED representation is explicit, not an arbitrary integer overflow
-  it('5. explicitly represents UNLIMITED without number overflow or arbitrary magic numbers', () => {
-    expect(isUnlimitedQuota('TEST', 'UNLIMITED')).toBe(true);
+  // 5. Explicit 500k limit verification
+  it('5. enforces 500k token limit for TEST role allowances', () => {
+    expect(isUnlimitedQuota('TEST', 'UNLIMITED')).toBe(false);
     expect(isUnlimitedQuota('TEST', 'HIGH')).toBe(false);
-    expect(isUnlimitedQuota('USER', 'UNLIMITED')).toBe(false); // Only TEST role can have UNLIMITED
-    expect(getTokenLimit('free', null, 'TEST', 'UNLIMITED')).toBe(Number.POSITIVE_INFINITY);
+    expect(getTokenLimit('free', null, 'TEST', 'UNLIMITED')).toBe(500_000);
+    expect(getTokenLimit('free', null, 'TEST', 'HIGH')).toBe(500_000);
   });
 
   // 6. Security & Privilege Separation: TEST role does NOT inherit admin permissions
