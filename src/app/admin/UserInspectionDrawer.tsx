@@ -15,6 +15,48 @@ export function UserInspectionDrawer({ uid, onClose }: UserInspectionDrawerProps
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'usage' | 'projects' | 'chats'>('overview');
+  const [updatingQuota, setUpdatingQuota] = useState(false);
+
+  const handleQuotaModeChange = async (newMode: string) => {
+    if (!user || !data) return;
+    if (newMode === 'UNLIMITED') {
+      const ok = window.confirm(
+        'Confirm UNLIMITED Token Allowance:\n\n' +
+        'This will remove application-level token quota restrictions for this TEST account.\n' +
+        'Provider rate limits, API key exhaustion, and safety controls will still be enforced.\n\n' +
+        'Proceed with granting UNLIMITED allowance?'
+      );
+      if (!ok) return;
+    }
+
+    setUpdatingQuota(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/users/quota-mode', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ uid, quotaMode: newMode }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.error || 'Failed to update quota mode');
+      }
+      setData((prev: any) => ({
+        ...prev,
+        profile: {
+          ...prev.profile,
+          testQuotaMode: newMode,
+        },
+      }));
+    } catch (err: any) {
+      alert(err.message || 'Error updating quota mode');
+    } finally {
+      setUpdatingQuota(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -110,7 +152,27 @@ export function UserInspectionDrawer({ uid, onClose }: UserInspectionDrawerProps
                   <Mail size={14} /> <span className="text-sm">{data.profile?.email}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 mt-4">
-                  <span className="text-xs font-semibold px-2 py-1 bg-gray-100 text-gray-700 rounded-md border border-gray-200 uppercase">{data.profile?.role}</span>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-md border uppercase ${data.profile?.role === 'TEST' ? 'bg-purple-100 text-purple-800 border-purple-200' : 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                    Role: {data.profile?.role}
+                  </span>
+
+                  {data.profile?.role === 'TEST' && (
+                    <div className="flex items-center gap-2 bg-purple-50 border border-purple-200 px-3 py-1 rounded-lg">
+                      <span className="text-xs font-semibold text-purple-900">Quota Allowance:</span>
+                      <select
+                        value={data.profile?.testQuotaMode || 'HIGH'}
+                        onChange={(e) => handleQuotaModeChange(e.target.value)}
+                        disabled={updatingQuota}
+                        className="text-xs font-bold border border-purple-300 rounded px-2 py-0.5 bg-white text-purple-900 focus:outline-none"
+                      >
+                        <option value="STANDARD">STANDARD (Plan Quota)</option>
+                        <option value="HIGH">HIGH (500k Tokens / 500 Runs)</option>
+                        <option value="UNLIMITED">UNLIMITED (Application Bypass)</option>
+                      </select>
+                      {updatingQuota && <Loader2 size={12} className="animate-spin text-purple-600" />}
+                    </div>
+                  )}
+
                   <span className="text-xs font-semibold px-2 py-1 bg-blue-50 text-blue-700 rounded-md border border-blue-100 uppercase">Plan: {data.profile?.plan}</span>
                   
                   {data.profile?.subscription && (
@@ -131,6 +193,15 @@ export function UserInspectionDrawer({ uid, onClose }: UserInspectionDrawerProps
                   
                   <span className="text-xs text-gray-400 font-mono ml-auto" title="Firebase UID">{data.profile?.uid}</span>
                 </div>
+
+                {data.profile?.role === 'TEST' && (
+                  <div className="mt-3 text-xs bg-amber-50 text-amber-900 border border-amber-200 rounded-md p-2 flex items-center gap-1.5">
+                    <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                    <span>
+                      <strong>Provider Protection Active:</strong> UNLIMITED allowance bypasses application-level token quotas only. Provider-level Gemini API rate limits (RPM/TPM) and key pool availability remain strictly enforced.
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 

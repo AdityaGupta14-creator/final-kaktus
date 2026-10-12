@@ -748,6 +748,7 @@ export default function AdminPanel() {
                 <option value="SUPER_ADMIN">SUPER_ADMIN</option>
                 <option value="ADMIN">ADMIN</option>
                 <option value="EARLY_ACCESS">EARLY_ACCESS</option>
+                <option value="TEST">TEST</option>
                 <option value="FINANCE">FINANCE (Legacy)</option>
                 <option value="SUPPORT">SUPPORT (Legacy)</option>
                 <option value="USER">USER</option>
@@ -803,20 +804,36 @@ export default function AdminPanel() {
                       </td>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         {userRole === 'SUPER_ADMIN' ? (
-                          <select
-                            value={u.role}
-                            onChange={(e) => handleRoleChange(u.uid, e.target.value)}
-                            disabled={userActionLoading || u.uid === user?.uid}
-                            className="text-xs border border-gray-300 rounded px-2 py-1 bg-white disabled:opacity-50 font-semibold"
-                          >
-                            <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                            <option value="ADMIN">ADMIN</option>
-                            <option value="FINANCE">FINANCE</option>
-                            <option value="SUPPORT">SUPPORT</option>
-                            <option value="USER">USER</option>
-                          </select>
+                          <div className="flex flex-col items-start gap-1">
+                            <select
+                              value={u.role}
+                              onChange={(e) => handleRoleChange(u.uid, e.target.value)}
+                              disabled={userActionLoading || u.uid === user?.uid}
+                              className="text-xs border border-gray-300 rounded px-2 py-1 bg-white disabled:opacity-50 font-semibold"
+                            >
+                              <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                              <option value="ADMIN">ADMIN</option>
+                              <option value="EARLY_ACCESS">EARLY_ACCESS</option>
+                              <option value="TEST">TEST</option>
+                              <option value="FINANCE">FINANCE</option>
+                              <option value="SUPPORT">SUPPORT</option>
+                              <option value="USER">USER</option>
+                            </select>
+                            {u.role === 'TEST' && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 uppercase">
+                                {u.testQuotaMode || 'HIGH'}
+                              </span>
+                            )}
+                          </div>
                         ) : (
-                          <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-100 text-gray-700">{u.role}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-100 text-gray-700">{u.role}</span>
+                            {u.role === 'TEST' && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 uppercase">
+                                {u.testQuotaMode || 'HIGH'}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3">

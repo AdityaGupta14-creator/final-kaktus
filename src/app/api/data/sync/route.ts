@@ -23,12 +23,14 @@ export async function POST(request: Request) {
 
     const { registry, workspaces, chats } = body;
 
-    // 1. Create or update profile in Supabase
+    // 1. Create or update profile in Supabase to ensure foreign key validity
     const { error: profileError } = await adminSupabase
       .from('profiles')
       .upsert({
         uid,
-        email: user.email,
+        email: user.email || null,
+        display_name: (user.claims?.name as string) || user.email?.split('@')[0] || 'User',
+        avatar_url: (user.claims?.picture as string) || null,
         updated_at: new Date().toISOString()
       }, { onConflict: 'uid' });
 
@@ -36,10 +38,28 @@ export async function POST(request: Request) {
       console.error('[Supabase] Profile upsert error:', profileError);
     }
 
+    // Parse registry sessions list for titles if available
+    let registrySessions: any[] = [];
+    if (registry) {
+      try {
+        const parsedReg = typeof registry === 'string' ? JSON.parse(registry) : registry;
+        if (Array.isArray(parsedReg?.sessions)) {
+          registrySessions = parsedReg.sessions;
+        }
+      } catch { /* ignore invalid registry format */ }
+    }
+
     // 2. Save Workspaces (Projects)
     if (workspaces && typeof workspaces === 'object') {
       for (const [id, payload] of Object.entries(workspaces)) {
-        const workspaceState = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        let workspaceState: any = payload;
+        if (typeof payload === 'string') {
+          try {
+            workspaceState = JSON.parse(payload);
+          } catch {
+            workspaceState = {};
+          }
+        }
         
         const compsToInsert: any[] = [];
         const connsToInsert: any[] = [];
@@ -121,11 +141,17 @@ export async function POST(request: Request) {
         const compIds = new Set(uniqueCompsToInsert.map(c => c.id));
         const validConns = uniqueConnsToInsert.filter(c => compIds.has(c.source_component_id) && compIds.has(c.target_component_id));
 
+        // Derive descriptive project name
+        const matchingSession = registrySessions.find((s: any) => s.id === id);
+        const derivedProjectName = (matchingSession?.title && matchingSession.title !== 'New chat')
+          ? matchingSession.title
+          : (workspaceState?.projectName || workspaceState?.name || (workspaceState?.tabs?.[0]?.name && workspaceState.tabs[0].name !== 'Main Assembly' ? workspaceState.tabs[0].name : `Project ${id.substring(0, 8)}`));
+
         // Use RPC for atomic sync to prevent partial data loss and ensure authorization.
         const { error: rpcError } = await adminSupabase.rpc('sync_workspace_atomic', {
           p_owner_uid: uid,
           p_project_id: id,
-          p_project_name: `Project ${id.substring(0, 8)}`,
+          p_project_name: derivedProjectName,
           p_workspace_state: workspaceState,
           p_components: uniqueCompsToInsert,
           p_connections: validConns,
@@ -154,7 +180,14 @@ export async function POST(request: Request) {
     // 3. Save Chats
     if (chats && typeof chats === 'object') {
       for (const [id, payload] of Object.entries(chats)) {
-        const chatData = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        let chatData: any = payload;
+        if (typeof payload === 'string') {
+          try {
+            chatData = JSON.parse(payload);
+          } catch {
+            chatData = [];
+          }
+        }
         
         const messagesToInsert = [];
         if (Array.isArray(chatData)) {
@@ -171,14 +204,15 @@ export async function POST(request: Request) {
                  if (att.data && typeof att.data === 'string' && !att.url) {
                    const buffer = Buffer.from(att.data, 'base64');
                    if (buffer) {
-                     const ext = att.mimeType.split('/')[1] || 'png';
+                     const mimeType = att.mimeType || 'image/png';
+                     const ext = mimeType.split('/')[1] || 'png';
                      const fileName = `${uid}/${id}/${index}-${i}.${ext}`;
                      
                      // Supabase Storage upload
                      const { error: uploadErr } = await adminSupabase.storage
                        .from('chat_attachments')
                        .upload(fileName, buffer, {
-                         contentType: att.mimeType,
+                         contentType: mimeType,
                          upsert: true
                        });
                      
@@ -195,13 +229,13 @@ export async function POST(request: Request) {
                         user_uid: uid,
                         event_type: 'FILE_UPLOADED',
                         resource_id: id,
-                        metadata: { fileName, mimeType: att.mimeType }
+                        metadata: { fileName, mimeType }
                      });
                      
                      processedAttachments.push({
                         id: att.id,
                         name: att.name,
-                        mimeType: att.mimeType,
+                        mimeType,
                         storagePath: fileName,
                         url: proxyUrl
                      });
@@ -216,17 +250,20 @@ export async function POST(request: Request) {
             messagesToInsert.push({
               id: `${id}-msg-${index}`,
               message_role: msg.role || 'user',
-              content: msg.content || '',
+              content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || ''),
               metadata: metadata
             });
           }
         }
 
+        const matchingChatSession = registrySessions.find((s: any) => s.id === id);
+        const derivedChatTitle = matchingChatSession?.title || 'Saved Chat';
+
         // Use RPC for atomic sync to prevent partial data loss and ensure authorization.
         const { error: rpcError } = await adminSupabase.rpc('sync_chat_atomic', {
           p_owner_uid: uid,
           p_session_id: id,
-          p_title: 'Saved Chat',
+          p_title: derivedChatTitle,
           p_messages: messagesToInsert
         });
 

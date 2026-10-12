@@ -1,5 +1,5 @@
 import type { ImageAttachment } from './image-attachments';
-import { getTokenLimit, getStoredTokensUsed, recordTokensUsed } from '@/lib/tokens';
+import { getTokenLimit, getStoredTokensUsed, recordTokensUsed, isUserQuotaExceeded } from '@/lib/tokens';
 
 export type AgentPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 
@@ -90,13 +90,27 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
     const uid = localStorage.getItem('kaktus_user_uid') || localStorage.getItem('kaktus_user_email');
     const plan = (localStorage.getItem('kaktus_user_plan') || 'free').toLowerCase();
     const planExpiresAt = localStorage.getItem('kaktus_user_plan_expires_at');
-    const limit = getTokenLimit(plan, planExpiresAt);
-    const currentTotal = getStoredTokensUsed(uid);
+    const role = localStorage.getItem('kaktus_user_role') || 'USER';
+    const testQuotaMode = localStorage.getItem('kaktus_user_test_quota_mode') || 'HIGH';
     
-    if (currentTotal >= limit) {
+    if (isUserQuotaExceeded(uid, plan, planExpiresAt, role, testQuotaMode)) {
+      const limit = getTokenLimit(plan, planExpiresAt, role, testQuotaMode);
+      const currentTotal = getStoredTokensUsed(uid);
       window.dispatchEvent(new CustomEvent('geminiQuotaExceeded', { detail: { currentTotal, limit } }));
       throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens daily limit. Please upgrade your plan to continue.`);
     }
+  }
+
+  // Gather auth header if signed in
+  const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (typeof window !== 'undefined') {
+    try {
+      const { auth } = await import('@/lib/firebase');
+      if (auth.currentUser) {
+        const idToken = await auth.currentUser.getIdToken();
+        authHeaders['Authorization'] = `Bearer ${idToken}`;
+      }
+    } catch {}
   }
 
   if (!request.apiKeys || request.apiKeys.length === 0) {
@@ -107,7 +121,7 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
 
     const response = await fetch('/api/agent', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders,
       body: JSON.stringify(payload),
       signal: request.abortSignal,
     });

@@ -15,20 +15,24 @@ export async function GET(request: Request) {
     // 1. Fetch projects (workspaces)
     const { data: projectsData } = await adminSupabase
       .from('projects')
-      .select('id, workspace_state')
-      .eq('owner_uid', uid);
+      .select('id, name, workspace_state, updated_at')
+      .eq('owner_uid', uid)
+      .order('updated_at', { ascending: false });
 
     if (projectsData) {
       projectsData.forEach(p => {
-        workspaces[p.id] = JSON.stringify(p.workspace_state);
+        if (p.workspace_state) {
+          workspaces[p.id] = typeof p.workspace_state === 'string' ? p.workspace_state : JSON.stringify(p.workspace_state);
+        }
       });
     }
 
     // 2. Fetch chat sessions and messages
     const { data: sessionsData } = await adminSupabase
       .from('chat_sessions')
-      .select('id')
-      .eq('owner_uid', uid);
+      .select('id, title, updated_at')
+      .eq('owner_uid', uid)
+      .order('updated_at', { ascending: false });
 
     if (sessionsData && sessionsData.length > 0) {
       const sessionIds = sessionsData.map(s => s.id);
@@ -44,12 +48,15 @@ export async function GET(request: Request) {
         sessionIds.forEach(id => grouped[id] = []);
         
         messagesData.forEach(msg => {
-          grouped[msg.session_id].push({
-            role: msg.message_role,
-            content: msg.content,
-            metadata: msg.metadata,
-            imageAttachments: msg.metadata?.imageAttachments || undefined
-          });
+          if (grouped[msg.session_id]) {
+            grouped[msg.session_id].push({
+              id: msg.id,
+              role: msg.message_role,
+              content: msg.content,
+              metadata: msg.metadata,
+              imageAttachments: msg.metadata?.imageAttachments || undefined
+            });
+          }
         });
 
         Object.keys(grouped).forEach(id => {
@@ -57,14 +64,25 @@ export async function GET(request: Request) {
         });
       }
       
-      // Construct a mock registry for the client
+      // Construct a registry for the client from Supabase sessions
       registry = {
         version: 1,
         activeId: sessionIds[0],
         sessions: sessionsData.map(s => ({
           id: s.id,
-          title: 'Saved Chat',
-          updatedAt: Date.now()
+          title: s.title || 'Saved Chat',
+          updatedAt: s.updated_at ? new Date(s.updated_at).getTime() : Date.now()
+        }))
+      };
+    } else if (projectsData && projectsData.length > 0) {
+      // Fallback: If sessions are empty but projects exist in Supabase
+      registry = {
+        version: 1,
+        activeId: projectsData[0].id,
+        sessions: projectsData.map(p => ({
+          id: p.id,
+          title: p.name || 'Saved Project',
+          updatedAt: p.updated_at ? new Date(p.updated_at).getTime() : Date.now()
         }))
       };
     }

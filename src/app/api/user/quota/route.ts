@@ -41,15 +41,36 @@ export async function GET(request: Request) {
     }
 
     const planConfig = getPlanConfig(planId);
+    const role = user.role;
+    const testQuotaMode = user.testQuotaMode || 'STANDARD';
+    const isTest = role === 'TEST';
+    const isUnlimited = isTest && testQuotaMode === 'UNLIMITED';
 
-    // Kaktus tracks quota in "Runs" (1 per request), not "Tokens".
+    let effectiveRemaining: number | string = Math.max(0, quotaRemaining);
+    let effectiveMaxRuns: number | string = planConfig.proRuns;
+
+    if (isTest) {
+      if (testQuotaMode === 'UNLIMITED') {
+        effectiveRemaining = 'UNLIMITED';
+        effectiveMaxRuns = 'UNLIMITED';
+      } else if (testQuotaMode === 'HIGH') {
+        // High test allowance (e.g. 500 runs / 500k tokens)
+        effectiveRemaining = Math.max(quotaRemaining, 500);
+        effectiveMaxRuns = 500;
+      }
+    }
+
+    // Kaktus tracks quota in "Runs" (1 per request) and token limits.
     // We return the runs here to keep the UI honest.
     return Response.json({
       success: true,
       quota: {
         planId,
-        runsRemaining: Math.max(0, quotaRemaining),
-        planMaxRuns: planConfig.proRuns,
+        role,
+        testQuotaMode: isTest ? testQuotaMode : undefined,
+        isUnlimited,
+        runsRemaining: effectiveRemaining,
+        planMaxRuns: effectiveMaxRuns,
         expiresAt
       }
     });

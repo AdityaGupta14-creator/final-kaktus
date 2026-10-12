@@ -56,7 +56,8 @@ export async function GET(request: Request, props: { params: Promise<{ uid: stri
       picture: authRecord.photoURL || userData.photoURL || null,
       createdAt: authRecord.metadata.creationTime ? new Date(authRecord.metadata.creationTime).toISOString() : null,
       lastSignInTime: authRecord.metadata.lastSignInTime ? new Date(authRecord.metadata.lastSignInTime).toISOString() : null,
-      role: authRecord.customClaims?.role || 'USER',
+      role: authRecord.customClaims?.role || userData.role || 'USER',
+      testQuotaMode: authRecord.customClaims?.testQuotaMode || userData.testQuotaMode || null,
       status: userData.status || 'active',
       plan: subscription?.planId || userData.plan || 'free',
       subscription

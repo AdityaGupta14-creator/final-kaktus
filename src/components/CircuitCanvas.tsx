@@ -878,18 +878,23 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
   };
 
   // Wire update on state changes + periodic sync during component animations
+  const boardPositionsFingerprint = useMemo(() => {
+    return JSON.stringify(activeBoardPositions);
+  }, [activeBoardPositions]);
+
   useEffect(() => {
     updateWires();
     const t1 = setTimeout(() => updateWires(), 150);
     const t2 = setTimeout(() => updateWires(), 400);
     const t3 = setTimeout(() => updateWires(), 800);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [accumulatedState.components, accumulatedState.wiring, activeBoardPositions, breadboardPosition, boardLayoutKey, getBreadboardPosition, wokwiLoaded, currentStepIndex]);
+  }, [accumulatedState.components, accumulatedState.wiring, boardPositionsFingerprint, breadboardPosition?.x, breadboardPosition?.y, breadboardPosition?.boardCount, boardLayoutKey, wokwiLoaded, currentStepIndex]);
 
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [isPanning, setIsPanning] = useState(false);
   const startPanRef = useRef({ x: 0, y: 0 });
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
+  const boardDragRAF = useRef<number>(0);
 
   const handleBreadboardPointerDown = (event: React.PointerEvent<SVGGElement>, boardIndex: number, x: number, y: number) => {
     event.preventDefault();
@@ -908,21 +913,42 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
   const handleBreadboardPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const drag = boardDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const scale = Math.max(0.1, transform.scale);
-    setBoardPositionsByProject(previous => ({
-      ...previous,
-      [boardLayoutKey]: {
-        ...(previous[boardLayoutKey] || {}),
-        [drag.index]: {
-          x: drag.startX + (event.clientX - drag.startClientX) / scale,
-          y: drag.startY + (event.clientY - drag.startClientY) / scale,
-        },
-      },
-    }));
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+
+    if (boardDragRAF.current) cancelAnimationFrame(boardDragRAF.current);
+    boardDragRAF.current = requestAnimationFrame(() => {
+      const scale = Math.max(0.1, transform.scale);
+      const newX = drag.startX + (clientX - drag.startClientX) / scale;
+      const newY = drag.startY + (clientY - drag.startClientY) / scale;
+
+      setBoardPositionsByProject(previous => {
+        const currentProject = previous[boardLayoutKey];
+        const currentPos = currentProject?.[drag.index];
+        if (currentPos && Math.abs(currentPos.x - newX) < 0.5 && Math.abs(currentPos.y - newY) < 0.5) {
+          return previous;
+        }
+        return {
+          ...previous,
+          [boardLayoutKey]: {
+            ...(currentProject || {}),
+            [drag.index]: {
+              x: newX,
+              y: newY,
+            },
+          },
+        };
+      });
+      handleDrag();
+    });
   };
 
   const handleBreadboardPointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (boardDragRef.current?.pointerId === event.pointerId) boardDragRef.current = null;
+    if (boardDragRef.current?.pointerId === event.pointerId) {
+      boardDragRef.current = null;
+      if (boardDragRAF.current) cancelAnimationFrame(boardDragRAF.current);
+      handleDragEnd();
+    }
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {

@@ -35,6 +35,7 @@ export async function GET(request: Request) {
       const profile = profiles.get(record.uid) || {};
       const claims = record.customClaims || {};
       const role = claims.role || profile.role || 'USER';
+      const testQuotaMode = claims.testQuotaMode || profile.testQuotaMode || null;
       const sub = subscriptions.get(record.uid);
 
       // Prefer Supabase subscription, fallback to Firestore legacy plan
@@ -45,6 +46,7 @@ export async function GET(request: Request) {
         email: record.email || null,
         displayName: record.displayName || profile.displayName || null,
         role,
+        testQuotaMode,
         planId: authoritativePlanId,
         accountStatus: record.disabled ? 'suspended' : 'active',
         createdAt: record.metadata.creationTime,

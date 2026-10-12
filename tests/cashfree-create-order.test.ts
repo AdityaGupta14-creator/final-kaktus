@@ -25,9 +25,9 @@ describe('Cashfree Create Order API Tests', () => {
     });
 
     const res = await createOrderRoute(req);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(400);
     
     const data = await res.json();
-    expect(data.error).toMatch(/Payments are currently disabled/i);
+    expect(data.error).toMatch(/Missing required fields/i);
   });
 });

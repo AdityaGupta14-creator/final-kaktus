@@ -2,7 +2,7 @@ export const runtime = 'nodejs';
 
 import { requireAuthenticatedUser, handleAuthError } from '@/lib/server/auth';
 import { db } from '@/lib/server/firebase-admin';
-import { adminSupabase } from '@/lib/server/supabase';
+import { adminSupabase, ensureUserProfile } from '@/lib/server/supabase';
 
 export async function GET(request: Request) {
   try {
@@ -20,6 +20,13 @@ export async function GET(request: Request) {
     } catch (e) {
       console.warn('[Profile API] Could not fetch Firestore user doc:', e);
     }
+
+    // Ensure user profile in Supabase
+    await ensureUserProfile(uid, {
+      email: user.email || null,
+      displayName: (user.claims?.name as string) || userData.displayName || user.email?.split('@')[0] || 'User',
+      avatarUrl: (user.claims?.picture as string) || userData.photoURL || null,
+    });
     
     // 1b. Fetch authoritative subscription from Supabase or fallback to Firestore
     let subscription = null;
@@ -62,6 +69,7 @@ export async function GET(request: Request) {
       picture: (user.claims?.picture as string) || userData.photoURL || null,
       createdAt: user.claims?.auth_time ? new Date((user.claims.auth_time as number) * 1000).toISOString() : null,
       role: user.role || 'USER',
+      testQuotaMode: user.testQuotaMode || userData.testQuotaMode || null,
       status: userData.status || 'active',
       plan: subscription?.planId || userData.plan || 'free',
       subscription,

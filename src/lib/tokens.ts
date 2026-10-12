@@ -14,14 +14,28 @@ export interface TokenUsageMap {
   };
 }
 
+export type TestQuotaMode = 'STANDARD' | 'HIGH' | 'UNLIMITED';
+
+export const TEST_HIGH_TOKEN_LIMIT = 500_000;
+
 export const PLAN_TOKEN_LIMITS: Record<string, number> = {
   free: 75_000,         // 75k tokens daily limit for free tier
   starter: 165_000,     // 165k tokens daily quota for starter plan
   booster: 255_000,     // 255k tokens daily quota for booster plan
   pro: 335_000,         // 335k tokens daily quota for pro plan
+  test_high: TEST_HIGH_TOKEN_LIMIT,
   super_admin: 1_000_000,
   admin: 1_000_000,
 };
+
+/**
+ * Checks whether the current user has explicit UNLIMITED application quota
+ */
+export function isUnlimitedQuota(role?: string | null, testQuotaMode?: string | null): boolean {
+  const resolvedRole = (role || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_role') : null) || '').toUpperCase();
+  const resolvedMode = (testQuotaMode || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_test_quota_mode') : null) || '').toUpperCase();
+  return resolvedRole === 'TEST' && resolvedMode === 'UNLIMITED';
+}
 
 /**
  * Checks whether a subscription validity date has passed
@@ -51,7 +65,25 @@ export function getEffectiveUserPlan(plan?: string | null, planExpiresAt?: Date 
   return rawPlan;
 }
 
-export function getTokenLimit(plan?: string | null, planExpiresAt?: Date | string | null): number {
+export function getTokenLimit(
+  plan?: string | null,
+  planExpiresAt?: Date | string | null,
+  role?: string | null,
+  testQuotaMode?: string | null
+): number {
+  const resolvedRole = (role || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_role') : null) || '').toUpperCase();
+  const resolvedMode = (testQuotaMode || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_test_quota_mode') : null) || 'HIGH').toUpperCase();
+
+  if (resolvedRole === 'TEST') {
+    if (resolvedMode === 'UNLIMITED') {
+      return Number.POSITIVE_INFINITY;
+    }
+    if (resolvedMode === 'HIGH') {
+      return TEST_HIGH_TOKEN_LIMIT;
+    }
+    // STANDARD mode follows normal plan rules
+  }
+
   const effectivePlan = getEffectiveUserPlan(plan, planExpiresAt);
   return PLAN_TOKEN_LIMITS[effectivePlan] ?? PLAN_TOKEN_LIMITS.free;
 }
@@ -157,10 +189,24 @@ export function recordTokensUsed(
 
 /**
  * Checks if the user has reached or exceeded their daily token quota.
+ * Handles TEST role explicitly: UNLIMITED never exceeds; HIGH checks TEST_HIGH_TOKEN_LIMIT; STANDARD follows standard plan.
  */
-export function isUserQuotaExceeded(uid?: string | null, plan?: string | null, planExpiresAt?: Date | string | null): boolean {
+export function isUserQuotaExceeded(
+  uid?: string | null,
+  plan?: string | null,
+  planExpiresAt?: Date | string | null,
+  role?: string | null,
+  testQuotaMode?: string | null
+): boolean {
   if (typeof window === 'undefined') return false;
-  const limit = getTokenLimit(plan, planExpiresAt);
+  const resolvedRole = (role || localStorage.getItem('kaktus_user_role') || 'USER').toUpperCase();
+  const resolvedMode = (testQuotaMode || localStorage.getItem('kaktus_user_test_quota_mode') || 'HIGH').toUpperCase();
+
+  if (isUnlimitedQuota(resolvedRole, resolvedMode)) {
+    return false;
+  }
+
+  const limit = getTokenLimit(plan, planExpiresAt, resolvedRole, resolvedMode);
   const used = getStoredTokensUsed(uid);
   return used >= limit;
 }

@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp, cert, type App } from 'firebase-admin/app';
 import { getAuth, type Auth, type DecodedIdToken } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
-import { type UserRole, type AuthenticatedUser, hasAdminRole, isValidRole } from './roles';
+import { type UserRole, type AuthenticatedUser, type TestQuotaMode, hasAdminRole, isValidRole, isValidTestQuotaMode } from './roles';
 
 import fs from 'fs';
 import path from 'path';
@@ -132,7 +132,8 @@ export function getBootstrapAdminEmails(): string[] {
 /**
  * Resolves the authoritative role for a decoded Firebase token
  */
-export function resolveUserRole(decoded: DecodedIdToken): UserRole {
+export function resolveUserRole(decoded: DecodedIdToken | Record<string, any> | null | undefined): UserRole {
+  if (!decoded) return 'USER';
   const email = (decoded.email || '').toLowerCase().trim();
   const superAdminEmails = getBootstrapSuperAdminEmails();
 
@@ -153,6 +154,7 @@ export function resolveUserRole(decoded: DecodedIdToken): UserRole {
   // 2. Authoritative Firebase custom claims
   if (decoded.role === 'SUPER_ADMIN') return 'SUPER_ADMIN';
   if (decoded.role === 'ADMIN' || decoded.admin === true) return 'ADMIN';
+  if (decoded.role === 'TEST') return 'TEST';
   if (decoded.role === 'EARLY_ACCESS') return 'EARLY_ACCESS';
   // Legacy roles — still recognized for existing token holders
   if (decoded.role === 'FINANCE') return 'FINANCE';
@@ -184,11 +186,19 @@ export async function verifyUserToken(token: string): Promise<AuthenticatedUser 
   try {
     const decoded = await auth.verifyIdToken(token);
     const role = resolveUserRole(decoded);
+    let testQuotaMode: TestQuotaMode | undefined;
+
+    if (role === 'TEST') {
+      const rawMode = (decoded.testQuotaMode || decoded.test_quota_mode || 'HIGH') as string;
+      testQuotaMode = isValidTestQuotaMode(rawMode) ? rawMode : 'HIGH';
+    }
+
     return {
       uid: decoded.uid,
       email: decoded.email || null,
       role,
       isAdmin: hasAdminRole(role),
+      testQuotaMode,
       claims: decoded as unknown as Record<string, unknown>,
     };
   } catch (error) {
@@ -200,31 +210,84 @@ export async function verifyUserToken(token: string): Promise<AuthenticatedUser 
 /**
  * Sets custom claims on a user account and optionally mirrors to Firestore for UI display
  */
-export async function setUserRole(uid: string, role: UserRole): Promise<void> {
+export async function setUserRole(uid: string, role: UserRole, testQuotaMode?: TestQuotaMode): Promise<void> {
   if (!isValidRole(role)) {
-    throw new Error(`Invalid role '${role}'. Assignable roles: SUPER_ADMIN, ADMIN, EARLY_ACCESS, USER. Legacy roles FINANCE and SUPPORT are recognized for existing holders but cannot be newly assigned.`);
+    throw new Error(`Invalid role '${role}'. Assignable roles: SUPER_ADMIN, ADMIN, EARLY_ACCESS, TEST, USER.`);
   }
 
   const userRecord = await auth.getUser(uid);
   const currentClaims = userRecord.customClaims || {};
 
+  const resolvedTestQuotaMode: TestQuotaMode = role === 'TEST'
+    ? (testQuotaMode && isValidTestQuotaMode(testQuotaMode) ? testQuotaMode : 'HIGH')
+    : 'STANDARD';
+
   // Authoritative Firebase Custom Claim
-  await auth.setCustomUserClaims(uid, {
+  const newClaims: Record<string, any> = {
     ...currentClaims,
     role,
     admin: hasAdminRole(role),
-  });
+  };
+
+  if (role === 'TEST') {
+    newClaims.testQuotaMode = resolvedTestQuotaMode;
+  } else {
+    delete newClaims.testQuotaMode;
+    delete newClaims.test_quota_mode;
+  }
+
+  await auth.setCustomUserClaims(uid, newClaims);
 
   // Mirror to Firestore user doc for read-only UI display (not used for authorization)
   try {
+    const firestoreUpdate: Record<string, any> = {
+      role,
+      roleUpdatedAt: new Date().toISOString(),
+    };
+    if (role === 'TEST') {
+      firestoreUpdate.testQuotaMode = resolvedTestQuotaMode;
+    } else {
+      firestoreUpdate.testQuotaMode = null;
+    }
+
     await db.collection('users').doc(uid).set(
-      {
-        role,
-        roleUpdatedAt: new Date().toISOString(),
-      },
+      firestoreUpdate,
       { merge: true }
     );
   } catch (err) {
     console.warn('[FirebaseAdmin] Could not mirror role to Firestore user document:', (err as Error).message);
+  }
+}
+
+/**
+ * Updates only the test quota mode for an authorized TEST account
+ */
+export async function setUserTestQuotaMode(uid: string, testQuotaMode: TestQuotaMode): Promise<void> {
+  if (!isValidTestQuotaMode(testQuotaMode)) {
+    throw new Error(`Invalid quota mode '${testQuotaMode}'. Valid modes: STANDARD, HIGH, UNLIMITED.`);
+  }
+
+  const userRecord = await auth.getUser(uid);
+  const currentClaims = userRecord.customClaims || {};
+
+  if (currentClaims.role !== 'TEST') {
+    throw new Error(`Cannot set test quota mode for user with role '${currentClaims.role || 'USER'}'. User must have role 'TEST'.`);
+  }
+
+  await auth.setCustomUserClaims(uid, {
+    ...currentClaims,
+    testQuotaMode,
+  });
+
+  try {
+    await db.collection('users').doc(uid).set(
+      {
+        testQuotaMode,
+        testQuotaModeUpdatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('[FirebaseAdmin] Could not mirror testQuotaMode to Firestore:', (err as Error).message);
   }
 }

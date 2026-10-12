@@ -13,9 +13,10 @@ interface AuthContextType {
   plan: string;
   planExpiresAt: Date | null;
   role: string;
+  testQuotaMode: string | null;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true, plan: 'free', planExpiresAt: null, role: 'USER' });
+const AuthContext = createContext<AuthContextType>({ user: null, loading: true, plan: 'free', planExpiresAt: null, role: 'USER', testQuotaMode: null });
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -25,6 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [plan, setPlan] = useState('free');
   const [planExpiresAt, setPlanExpiresAt] = useState<Date | null>(null);
   const [role, setRole] = useState('USER');
+  const [testQuotaMode, setTestQuotaMode] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -39,12 +41,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const isSuperAdmin = userEmail === 'mahesh.gupta8952@gmail.com' || userEmail === 'dixitshubham68359@gmail.com';
         let resolvedRole = isSuperAdmin ? 'SUPER_ADMIN' : 'USER';
         setRole(resolvedRole);
+        localStorage.setItem('kaktus_user_role', resolvedRole);
 
         currentUser.getIdTokenResult(true).then(tokenResult => {
-          if (tokenResult.claims?.role) {
-            setRole(tokenResult.claims.role as string);
+          let claimsRole = tokenResult.claims?.role as string | undefined;
+          let claimsMode = tokenResult.claims?.testQuotaMode as string | undefined;
+          
+          if (claimsRole) {
+            setRole(claimsRole);
+            localStorage.setItem('kaktus_user_role', claimsRole);
           } else if (isSuperAdmin) {
             setRole('SUPER_ADMIN');
+            localStorage.setItem('kaktus_user_role', 'SUPER_ADMIN');
+          }
+          if (claimsMode) {
+            setTestQuotaMode(claimsMode);
+            localStorage.setItem('kaktus_user_test_quota_mode', claimsMode);
           }
         }).catch(err => {
           console.error("Token role fetch error", err);
@@ -55,6 +67,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const docData = docSnap.exists() ? docSnap.data() : null;
             let p = docData?.plan || 'free';
             let expires: Date | null = null;
+
+            if (docData?.role) {
+              setRole(docData.role);
+              localStorage.setItem('kaktus_user_role', docData.role);
+            }
+            if (docData?.testQuotaMode) {
+              setTestQuotaMode(docData.testQuotaMode);
+              localStorage.setItem('kaktus_user_test_quota_mode', docData.testQuotaMode);
+            }
             
             if (docData?.planExpiresAt) {
               const expiresAt = docData.planExpiresAt.toDate ? docData.planExpiresAt.toDate() : new Date(docData.planExpiresAt);
@@ -86,8 +107,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       } else {
         setRole('USER');
+        setTestQuotaMode(null);
         setPlan('free');
         setPlanExpiresAt(null);
+        localStorage.removeItem('kaktus_user_role');
+        localStorage.removeItem('kaktus_user_test_quota_mode');
         localStorage.removeItem('kaktus_user_plan');
         localStorage.removeItem('kaktus_user_uid');
         localStorage.removeItem('kaktus_user_email');
@@ -201,7 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [plan, planExpiresAt?.getTime(), user?.uid]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, plan, planExpiresAt, role }}>
+    <AuthContext.Provider value={{ user, loading, plan, planExpiresAt, role, testQuotaMode }}>
       {children}
     </AuthContext.Provider>
   );

@@ -6,7 +6,7 @@ import { auth } from '@/lib/server/firebase-admin';
 
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireRole(request, ['SUPPORT', 'ADMIN', 'SUPER_ADMIN', 'USER', 'FINANCE']);
+    const user = await requireRole(request, ['SUPPORT', 'ADMIN', 'SUPER_ADMIN', 'USER', 'TEST', 'FINANCE']);
     const params = await props.params;
     const ticketId = params.id;
     

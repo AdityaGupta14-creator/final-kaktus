@@ -56,7 +56,10 @@ export async function recordApiUsage(record: ApiUsageRecord): Promise<void> {
 
   // Persist to Supabase asynchronously without blocking client response
   try {
-    const { adminSupabase } = await import('./supabase');
+    const { adminSupabase, ensureUserProfile } = await import('./supabase');
+    if (record.uid) {
+      await ensureUserProfile(record.uid);
+    }
     const { error: sbError } = await adminSupabase.from('api_usage').insert({
       id: `usage-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       user_uid: record.uid,

@@ -26,8 +26,17 @@ export async function POST(request: Request) {
 
     if (!isAssignableRole(newRole)) {
       return Response.json({
-        error: `Invalid role '${newRole}'. Assignable roles: SUPER_ADMIN, ADMIN, EARLY_ACCESS, USER. FINANCE and SUPPORT are legacy roles that cannot be newly assigned.`,
+        error: `Invalid role '${newRole}'. Assignable roles: SUPER_ADMIN, ADMIN, EARLY_ACCESS, TEST, USER. FINANCE and SUPPORT are legacy roles that cannot be newly assigned.`,
       }, { status: 400 });
+    }
+
+    let testQuotaMode: any = undefined;
+    if (newRole === 'TEST') {
+      const requestedMode = body.testQuotaMode;
+      if (requestedMode && !['STANDARD', 'HIGH', 'UNLIMITED'].includes(requestedMode as string)) {
+        return Response.json({ error: `Invalid testQuotaMode '${requestedMode}'. Valid modes: STANDARD, HIGH, UNLIMITED.` }, { status: 400 });
+      }
+      testQuotaMode = requestedMode || 'HIGH';
     }
 
     // 2. Prevent user from changing their own role
@@ -53,18 +62,20 @@ export async function POST(request: Request) {
     }
 
     // 5. Authoritatively assign the custom claim & mirror to Firestore
-    await setUserRole(targetUid, newRole);
+    await setUserRole(targetUid, newRole, testQuotaMode);
 
     logSecurityEvent('ROLE_ASSIGNED', { uid: caller.uid, role: caller.role, email: caller.email || undefined }, {
       targetUid,
       targetEmail,
       assignedRole: newRole,
+      testQuotaMode: testQuotaMode || null,
     });
 
     return Response.json({
       success: true,
       uid: targetUid,
       role: newRole,
+      testQuotaMode: testQuotaMode || null,
       targetEmail: targetEmail || null,
       message: 'Role assigned successfully. The user will receive the new permissions on their next token refresh.',
     });

@@ -12,6 +12,7 @@ export interface UserData {
   email: string | null;
   displayName: string | null;
   role: string;
+  testQuotaMode?: 'STANDARD' | 'HIGH' | 'UNLIMITED' | null;
   planId: string;
   accountStatus: string;
   createdAt: string;
@@ -194,18 +195,33 @@ export async function fetchAdminUsers(idToken: string): Promise<UserData[]> {
   return data.users || [];
 }
 
-export async function assignUserRole(idToken: string, targetUid: string, newRole: string): Promise<void> {
+export async function assignUserRole(idToken: string, targetUid: string, newRole: string, testQuotaMode?: string): Promise<void> {
   const res = await fetch('/api/admin/users/role', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({ uid: targetUid, role: newRole }),
+    body: JSON.stringify({ uid: targetUid, role: newRole, testQuotaMode }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'Failed to update role');
+  }
+}
+
+export async function updateUserQuotaMode(idToken: string, targetUid: string, quotaMode: string): Promise<void> {
+  const res = await fetch('/api/admin/users/quota-mode', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ uid: targetUid, quotaMode }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update quota mode');
   }
 }
 

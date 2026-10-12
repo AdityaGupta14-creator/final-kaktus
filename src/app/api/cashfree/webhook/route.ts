@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { adminSupabase } from '@/lib/server/supabase';
+import { adminSupabase, ensureUserProfile } from '@/lib/server/supabase';
 import { db } from '@/lib/server/firebase-admin';
 import { getPlanConfig } from '@/lib/server/plans';
 import { logSecurityEvent } from '@/lib/server/security-logger';
@@ -99,6 +99,7 @@ export async function POST(req: Request) {
       }
       
       if (!skipSupabase) {
+        await ensureUserProfile(uid);
         const userSnap = await userRef.get();
         const currentProRuns = (userSnap.exists && userSnap.data()?.proRuns) ? Number(userSnap.data()?.proRuns) : 0;
         const baseQuota = existingSub ? existingSub.quota_remaining : currentProRuns;

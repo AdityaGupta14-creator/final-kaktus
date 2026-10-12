@@ -52,7 +52,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const user = await requireRole(request, ['SUPPORT', 'ADMIN', 'SUPER_ADMIN', 'USER', 'FINANCE']);
+    const user = await requireRole(request, ['SUPPORT', 'ADMIN', 'SUPER_ADMIN', 'USER', 'TEST', 'FINANCE']);
     
     const body = await request.json();
     const { subject, category, priority, content } = body;

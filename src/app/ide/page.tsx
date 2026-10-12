@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, type ChangeEvent } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, type ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -20,7 +20,7 @@ import { getApiPool } from '@/lib/admin';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { syncToFirebase, loadFromFirebase } from '@/lib/firebase-sync';
-import { getTokenLimit, getStoredTokensUsed, getTimeUntilMidnight, checkAndResetDailyTokens } from '@/lib/tokens';
+import { getTokenLimit, getStoredTokensUsed, getTimeUntilMidnight, checkAndResetDailyTokens, isUnlimitedQuota } from '@/lib/tokens';
 import {
   CHAT_SESSION_REGISTRY_KEY,
   chatSessionKey,
@@ -108,8 +108,9 @@ const CircuitCanvas = dynamic(() => import('@/components/CircuitCanvas').then((m
 
 export default function Home() {
   const router = useRouter();
-  const { user, loading: authLoading, plan, planExpiresAt } = useAuth();
-  const tokenLimit = getTokenLimit(plan, planExpiresAt);
+  const { user, loading: authLoading, plan, planExpiresAt, role, testQuotaMode } = useAuth();
+  const isUnlimited = isUnlimitedQuota(role, testQuotaMode);
+  const tokenLimit = getTokenLimit(plan, planExpiresAt, role, testQuotaMode);
   const [apiKeys, setApiKeys] = useState<string[]>(['server_managed']);
   const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash-lite');
   const [availableModels, setAvailableModels] = useState<Array<{ name: string; displayName?: string }>>([]);
@@ -202,12 +203,12 @@ export default function Home() {
             if (chat) chats[s.id] = JSON.parse(chat);
           });
         }
-        await syncToFirebase(user.uid, registry, workspaces, chats);
+        await syncToFirebase(user, registry, workspaces, chats);
         setLastSaved(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
       } catch { /* silent fail */ }
       finally { setIsSyncing(false); }
     }, 3000);
-  }, [user?.uid, workspaceReady]);
+  }, [user, workspaceReady]);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [pendingPlanAction, setPendingPlanAction] = useState<PlanBuildAction | null>(null);
   const [planImportStatus, setPlanImportStatus] = useState('');
@@ -242,7 +243,7 @@ export default function Home() {
   useEffect(() => {
     if (authLoading) return;
     const init = async () => {
-      if (user?.uid) await loadFromFirebase(user.uid);
+      if (user) await loadFromFirebase(user);
       let nextSessionId = '';
       let nextSessions: ChatSessionSummary[] = [];
       try {
@@ -548,63 +549,66 @@ export default function Home() {
   })() : null;
 
   // Compute all tabs summary with FULL component/wire detail for AI context
-  const allTabs = workspace.tabs.filter(t => t.kind !== 'plan').map(t => {
-    const componentMap = new Map<string, { id: string; type: string; x?: number; y?: number }>();
-    const wireMap = new Map<string, { from: string; to: string; color?: string; net?: string; stepIndex: number }>();
-    const wireKey = (from: string, to: string) => [from.toLowerCase(), to.toLowerCase()].sort().join('|');
-    for (const [stepIndex, step] of (t.data?.steps || []).entries()) {
-      for (const id of step.remove_components || []) {
-        componentMap.delete(id);
-        for (const [key, wire] of wireMap) {
-          if (wire.from.startsWith(`${id}:`) || wire.to.startsWith(`${id}:`)) wireMap.delete(key);
+  const allTabs = useMemo(() => {
+    return workspace.tabs.filter(t => t.kind !== 'plan').map(t => {
+      const componentMap = new Map<string, { id: string; type: string; x?: number; y?: number }>();
+      const wireMap = new Map<string, { from: string; to: string; color?: string; net?: string; stepIndex: number }>();
+      const wireKey = (from: string, to: string) => [from.toLowerCase(), to.toLowerCase()].sort().join('|');
+      for (const [stepIndex, step] of (t.data?.steps || []).entries()) {
+        for (const id of step.remove_components || []) {
+          componentMap.delete(id);
+          for (const [key, wire] of wireMap) {
+            if (wire.from.startsWith(`${id}:`) || wire.to.startsWith(`${id}:`)) wireMap.delete(key);
+          }
+        }
+        for (const removal of step.remove_wiring || []) {
+          for (const [key, wire] of wireMap) {
+            const remove = typeof removal === 'string'
+              ? wire.from === removal || wire.to === removal
+              : wireKey(wire.from, wire.to) === wireKey(removal.from, removal.to);
+            if (remove) wireMap.delete(key);
+          }
+        }
+        for (const component of step.add_components || []) {
+          componentMap.set(component.id, { id: component.id, type: component.type, x: component.x, y: component.y });
+        }
+        for (const wire of step.add_wiring || []) {
+          wireMap.set(wireKey(wire.from, wire.to), { from: wire.from, to: wire.to, color: wire.color, net: wire.net, stepIndex });
         }
       }
-      for (const removal of step.remove_wiring || []) {
-        for (const [key, wire] of wireMap) {
-          const remove = typeof removal === 'string'
-            ? wire.from === removal || wire.to === removal
-            : wireKey(wire.from, wire.to) === wireKey(removal.from, removal.to);
-          if (remove) wireMap.delete(key);
+      const components = Array.from(componentMap.values());
+      const wires = Array.from(wireMap.values());
+      const pinLinks = new Map<string, Set<string>>();
+      wires.forEach(wire => {
+        for (const [endpoint, peer] of [[wire.from, wire.to], [wire.to, wire.from]]) {
+          if (typeof endpoint !== 'string' || typeof peer !== 'string' || !endpoint.includes(':')) continue;
+          const links = pinLinks.get(endpoint) || new Set<string>();
+          links.add(peer);
+          pinLinks.set(endpoint, links);
         }
-      }
-      for (const component of step.add_components || []) {
-        componentMap.set(component.id, { id: component.id, type: component.type, x: component.x, y: component.y });
-      }
-      for (const wire of step.add_wiring || []) {
-        wireMap.set(wireKey(wire.from, wire.to), { from: wire.from, to: wire.to, color: wire.color, net: wire.net, stepIndex });
-      }
-    }
-    const components = Array.from(componentMap.values());
-    const wires = Array.from(wireMap.values());
-    const pinLinks = new Map<string, Set<string>>();
-    wires.forEach(wire => {
-      for (const [endpoint, peer] of [[wire.from, wire.to], [wire.to, wire.from]]) {
-        if (typeof endpoint !== 'string' || typeof peer !== 'string' || !endpoint.includes(':')) continue;
-        const links = pinLinks.get(endpoint) || new Set<string>();
-        links.add(peer);
-        pinLinks.set(endpoint, links);
-      }
+      });
+      return {
+        name: t.name,
+        isActive: t.id === activeCircuitTab.id,
+        mergedFrom: t.mergedFrom || [],
+        componentCount: components.length,
+        wireCount: wires.length,
+        stepCount: t.data?.steps?.length || 0,
+        components,
+        wires,
+        pinAssignments: Array.from(pinLinks, ([pin, peers]) => `${pin} -> ${Array.from(peers).join(', ')}`),
+        stepOutline: (() => {
+          const outline = t.data?.steps?.map((step: any) => `${step.phase || 'Build'}: ${step.instruction}`) || [];
+          const recentOutline = outline.length > 10
+            ? [outline[0], `${outline.length - 9} earlier steps summarized`, ...outline.slice(-8)]
+            : outline;
+          return recentOutline.map((step: string) => step.length > 180 ? `${step.slice(0, 179).trimEnd()}…` : step);
+        })()
+      };
     });
-    return {
-      name: t.name,
-      isActive: t.id === activeCircuitTab.id,
-      mergedFrom: t.mergedFrom || [],
-      componentCount: components.length,
-      wireCount: wires.length,
-      stepCount: t.data?.steps?.length || 0,
-      components,
-      wires,
-      pinAssignments: Array.from(pinLinks, ([pin, peers]) => `${pin} -> ${Array.from(peers).join(', ')}`),
-      stepOutline: (() => {
-        const outline = t.data?.steps?.map((step: any) => `${step.phase || 'Build'}: ${step.instruction}`) || [];
-        const recentOutline = outline.length > 10
-          ? [outline[0], `${outline.length - 9} earlier steps summarized`, ...outline.slice(-8)]
-          : outline;
-        return recentOutline.map((step: string) => step.length > 180 ? `${step.slice(0, 179).trimEnd()}…` : step);
-      })()
-    };
-  });
-  const projectMemory = buildChatProjectMemory(allTabs);
+  }, [workspace.tabs, activeCircuitTab.id]);
+
+  const projectMemory = useMemo(() => buildChatProjectMemory(allTabs), [allTabs]);
 
   if (!authLoading && !user) return null;
 
@@ -679,47 +683,67 @@ export default function Home() {
             <>
               {/* Token Usage Bar */}
               <div 
-                onClick={() => { if (totalTokens >= tokenLimit) setIsUpgradeModalOpen(true); }}
+                onClick={() => { if (!isUnlimited && totalTokens >= tokenLimit) setIsUpgradeModalOpen(true); }}
                 className={`flex items-center gap-3 mr-2 px-3 py-1.5 rounded-md border transition-all ${
-                  totalTokens >= tokenLimit
-                    ? 'bg-red-950/50 border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.35)] cursor-pointer'
-                    : totalTokens / tokenLimit >= 0.8
-                      ? 'bg-amber-950/30 border-amber-500/40'
-                      : 'bg-[#1a1a1a] border-[#333]'
+                  isUnlimited
+                    ? 'bg-purple-950/40 border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                    : totalTokens >= tokenLimit
+                      ? 'bg-red-950/50 border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.35)] cursor-pointer'
+                      : totalTokens / tokenLimit >= 0.8
+                        ? 'bg-amber-950/30 border-amber-500/40'
+                        : 'bg-[#1a1a1a] border-[#333]'
                 }`}
-                title={totalTokens >= tokenLimit ? 'Daily token limit exceeded. Click to upgrade plan.' : `${(totalTokens).toLocaleString()} / ${tokenLimit.toLocaleString()} tokens used today`}
+                title={
+                  isUnlimited
+                    ? `TEST Account (UNLIMITED Allowance): ${(totalTokens).toLocaleString()} tokens used today. Gemini provider rate limits & safety controls apply.`
+                    : totalTokens >= tokenLimit
+                      ? 'Daily token limit exceeded. Click to upgrade plan.'
+                      : `${(totalTokens).toLocaleString()} / ${tokenLimit.toLocaleString()} tokens used today`
+                }
               >
-                <div className="flex flex-col items-end w-28">
+                <div className="flex flex-col items-end w-32">
                   <div className="flex justify-between w-full mb-1">
                     <span className={`text-[9px] font-semibold uppercase tracking-wider ${
-                      totalTokens >= tokenLimit
-                        ? 'text-red-400 font-bold'
-                        : totalTokens / tokenLimit >= 0.8
-                          ? 'text-amber-400'
-                          : 'text-gray-400'
+                      isUnlimited
+                        ? 'text-purple-300 font-bold'
+                        : totalTokens >= tokenLimit
+                          ? 'text-red-400 font-bold'
+                          : totalTokens / tokenLimit >= 0.8
+                            ? 'text-amber-400'
+                            : 'text-gray-400'
                     }`}>
-                      {totalTokens >= tokenLimit ? 'Exceeded' : (plan === 'free' ? 'Free Plan' : `${plan.toUpperCase()}`)}
+                      {isUnlimited
+                        ? 'TEST (UNLIMITED)'
+                        : role === 'TEST'
+                          ? `TEST (${testQuotaMode || 'HIGH'})`
+                          : totalTokens >= tokenLimit
+                            ? 'Exceeded'
+                            : (plan === 'free' ? 'Free Plan' : `${plan.toUpperCase()}`)}
                     </span>
                     <span className={`text-[9px] font-medium ${
-                      totalTokens >= tokenLimit
-                        ? 'text-red-400 font-bold'
-                        : totalTokens / tokenLimit >= 0.8
-                          ? 'text-amber-400'
-                          : 'text-blue-400'
+                      isUnlimited
+                        ? 'text-purple-300'
+                        : totalTokens >= tokenLimit
+                          ? 'text-red-400 font-bold'
+                          : totalTokens / tokenLimit >= 0.8
+                            ? 'text-amber-400'
+                            : 'text-blue-400'
                     }`}>
-                      {(totalTokens / 1000).toFixed(1)}k / {tokenLimit / 1000}k
+                      {isUnlimited ? `${(totalTokens / 1000).toFixed(1)}k / ∞` : `${(totalTokens / 1000).toFixed(1)}k / ${tokenLimit / 1000}k`}
                     </span>
                   </div>
                   <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
                     <div 
                       className={`h-full rounded-full transition-all duration-500 ${
-                        totalTokens >= tokenLimit
-                          ? 'bg-gradient-to-r from-red-600 to-red-500'
-                          : totalTokens / tokenLimit >= 0.8
-                            ? 'bg-gradient-to-r from-amber-500 to-amber-400'
-                            : 'bg-gradient-to-r from-blue-600 to-blue-400'
+                        isUnlimited
+                          ? 'bg-gradient-to-r from-purple-500 to-indigo-400'
+                          : totalTokens >= tokenLimit
+                            ? 'bg-gradient-to-r from-red-600 to-red-500'
+                            : totalTokens / tokenLimit >= 0.8
+                              ? 'bg-gradient-to-r from-amber-500 to-amber-400'
+                              : 'bg-gradient-to-r from-blue-600 to-blue-400'
                       }`} 
-                      style={{ width: `${Math.min(100, (totalTokens / tokenLimit) * 100)}%` }}
+                      style={{ width: `${isUnlimited ? Math.min(100, Math.max(8, (totalTokens / 500000) * 100)) : Math.min(100, (totalTokens / tokenLimit) * 100)}%` }}
                     />
                   </div>
                 </div>

@@ -14,6 +14,7 @@ interface UserProfile {
   picture: string | null;
   createdAt: string | null;
   role: string;
+  testQuotaMode?: string | null;
   status: string;
   plan: string;
   isEarlyAccessMember?: boolean;
@@ -181,14 +182,25 @@ export default function ProfilePage() {
             <p className="text-gray-400">{profile.email}</p>
             <div className="flex flex-wrap items-center gap-4 mt-4 text-xs font-medium uppercase tracking-wider text-gray-500 pt-2">
               <span className="flex items-center gap-1"><Calendar size={12} /> Joined {profile.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'Unknown'}</span>
-              <span className="flex items-center gap-1 px-2 py-0.5 bg-white/5 rounded-full border border-white/10 text-gray-300">{profile.role}</span>
+              <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full border ${profile.role === 'TEST' ? 'bg-purple-900/40 border-purple-500/40 text-purple-300' : 'bg-white/5 border-white/10 text-gray-300'}`}>
+                {profile.role}
+              </span>
+              {profile.role === 'TEST' && (
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-purple-950/60 rounded-full border border-purple-500/50 text-purple-200">
+                  Quota Mode: <strong className="text-white">{profile.testQuotaMode || 'HIGH'}</strong>
+                </span>
+              )}
               <span className="flex items-center gap-1"><CreditCard size={12} /> Plan: <span className="text-blue-400 font-bold">{profile.plan}</span></span>
               {profile.subscription && (
                 <div className="flex items-center gap-4 border-l border-white/10 pl-4">
                   <span className={`px-2 py-0.5 rounded-full text-[10px] border ${profile.subscription.status === 'active' ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>
                     {profile.subscription.status}
                   </span>
-                  <span>Quota: <span className="text-white font-mono">{profile.subscription.quotaRemaining}</span></span>
+                  <span>
+                    Quota: <span className="text-white font-mono">
+                      {profile.role === 'TEST' && profile.testQuotaMode === 'UNLIMITED' ? 'UNLIMITED' : profile.subscription.quotaRemaining}
+                    </span>
+                  </span>
                   {profile.subscription.expiresAt && (
                     <span className="flex items-center gap-1">
                       Expires: {new Date(profile.subscription.expiresAt).toLocaleDateString()}
@@ -197,6 +209,11 @@ export default function ProfilePage() {
                 </div>
               )}
             </div>
+            {profile.role === 'TEST' && (
+              <p className="text-[11px] text-amber-400/80 pt-1">
+                Notice: Application-level quota is elevated or bypassed for this testing account. Provider rate limits (Gemini API RPM/TPM) and key pool availability still apply.
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-3 ml-auto border-l border-white/10 pl-6 md:pl-8">
             <Link href="/ide" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20">

@@ -41,3 +41,29 @@ export const adminSupabase = createClient(supabaseUrl, supabaseServiceKey, {
   },
 });
 
+export async function ensureUserProfile(
+  uid: string,
+  data?: { email?: string | null; displayName?: string | null; avatarUrl?: string | null }
+) {
+  if (!uid || !isSupabaseConfigured) return;
+  try {
+    const payload: Record<string, any> = {
+      uid,
+      updated_at: new Date().toISOString()
+    };
+    if (data?.email) payload.email = data.email;
+    if (data?.displayName) payload.display_name = data.displayName;
+    if (data?.avatarUrl) payload.avatar_url = data.avatarUrl;
+
+    const { error } = await adminSupabase
+      .from('profiles')
+      .upsert(payload, { onConflict: 'uid' });
+
+    if (error) {
+      console.warn('[Supabase] Failed to ensure profile for', uid, error.message);
+    }
+  } catch (err) {
+    console.warn('[Supabase] Exception in ensureUserProfile:', err);
+  }
+}
+

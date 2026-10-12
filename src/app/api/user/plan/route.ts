@@ -3,7 +3,7 @@ export const runtime = 'nodejs';
 import { requireAuthenticatedUser, handleAuthError } from '@/lib/server/auth';
 import { db } from '@/lib/server/firebase-admin';
 import { getPlanConfig } from '@/lib/server/plans';
-import { adminSupabase } from '@/lib/server/supabase';
+import { adminSupabase, ensureUserProfile } from '@/lib/server/supabase';
 
 export async function POST(request: Request) {
   try {
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
 
     // Optionally update Supabase subscription
     try {
+      await ensureUserProfile(user.uid, { email: user.email });
       await adminSupabase.from('subscriptions').upsert({
         user_uid: user.uid,
         plan_id: planConfig.id,

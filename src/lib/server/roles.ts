@@ -2,6 +2,7 @@ export type UserRole =
   | 'SUPER_ADMIN'
   | 'ADMIN'
   | 'EARLY_ACCESS'
+  | 'TEST'
   | 'USER'
   // Legacy roles — retained for backward compatibility with existing Firebase custom claims.
   // These roles are no longer assignable from the UI but are still recognized on the server.
@@ -17,6 +18,7 @@ export const VALID_ROLES: readonly UserRole[] = [
   'SUPER_ADMIN',
   'ADMIN',
   'EARLY_ACCESS',
+  'TEST',
   'USER',
 ] as const;
 
@@ -36,11 +38,23 @@ export const ALL_RECOGNIZED_ROLES: readonly string[] = [
 
 export const ADMIN_ROLES: readonly UserRole[] = ['SUPER_ADMIN', 'ADMIN'] as const;
 
+export type TestQuotaMode = 'STANDARD' | 'HIGH' | 'UNLIMITED';
+export const VALID_TEST_QUOTA_MODES: readonly TestQuotaMode[] = ['STANDARD', 'HIGH', 'UNLIMITED'] as const;
+
+export function isValidTestQuotaMode(mode: unknown): mode is TestQuotaMode {
+  return typeof mode === 'string' && (VALID_TEST_QUOTA_MODES as readonly string[]).includes(mode as TestQuotaMode);
+}
+
+export function isTestRole(role: string | null | undefined): boolean {
+  return role === 'TEST';
+}
+
 export interface AuthenticatedUser {
   uid: string;
   email: string | null;
   role: UserRole;
   isAdmin: boolean;
+  testQuotaMode?: TestQuotaMode;
   claims: Record<string, unknown>;
 }
 
