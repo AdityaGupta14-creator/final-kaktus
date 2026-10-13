@@ -15,6 +15,7 @@ import { imageAttachmentDataUrl, isImageAttachment, MAX_IMAGE_ATTACHMENTS, prepa
 import { useAuth } from '@/components/AuthProvider';
 import { diffArduinoSource, extractRepairedArduinoSource, inferArduinoBoard, MAX_FIRMWARE_REPAIR_ATTEMPTS, normalizeArduinoSource, runFirmwareRepairLoop, type FirmwareCompileResult, type FirmwareDiffLine } from '@/lib/agent/firmware-validation';
 import { compactConversationContext, messageReferencesPriorImage } from '@/lib/agent/context-compaction';
+import { hardwareFetch } from '@/lib/hardware-api';
 
 // --- Interfaces ---
 interface ParsedTutorial {
@@ -232,8 +233,6 @@ const QUICK_ACTIONS = [
   { label: "Line Follower", prompt: "Build a line following robot with L298N motor driver, 3 IR sensors, and DC motors" },
 ];
 
-const HARDWARE_API = 'http://localhost:8000';
-
 async function validateGeneratedFirmware({
   plan,
   apiKeys,
@@ -274,7 +273,7 @@ async function validateGeneratedFirmware({
 
     if (!selectedBoard) {
       try {
-        const response = await fetch(`${HARDWARE_API}/flash/boards`, { signal });
+        const response = await hardwareFetch('/flash/boards', { signal });
         if (response.ok) {
           const payload = await response.json();
           const detected = Array.isArray(payload.ports)
@@ -298,7 +297,7 @@ async function validateGeneratedFirmware({
 
     const compile = async (code: string): Promise<FirmwareCompileResult> => {
       const runCompile = async () => {
-        const response = await fetch(`${HARDWARE_API}/flash/compile`, {
+        const response = await hardwareFetch('/flash/compile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code, board: selectedBoard!.fqbn }),
@@ -324,7 +323,7 @@ async function validateGeneratedFirmware({
         let installed = true;
         try {
           for (const library of [...new Set(result.missingLibraries)]) {
-            const response = await fetch(`${HARDWARE_API}/flash/install-library`, {
+            const response = await hardwareFetch('/flash/install-library', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ library }),

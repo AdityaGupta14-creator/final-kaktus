@@ -46,7 +46,10 @@ next-env.d.ts
 *.js
 *.py
 !backend/main.py
+!hardware-bridge.js
+!hardware-setup.js
 *.txt
+!backend/requirements.txt
 !server.js
 !next.config.js
 !postcss.config.js
@@ -60,3 +63,10 @@ build/
 *.spec
 __pycache__/
 *.pyc
+/backend/venv/
+/backend/.venv/
+/backend/.arduino-cli.yaml
+/backend/.arduino-data/
+/backend/.arduino-downloads/
+/backend/.arduino-user/
+/backend/.work/

@@ -1,138 +1,52 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
-  Usb, Cpu, Upload, Check, AlertTriangle, Loader2, X,
-  RefreshCw, Terminal, Zap, ChevronDown,
-  MonitorSpeaker, Square, Send, Trash2, CheckCircle2,
-  Radio, Sparkles
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Cpu,
+  Loader2,
+  MonitorSpeaker,
+  RefreshCw,
+  Send,
+  Square,
+  Terminal,
+  Upload,
+  Usb,
+  X,
 } from 'lucide-react';
+import { describeHardwareConnectionError, hardwareFetch, hardwareResponseError } from '@/lib/hardware-api';
 
 export interface BoardOption {
   fqbn: string;
   name: string;
-  port: string;
-  serialNumber: string;
-  defaultBaud: number;
   chip: string;
-  flashMemory: string;
-  sram: string;
-  icon: string;
+  defaultBaud: number;
+  family: string;
 }
 
 export const BOARD_OPTIONS: BoardOption[] = [
-  {
-    fqbn: 'arduino:avr:uno',
-    name: 'Arduino Uno',
-    port: 'COM3',
-    serialNumber: 'ARD-UNO-8492014',
-    defaultBaud: 9600,
-    chip: 'ATmega328P @ 16MHz',
-    flashMemory: '32 KB',
-    sram: '2 KB',
-    icon: '🔵',
-  },
-  {
-    fqbn: 'arduino:avr:nano',
-    name: 'Arduino Nano',
-    port: 'COM4',
-    serialNumber: 'NANO-CH340-77192',
-    defaultBaud: 9600,
-    chip: 'ATmega328P @ 16MHz',
-    flashMemory: '32 KB',
-    sram: '2 KB',
-    icon: '🟢',
-  },
-  {
-    fqbn: 'arduino:avr:mega',
-    name: 'Arduino Mega 2560',
-    port: 'COM5',
-    serialNumber: 'MEGA-2560-492104',
-    defaultBaud: 9600,
-    chip: 'ATmega2560 @ 16MHz',
-    flashMemory: '256 KB',
-    sram: '8 KB',
-    icon: '🟣',
-  },
-  {
-    fqbn: 'esp32:esp32:esp32',
-    name: 'ESP32 Dev Module',
-    port: 'COM6',
-    serialNumber: 'ESP32-CP21-391820',
-    defaultBaud: 115200,
-    chip: 'ESP32-D0WDQ6 Dual-Core',
-    flashMemory: '4 MB',
-    sram: '520 KB',
-    icon: '🟠',
-  },
-  {
-    fqbn: 'esp32:esp32:esp32s3',
-    name: 'ESP32-S3',
-    port: 'COM7',
-    serialNumber: 'ESP32S3-USB-884192',
-    defaultBaud: 115200,
-    chip: 'ESP32-S3 Dual-Core LX7',
-    flashMemory: '8 MB',
-    sram: '512 KB',
-    icon: '🟡',
-  },
-  {
-    fqbn: 'esp32:esp32:esp32c3',
-    name: 'ESP32-C3',
-    port: 'COM8',
-    serialNumber: 'ESP32C3-JTAG-19482',
-    defaultBaud: 115200,
-    chip: 'ESP32-C3 Single RISC-V',
-    flashMemory: '4 MB',
-    sram: '400 KB',
-    icon: '🔴',
-  },
-  {
-    fqbn: 'rp2040:rp2040:pico',
-    name: 'Raspberry Pi Pico',
-    port: 'COM9',
-    serialNumber: 'PICO-RP2040-E66118',
-    defaultBaud: 115200,
-    chip: 'RP2040 Dual ARM Cortex-M0+',
-    flashMemory: '2 MB',
-    sram: '264 KB',
-    icon: '🍓',
-  },
-  {
-    fqbn: 'STMicroelectronics:stm32:GenF1',
-    name: 'STM32 Blue Pill',
-    port: 'COM10',
-    serialNumber: 'STM32-DFU-552910',
-    defaultBaud: 115200,
-    chip: 'STM32F103C8T6 ARM Cortex-M3',
-    flashMemory: '64 KB',
-    sram: '20 KB',
-    icon: '⚡',
-  },
+  { fqbn: 'arduino:avr:uno', name: 'Arduino Uno', chip: 'ATmega328P', defaultBaud: 9600, family: '8-bit AVR' },
+  { fqbn: 'arduino:avr:nano', name: 'Arduino Nano', chip: 'ATmega328P', defaultBaud: 9600, family: '8-bit AVR' },
+  { fqbn: 'arduino:avr:mega', name: 'Arduino Mega 2560', chip: 'ATmega2560', defaultBaud: 9600, family: '8-bit AVR' },
+  { fqbn: 'esp32:esp32:esp32', name: 'ESP32 Dev Module', chip: 'ESP32', defaultBaud: 115200, family: 'Dual-core wireless MCU' },
+  { fqbn: 'esp32:esp32:esp32s3', name: 'ESP32-S3', chip: 'ESP32-S3', defaultBaud: 115200, family: 'Dual-core wireless MCU' },
+  { fqbn: 'esp32:esp32:esp32c3', name: 'ESP32-C3', chip: 'ESP32-C3', defaultBaud: 115200, family: 'RISC-V wireless MCU' },
+  { fqbn: 'rp2040:rp2040:pico', name: 'Raspberry Pi Pico', chip: 'RP2040', defaultBaud: 115200, family: 'Dual-core Cortex-M0+' },
+  { fqbn: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8,upload_method=serialMethod', name: 'STM32 Blue Pill (serial bootloader)', chip: 'STM32F103C8T6', defaultBaud: 115200, family: 'Cortex-M3' },
 ];
 
-function detectMatchingBoard(code: string): BoardOption {
-  const lower = (code || '').toLowerCase();
-  if (lower.includes('esp32-s3') || lower.includes('esp32s3')) return BOARD_OPTIONS[4];
-  if (lower.includes('esp32-c3') || lower.includes('esp32c3')) return BOARD_OPTIONS[5];
-  if (lower.includes('wifi') || lower.includes('esp32') || lower.includes('bluetooth') || lower.includes('ble') || lower.includes('wroom')) {
-    return BOARD_OPTIONS[3];
-  }
-  if (lower.includes('rp2040') || lower.includes('pico')) return BOARD_OPTIONS[6];
-  if (lower.includes('stm32')) return BOARD_OPTIONS[7];
-  if (lower.includes('mega') || lower.includes('serial1') || lower.includes('serial2')) return BOARD_OPTIONS[2];
-  if (lower.includes('nano')) return BOARD_OPTIONS[1];
-  return BOARD_OPTIONS[0]; // Default Arduino Uno
-}
-
-function detectBaudRate(code: string, fallback: number = 9600): number {
-  const match = code.match(/Serial\.begin\(\s*(\d+)\s*\)/i);
-  if (match && match[1]) {
-    const val = parseInt(match[1], 10);
-    if (!isNaN(val) && val > 0) return val;
-  }
-  return fallback;
+interface SerialPortInfo {
+  port: string;
+  description?: string | null;
+  manufacturer?: string | null;
+  product?: string | null;
+  vid_pid?: string | null;
+  serial_number?: string | null;
+  board?: string | null;
+  fqbn?: string | null;
 }
 
 interface FlashPanelProps {
@@ -142,527 +56,489 @@ interface FlashPanelProps {
 
 type FlashStage = 'idle' | 'detecting' | 'compiling' | 'uploading' | 'success' | 'error' | 'monitoring';
 
-export function FlashPanel({ code, onClose }: FlashPanelProps) {
-  const [stage, setStage] = useState<FlashStage>('idle');
-  const [selectedPort, setSelectedPort] = useState<string>('COM3');
-  const [selectedBoard, setSelectedBoard] = useState<string>('arduino:avr:uno');
-  const [baudRate, setBaudRate] = useState<number>(9600);
-  const [progress, setProgress] = useState<number>(0);
-  const [statusText, setStatusText] = useState<string>('Connected and ready');
-  const [errorText, setErrorText] = useState<string>('');
-  const [compileOutput, setCompileOutput] = useState<string>('');
-  const [serialLines, setSerialLines] = useState<string[]>([]);
-  const [serialInput, setSerialInput] = useState<string>('');
-  const [isMonitoring, setIsMonitoring] = useState<boolean>(false);
-  const [binarySize, setBinarySize] = useState<number>(0);
-  const [autoScroll, setAutoScroll] = useState<boolean>(true);
+function inferMonitorBaud(source: string, fallback: number): number {
+  const match = source.match(/\bSerial(?:\d+)?\.begin\s*\(\s*(\d+)\s*\)/i);
+  const baud = match ? Number(match[1]) : NaN;
+  return Number.isInteger(baud) && baud > 0 ? baud : fallback;
+}
 
-  const serialIntervalRef = useRef<NodeJS.Timeout | null>(null);
+function parseSerialEvents(buffer: string): { events: string[]; remainder: string } {
+  const chunks = buffer.split(/\r?\n\r?\n/);
+  const remainder = chunks.pop() || '';
+  const events = chunks.flatMap((chunk) => {
+    const payload = chunk.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n');
+    return payload ? [payload] : [];
+  });
+  return { events, remainder };
+}
+
+export function FlashPanel({ code, onClose }: FlashPanelProps) {
+  const [stage, setStage] = useState<FlashStage>('detecting');
+  const [ports, setPorts] = useState<SerialPortInfo[]>([]);
+  const [selectedPort, setSelectedPort] = useState('');
+  const [selectedBoard, setSelectedBoard] = useState('');
+  const [baudRate, setBaudRate] = useState(115200);
+  const [serviceReady, setServiceReady] = useState(false);
+  const [serviceError, setServiceError] = useState('');
+  const [statusText, setStatusText] = useState('Checking the local USB service...');
+  const [errorText, setErrorText] = useState('');
+  const [compileOutput, setCompileOutput] = useState('');
+  const [serialLines, setSerialLines] = useState<string[]>([]);
+  const [serialInput, setSerialInput] = useState('');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const serialControllerRef = useRef<AbortController | null>(null);
   const serialContainerRef = useRef<HTMLDivElement>(null);
 
-  // Active board definition
-  const currentBoard = useMemo(() => {
-    return BOARD_OPTIONS.find(b => b.fqbn === selectedBoard)
-      || BOARD_OPTIONS.find(b => b.port === selectedPort)
-      || BOARD_OPTIONS[0];
-  }, [selectedBoard, selectedPort]);
+  const currentBoard = useMemo(
+    () => BOARD_OPTIONS.find((board) => board.fqbn === selectedBoard) || null,
+    [selectedBoard],
+  );
+  const currentPort = useMemo(
+    () => ports.find((port) => port.port === selectedPort) || null,
+    [ports, selectedPort],
+  );
+  const baudFromSketch = useMemo(
+    () => inferMonitorBaud(code, currentBoard?.defaultBaud || 115200),
+    [code, currentBoard],
+  );
 
-  // Auto-connect on mount and detect from code
-  const detectBoards = useCallback(() => {
+  const refreshDevices = useCallback(async () => {
     setStage('detecting');
-    setStatusText('Scanning ports...');
-    setProgress(30);
+    setStatusText('Scanning USB serial ports...');
+    setServiceError('');
+    setErrorText('');
+    try {
+      const [statusResponse, portsResponse] = await Promise.all([
+        hardwareFetch('/flash/status'),
+        hardwareFetch('/flash/boards'),
+      ]);
+      if (!portsResponse.ok) throw new Error(await hardwareResponseError(portsResponse));
+      const portPayload = await portsResponse.json() as { ports?: SerialPortInfo[] };
+      const foundPorts = Array.isArray(portPayload.ports) ? portPayload.ports : [];
+      setPorts(foundPorts);
+      const recognizedPorts = foundPorts.filter((port) => port.fqbn && BOARD_OPTIONS.some((board) => board.fqbn === port.fqbn));
+      const autoTargetPort = foundPorts.find((port) => port.port === selectedPort)
+        || (foundPorts.length === 1 ? foundPorts[0] : recognizedPorts.length === 1 ? recognizedPorts[0] : null);
 
-    setTimeout(() => {
-      const matched = detectMatchingBoard(code);
-      const matchedBaud = detectBaudRate(code, matched.defaultBaud);
-      setSelectedBoard(matched.fqbn);
-      setSelectedPort(matched.port);
-      setBaudRate(matchedBaud);
-      setStatusText(`✓ ${matched.name} connected on ${matched.port}`);
-      setProgress(100);
-      setStage('idle');
-    }, 250);
-  }, [code]);
+      let ready = false;
+      let statusMessage = '';
+      if (statusResponse.ok) {
+        const statusPayload = await statusResponse.json() as { ready?: boolean; error?: string };
+        ready = statusPayload.ready === true;
+        statusMessage = statusPayload.error || '';
+      } else {
+        statusMessage = await hardwareResponseError(statusResponse);
+      }
+      setServiceReady(ready);
+      setServiceError(statusMessage);
+
+      setSelectedPort(autoTargetPort?.port || '');
+      setSelectedBoard((previous) => {
+        const detected = autoTargetPort?.fqbn;
+        if (detected && BOARD_OPTIONS.some((board) => board.fqbn === detected)) return detected;
+        return previous;
+      });
+
+      if (!ready) {
+        setStatusText('USB ports were scanned, but the Arduino compiler is not ready.');
+      } else if (!foundPorts.length) {
+        setStatusText('No USB serial board detected. Connect a data-capable USB cable and scan again.');
+      } else if (foundPorts.length === 1) {
+        const detectedBoard = foundPorts[0].board || 'USB serial device';
+        setStatusText('Detected ' + detectedBoard + ' on ' + foundPorts[0].port + '.');
+      } else {
+        setStatusText('Detected ' + foundPorts.length + ' USB serial ports. Select the board port.');
+      }
+    } catch (error) {
+      const message = describeHardwareConnectionError(error);
+      setServiceReady(false);
+      setServiceError(message);
+      setPorts([]);
+      setSelectedPort('');
+      setStatusText('Local hardware service is unavailable.');
+    } finally {
+      setStage((current) => current === 'detecting' ? 'idle' : current);
+    }
+  }, [selectedPort]);
 
   useEffect(() => {
-    detectBoards();
-  }, [detectBoards]);
+    void refreshDevices();
+    return () => serialControllerRef.current?.abort();
+  }, [refreshDevices]);
 
-  // When Port changes from Box 1, sync the board and speed automatically
-  const handlePortChange = (port: string) => {
-    setSelectedPort(port);
-    const target = BOARD_OPTIONS.find(b => b.port === port);
-    if (target) {
-      setSelectedBoard(target.fqbn);
-      const bRate = detectBaudRate(code, target.defaultBaud);
-      setBaudRate(bRate);
-      setStatusText(`✓ ${target.name} connected on ${target.port}`);
-    }
-  };
-
-  // When Board changes from Box 2, sync the port and speed automatically
-  const handleBoardChange = (fqbn: string) => {
-    setSelectedBoard(fqbn);
-    const target = BOARD_OPTIONS.find(b => b.fqbn === fqbn);
-    if (target) {
-      setSelectedPort(target.port);
-      const bRate = detectBaudRate(code, target.defaultBaud);
-      setBaudRate(bRate);
-      setStatusText(`✓ ${target.name} connected on ${target.port}`);
-    }
-  };
-
-  // Auto-scroll serial monitor
   useEffect(() => {
     if (autoScroll && serialContainerRef.current) {
-      const container = serialContainerRef.current;
-      container.scrollTop = container.scrollHeight;
+      serialContainerRef.current.scrollTop = serialContainerRef.current.scrollHeight;
     }
-  }, [serialLines, autoScroll]);
-
-  // 1-Click Flash
-  const handleCompileAndFlash = useCallback(async () => {
-    setStage('compiling');
-    setStatusText(`Compiling for ${currentBoard.name}...`);
-    setProgress(30);
-    setErrorText('');
-    setCompileOutput('');
-
-    // Quick syntax check
-    const openBraces = (code.match(/\{/g) || []).length;
-    const closeBraces = (code.match(/\}/g) || []).length;
-    if (openBraces !== closeBraces) {
-      setStage('error');
-      setErrorText(`sketch.ino: error: mismatched curly brackets (found ${openBraces} '{' and ${closeBraces} '}'). Please balance your code brackets.`);
-      return;
-    }
-
-    await new Promise(r => setTimeout(r, 500));
-    setProgress(60);
-    setStatusText(`Uploading to ${currentBoard.name} on ${selectedPort}...`);
-    setStage('uploading');
-
-    const isEsp = currentBoard.fqbn.includes('esp32');
-    const approxBytes = isEsp ? Math.floor(190000 + (code.length * 40)) : Math.floor(3400 + (code.length * 8));
-    setBinarySize(approxBytes);
-
-    let logs = '';
-    if (isEsp) {
-      logs = [
-        `esptool.py v4.6.2`,
-        `Serial port: ${selectedPort}`,
-        `Connecting....`,
-        `Chip is ${currentBoard.chip}`,
-        `Serial Number: ${currentBoard.serialNumber}`,
-        `Writing at 0x00010000... (100%)`,
-        `Wrote ${approxBytes} bytes successfully.`,
-        `Hash of data verified.`,
-        `Leaving... Hard resetting via RTS pin...`,
-        `✓ Boot successful: firmware active and running on ${currentBoard.name}.`
-      ].join('\n');
-    } else {
-      logs = [
-        `avrdude: Version 7.2-202401`,
-        `avrdude: Connected to ${selectedPort} at ${baudRate} baud`,
-        `avrdude: Device Serial Number: ${currentBoard.serialNumber}`,
-        `avrdude: Device signature = 0x1e950f (${currentBoard.chip})`,
-        `avrdude: Writing ${approxBytes} bytes flash ...`,
-        `avrdude: [==================================================] 100%`,
-        `avrdude: ${approxBytes} bytes of flash verified`,
-        `avrdude done. Thank you.`,
-        `\nSketch uses ${approxBytes.toLocaleString()} bytes of program storage space.`
-      ].join('\n');
-    }
-
-    await new Promise(r => setTimeout(r, 600));
-    setProgress(100);
-    setCompileOutput(logs);
-    setStage('success');
-    setStatusText(`✓ Code uploaded successfully! Running on ${currentBoard.name}.`);
-  }, [code, currentBoard, selectedPort, baudRate]);
-
-  // Live Serial Monitor
-  const startSerialMonitor = useCallback(() => {
-    setIsMonitoring(true);
-    setStage('monitoring');
-    setSerialLines([]);
-    setStatusText(`Serial Monitor — ${selectedPort} @ ${baudRate} baud`);
-
-    // Extract user printlns from sketch
-    const printRegex = /Serial\.(?:println|print)\s*\(\s*(?:F\()?(?:"([^"]*)"|'([^']*)')/g;
-    const extractedUserPrints: string[] = [];
-    let match;
-    while ((match = printRegex.exec(code)) !== null) {
-      const text = match[1] || match[2];
-      if (text && text.trim()) extractedUserPrints.push(text.trim());
-    }
-
-    const defaultTelemetry = [
-      `System initialized and ready.`,
-      `Telemetry loop active (interval: 1000ms)`,
-      `Sensors online: OK | RAM free: ${currentBoard.sram}`,
-    ];
-
-    const streamPhrases = extractedUserPrints.length > 0 ? extractedUserPrints : defaultTelemetry;
-
-    const banner = [
-      `[KAKTUS SERIAL MONITOR] Connected to ${selectedPort} @ ${baudRate} baud`,
-      `Microcontroller: ${currentBoard.name} (${currentBoard.chip})`,
-      `Serial Number: ${currentBoard.serialNumber}`,
-      `------------------------------------------------------------`,
-      `[BOOT] System started at ${new Date().toLocaleTimeString()}`,
-    ];
-    setSerialLines(banner);
-
-    let count = 1;
-    if (serialIntervalRef.current) clearInterval(serialIntervalRef.current);
-    serialIntervalRef.current = setInterval(() => {
-      const phrase = streamPhrases[(count - 1) % streamPhrases.length];
-      const time = new Date().toLocaleTimeString();
-      const line = `[${time}] ${phrase}${extractedUserPrints.length > 0 && streamPhrases.length === 1 ? ` (#${count})` : ''}`;
-      count++;
-      setSerialLines(prev => [...prev.slice(-250), line]);
-    }, 1300);
-  }, [code, currentBoard, selectedPort, baudRate]);
-
-  const stopSerialMonitor = useCallback(() => {
-    if (serialIntervalRef.current) {
-      clearInterval(serialIntervalRef.current);
-      serialIntervalRef.current = null;
-    }
-    setIsMonitoring(false);
-    setStage('idle');
-    setStatusText('Serial monitor stopped');
-  }, []);
-
-  const handleSendSerialCommand = useCallback(() => {
-    if (!serialInput.trim()) return;
-    const cmd = serialInput.trim();
-    const time = new Date().toLocaleTimeString();
-    setSerialLines(prev => [
-      ...prev,
-      `> [TX ${time}] ${cmd}`,
-      `< [RX ${time}] ACK: Command '${cmd}' received by ${currentBoard.name}`,
-    ]);
-    setSerialInput('');
-  }, [serialInput, currentBoard]);
+  }, [autoScroll, serialLines]);
 
   useEffect(() => {
-    return () => {
-      if (serialIntervalRef.current) clearInterval(serialIntervalRef.current);
-    };
+    if (stage !== 'monitoring') setBaudRate(baudFromSketch);
+  }, [baudFromSketch, stage]);
+
+  const handlePortChange = (port: string) => {
+    setSelectedPort(port);
+    const detected = ports.find((item) => item.port === port);
+    if (detected?.fqbn && BOARD_OPTIONS.some((board) => board.fqbn === detected.fqbn)) {
+      setSelectedBoard(detected.fqbn);
+      const board = BOARD_OPTIONS.find((item) => item.fqbn === detected.fqbn);
+      if (board) setBaudRate(inferMonitorBaud(code, board.defaultBaud));
+    }
+    setStage('idle');
+    setErrorText('');
+  };
+
+  const handleBoardChange = (fqbn: string) => {
+    setSelectedBoard(fqbn);
+    const board = BOARD_OPTIONS.find((item) => item.fqbn === fqbn);
+    if (board) setBaudRate(inferMonitorBaud(code, board.defaultBaud));
+    setErrorText('');
+  };
+
+  const handleCompile = useCallback(async () => {
+    if (!currentBoard) {
+      setErrorText('Select a supported board target before compiling.');
+      setStage('error');
+      return;
+    }
+    setStage('compiling');
+    setStatusText('Compiling with Arduino CLI for ' + currentBoard.name + '...');
+    setErrorText('');
+    setCompileOutput('');
+    try {
+      const response = await hardwareFetch('/flash/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, board: currentBoard.fqbn }),
+      });
+      const payload = await response.json().catch(() => ({})) as { status?: string; error?: string; detail?: string; stdout?: string; binary_size?: number };
+      if (!response.ok || payload.status !== 'success') throw new Error(payload.error || payload.detail || await hardwareResponseError(response));
+      setCompileOutput(payload.stdout || 'Compilation completed successfully.');
+      setStatusText('Build succeeded for ' + currentBoard.name + '.');
+      setStage('idle');
+    } catch (error) {
+      setErrorText(describeHardwareConnectionError(error));
+      setStatusText('Compilation failed.');
+      setStage('error');
+    }
+  }, [code, currentBoard]);
+
+  const handleCompileAndFlash = useCallback(async () => {
+    if (!currentPort || !currentBoard) {
+      setErrorText('Connect a USB serial board, select its port, and choose the correct board target.');
+      setStage('error');
+      return;
+    }
+    serialControllerRef.current?.abort();
+    serialControllerRef.current = null;
+    setStage('uploading');
+    setStatusText('Preparing board support, compiling, then uploading to ' + currentPort.port + '...');
+    setErrorText('');
+    setCompileOutput('');
+    try {
+      const response = await hardwareFetch('/flash/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, board: currentBoard.fqbn, port: currentPort.port }),
+      });
+      const payload = await response.json().catch(() => ({})) as { status?: string; error?: string; detail?: string; message?: string; stdout?: string };
+      if (!response.ok || payload.status !== 'success') throw new Error(payload.error || payload.detail || await hardwareResponseError(response));
+      setCompileOutput(payload.stdout || payload.message || 'Firmware upload completed.');
+      setStatusText(payload.message || 'Firmware uploaded successfully to ' + currentBoard.name + '.');
+      setStage('success');
+    } catch (error) {
+      setErrorText(describeHardwareConnectionError(error));
+      setStatusText('Compile or upload failed.');
+      setStage('error');
+    }
+  }, [code, currentBoard, currentPort]);
+
+  const stopSerialMonitor = useCallback(() => {
+    serialControllerRef.current?.abort();
+    serialControllerRef.current = null;
+    setStage('idle');
+    setStatusText('Serial monitor stopped.');
   }, []);
 
+  const startSerialMonitor = useCallback(async () => {
+    if (!currentPort) {
+      setErrorText('Select a detected USB serial port before opening the monitor.');
+      setStage('error');
+      return;
+    }
+    serialControllerRef.current?.abort();
+    const controller = new AbortController();
+    serialControllerRef.current = controller;
+    setSerialLines([]);
+    setErrorText('');
+    setStage('monitoring');
+    setStatusText('Opening ' + currentPort.port + ' at ' + baudRate + ' baud...');
+    try {
+      const query = new URLSearchParams({ port: currentPort.port, baud: String(baudRate) });
+      const response = await hardwareFetch('/flash/serial-monitor?' + query.toString(), {
+        headers: { Accept: 'text/event-stream' },
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(await hardwareResponseError(response));
+      if (!response.body) throw new Error('The local service did not open a serial stream.');
+      setStatusText('Serial monitor connected to ' + currentPort.port + ' at ' + baudRate + ' baud.');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (!controller.signal.aborted) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parsed = parseSerialEvents(buffer);
+        buffer = parsed.remainder;
+        for (const event of parsed.events) {
+          let record: { line?: string; error?: string };
+          try { record = JSON.parse(event); } catch { continue; }
+          if (record.error) throw new Error(record.error);
+          if (typeof record.line === 'string') {
+            setSerialLines((lines) => [...lines.slice(-499), record.line as string]);
+          }
+        }
+      }
+      if (!controller.signal.aborted) {
+        setStage('idle');
+        setStatusText('Serial stream ended.');
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setErrorText(describeHardwareConnectionError(error));
+        setStage('error');
+        setStatusText('Could not open the serial monitor.');
+      }
+    } finally {
+      if (serialControllerRef.current === controller) serialControllerRef.current = null;
+    }
+  }, [baudRate, currentPort]);
+
+  const handleSendSerialCommand = useCallback(async () => {
+    const text = serialInput.trim();
+    if (!text || !currentPort || stage !== 'monitoring' || isSending) return;
+    setIsSending(true);
+    try {
+      const response = await hardwareFetch('/flash/serial-write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port: currentPort.port, text }),
+      });
+      if (!response.ok) throw new Error(await hardwareResponseError(response));
+      setSerialLines((lines) => [...lines.slice(-499), '> ' + text]);
+      setSerialInput('');
+    } catch (error) {
+      setErrorText(describeHardwareConnectionError(error));
+    } finally {
+      setIsSending(false);
+    }
+  }, [currentPort, isSending, serialInput, stage]);
+
+  const busy = stage === 'compiling' || stage === 'uploading' || stage === 'detecting';
+  const canFlash = serviceReady && Boolean(currentPort && currentBoard) && !busy;
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
+    <motion.section
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
-      transition={{ duration: 0.2 }}
-      className="absolute bottom-0 left-0 right-0 z-50 bg-[#0a0a0a] border-t border-[#222222] shadow-2xl"
-      style={{ height: stage === 'monitoring' ? '55vh' : '285px' }}
+      exit={{ opacity: 0, y: 16 }}
+      transition={{ duration: 0.18 }}
+      aria-label="USB board and firmware tools"
+      className="absolute bottom-0 left-0 right-0 z-50 overflow-hidden border-t border-[#29303a] bg-[#0d1117] text-white shadow-2xl"
+      style={{ height: stage === 'monitoring' ? '58vh' : 'min(360px, 52vh)' }}
     >
-      {/* Top Header */}
-      <div className="h-9 border-b border-[#222222] bg-[#141414] flex items-center justify-between px-4 select-none">
-        <div className="flex items-center gap-2.5">
-          <Zap size={14} className="text-white fill-white" />
-          <span className="text-xs font-bold text-gray-200">1-Click Flash</span>
-
-          <div className="h-3 w-[1px] bg-gray-700 ml-1" />
-
-          {/* Connected Pill */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-medium font-mono">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Connected: {currentBoard.name}</span>
-            <span className="text-emerald-500/80">({selectedPort})</span>
-          </div>
-
-          <span className="text-[10px] font-mono text-gray-400">
-            {stage === 'compiling' && '● COMPILING'}
-            {stage === 'uploading' && '● UPLOADING'}
-            {stage === 'success' && '● READY'}
-            {stage === 'error' && '● ERROR'}
-            {stage === 'monitoring' && '● SERIAL MONITOR'}
-            {stage === 'idle' && '○ READY'}
+      <header className="flex h-10 items-center justify-between border-b border-[#29303a] bg-[#151b23] px-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Usb size={15} className="shrink-0 text-slate-200" />
+          <span className="shrink-0 text-xs font-semibold text-slate-100">Board connection</span>
+          <span className="hidden h-4 w-px bg-slate-700 sm:block" />
+          <span className="truncate text-[11px] text-slate-400">
+            {serviceReady ? currentPort ? (currentBoard?.name || currentPort.board || 'USB serial device') + ' / ' + currentPort.port : 'No board selected' : 'Local USB service unavailable'}
+          </span>
+          <span className={'rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ' + (serviceReady ? 'border-emerald-800 bg-emerald-950/50 text-emerald-300' : 'border-slate-700 bg-slate-900 text-slate-400')}>
+            {stage === 'compiling' ? 'Building' : stage === 'uploading' ? 'Uploading' : stage === 'monitoring' ? 'Monitoring' : stage === 'error' ? 'Error' : serviceReady ? 'Ready' : 'Offline'}
           </span>
         </div>
-
-        <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors p-1 rounded hover:bg-gray-800">
-          <X size={14} />
+        <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Close board panel">
+          <X size={15} />
         </button>
-      </div>
+      </header>
 
-      {/* Main Container */}
-      <div className="flex h-[calc(100%-36px)]">
-        {/* Left: 2 Corner Boxes + Actions */}
-        <div className="w-[320px] border-r border-[#222222] p-3 flex flex-col gap-2.5 bg-[#0d0d0d]">
-          {/* Box 1: PORT */}
+      <div className="flex h-[calc(100%-40px)] min-h-0">
+        <aside className="flex w-[300px] shrink-0 flex-col gap-3 overflow-y-auto border-r border-[#29303a] bg-[#10151c] p-3">
           <div>
-            <label className="text-[9px] text-gray-500 uppercase tracking-wider mb-1 block font-semibold">
-              Port
-            </label>
-            <div className="flex items-center gap-1">
+            <label htmlFor="hardware-port" className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">USB serial port</label>
+            <div className="flex gap-1.5">
               <select
+                id="hardware-port"
                 value={selectedPort}
-                onChange={e => handlePortChange(e.target.value)}
-                className="flex-1 bg-[#141414] border border-[#333333] hover:border-gray-500 rounded px-2 py-1.5 text-xs text-white outline-none focus:border-white transition-colors font-mono"
+                onChange={(event) => handlePortChange(event.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-slate-700 bg-[#0b0f14] px-2 py-2 text-xs text-slate-100 outline-none focus:border-slate-400"
               >
-                {BOARD_OPTIONS.map(b => (
-                  <option key={b.port} value={b.port}>
-                    {b.port} - {b.name} ({b.serialNumber})
-                  </option>
-                ))}
+                <option value="">Select detected port</option>
+                {ports.map((port) => {
+                  const name = port.board || port.product || port.description || 'USB serial device';
+                  const serial = port.serial_number ? ' / S/N ' + port.serial_number : '';
+                  return <option key={port.port} value={port.port}>{port.port + ' - ' + name + serial}</option>;
+                })}
               </select>
               <button
-                onClick={detectBoards}
-                title="Refresh ports"
-                className="p-1.5 rounded bg-[#1a1a1a] border border-[#333333] text-gray-400 hover:text-white hover:border-white transition-colors"
+                type="button"
+                onClick={() => void refreshDevices()}
+                disabled={stage === 'detecting'}
+                title="Scan USB ports"
+                aria-label="Scan USB ports"
+                className="rounded-md border border-slate-700 bg-[#171e27] p-2 text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
               >
-                <RefreshCw size={12} className={stage === 'detecting' ? 'animate-spin text-white' : ''} />
+                <RefreshCw size={14} className={stage === 'detecting' ? 'animate-spin' : ''} />
               </button>
             </div>
           </div>
 
-          {/* Box 2: BOARD */}
           <div>
-            <label className="text-[9px] text-gray-500 uppercase tracking-wider mb-1 block font-semibold">
-              Board
-            </label>
+            <label htmlFor="hardware-board" className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Board target</label>
             <select
+              id="hardware-board"
               value={selectedBoard}
-              onChange={e => handleBoardChange(e.target.value)}
-              className="w-full bg-[#141414] border border-[#333333] hover:border-gray-500 rounded px-2 py-1.5 text-xs text-white outline-none focus:border-white transition-colors"
+              onChange={(event) => handleBoardChange(event.target.value)}
+              className="w-full rounded-md border border-slate-700 bg-[#0b0f14] px-2 py-2 text-xs text-slate-100 outline-none focus:border-slate-400"
             >
-              {BOARD_OPTIONS.map(b => (
-                <option key={b.fqbn} value={b.fqbn}>
-                  {b.icon} {b.name}
-                </option>
+              <option value="">Choose the exact board</option>
+              {BOARD_OPTIONS.map((board) => <option key={board.fqbn} value={board.fqbn}>{board.name} - {board.family}</option>)}
+            </select>
+            {selectedBoard.startsWith('STMicroelectronics:') && <p className="mt-1.5 text-[10px] leading-4 text-amber-200">Blue Pill needs a USB-to-UART adapter and an STM32 serial bootloader; the board itself has no USB serial interface.</p>}
+          </div>
+
+          <div>
+            <label htmlFor="hardware-baud" className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Serial monitor baud</label>
+            <select
+              id="hardware-baud"
+              value={baudRate}
+              onChange={(event) => setBaudRate(Number(event.target.value))}
+              className="w-full rounded-md border border-slate-700 bg-[#0b0f14] px-2 py-2 text-xs text-slate-100 outline-none focus:border-slate-400"
+            >
+              {[baudFromSketch, 9600, 19200, 38400, 57600, 115200, 230400].filter((value, index, all) => all.indexOf(value) === index).map((value) => (
+                <option key={value} value={value}>{value} baud{value === baudFromSketch ? ' (from sketch)' : ''}</option>
               ))}
             </select>
           </div>
 
-          {/* Flash & Monitor Buttons */}
-          <div className="flex gap-2 mt-1">
+          <div className="flex gap-2 pt-0.5">
             <button
-              onClick={handleCompileAndFlash}
-              disabled={stage === 'compiling' || stage === 'uploading'}
-              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all
-                bg-white hover:bg-gray-200 text-black shadow-lg
-                disabled:opacity-30 disabled:cursor-not-allowed"
+              type="button"
+              onClick={() => void handleCompileAndFlash()}
+              disabled={!canFlash}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {stage === 'compiling' || stage === 'uploading' ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : stage === 'success' ? (
-                <Check size={14} />
-              ) : (
-                <Upload size={14} />
-              )}
-              {stage === 'compiling' ? 'Compiling...' :
-               stage === 'uploading' ? 'Uploading...' :
-               stage === 'success' ? 'Flash Again' : 'Flash'}
+              {stage === 'uploading' ? <Loader2 size={14} className="animate-spin" /> : stage === 'success' ? <Check size={14} /> : <Upload size={14} />}
+              {stage === 'uploading' ? 'Compiling and uploading' : stage === 'success' ? 'Flash again' : 'Compile and flash'}
             </button>
-
             <button
-              onClick={isMonitoring ? stopSerialMonitor : startSerialMonitor}
-              className={`px-3 py-2 rounded-lg text-xs font-bold transition-all border
-                ${isMonitoring
-                  ? 'bg-gray-800 border-gray-600 text-white hover:bg-gray-700'
-                  : 'bg-[#1a1a1a] border-gray-800 text-gray-400 hover:border-gray-500 hover:text-white'}`}
-              title="Serial Monitor"
+              type="button"
+              onClick={() => void handleCompile()}
+              disabled={!serviceReady || !currentBoard || busy}
+              title="Compile without uploading"
+              className="rounded-md border border-slate-700 bg-[#171e27] px-3 py-2 text-xs font-medium text-slate-200 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {isMonitoring ? <Square size={14} /> : <Terminal size={14} />}
+              Build
             </button>
           </div>
 
-          {/* Progress Bar */}
-          {(stage === 'compiling' || stage === 'uploading') && (
-            <div className="w-full bg-[#1a1a1a] rounded-full h-1.5 overflow-hidden">
-              <motion.div
-                className="h-full rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]"
-                initial={{ width: '0%' }}
-                animate={{ width: `${progress}%` }}
-                transition={{ duration: 0.4 }}
-              />
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => stage === 'monitoring' ? stopSerialMonitor() : void startSerialMonitor()}
+            disabled={!serviceReady || !currentPort || busy}
+            className="flex items-center justify-center gap-2 rounded-md border border-slate-700 bg-[#171e27] px-3 py-2 text-xs font-medium text-slate-200 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {stage === 'monitoring' ? <Square size={13} /> : <Terminal size={13} />}
+            {stage === 'monitoring' ? 'Stop serial monitor' : 'Open serial monitor'}
+          </button>
 
-          {/* Status Text */}
-          <div className="text-[10px] font-mono text-gray-400 truncate mt-0.5">
-            {stage === 'success' && binarySize > 0 && (
-              <span className="text-gray-500 block mb-0.5">Binary: {(binarySize / 1024).toFixed(1)} KB</span>
-            )}
+          <div className="mt-auto border-t border-slate-800 pt-2 text-[10px] leading-4 text-slate-400">
             {statusText}
+            {currentPort && <div className="mt-1 font-mono text-slate-500">USB ID: {currentPort.vid_pid || 'Not reported'} · S/N: {currentPort.serial_number || 'Not reported by device'}</div>}
           </div>
-        </div>
+        </aside>
 
-        {/* Right: Only the connected microcontroller or the Serial Monitor */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-[#070707]">
-          {stage === 'monitoring' ? (
-            /* Serial Monitor when microcontroller is in use */
-            <div className="flex-1 flex flex-col">
-              <div className="h-7 bg-[#141414] border-b border-gray-800 flex items-center px-3 text-[10px] text-gray-300 justify-between select-none">
-                <div className="flex items-center gap-2">
-                  <MonitorSpeaker size={12} className="text-emerald-400" />
-                  <span className="font-bold text-white">{selectedPort}</span>
-                  <span className="text-gray-500">•</span>
-                  <span className="text-cyan-400">{baudRate} baud</span>
-                  <span className="text-gray-500">•</span>
-                  <span className="text-purple-400">S/N: {currentBoard.serialNumber}</span>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1 cursor-pointer text-gray-500 hover:text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={autoScroll}
-                      onChange={e => setAutoScroll(e.target.checked)}
-                      className="w-2.5 h-2.5 accent-white"
-                    />
-                    Auto-scroll
-                  </label>
-                  <button
-                    onClick={() => setSerialLines([])}
-                    className="text-[10px] text-gray-400 hover:text-white px-1.5 py-0.5 rounded bg-white/5"
-                  >
-                    Clear
-                  </button>
-                  <span className="text-gray-600">{serialLines.length} lines</span>
-                </div>
-              </div>
-
-              {/* Logs */}
-              <div ref={serialContainerRef} className="flex-1 overflow-y-auto p-3 font-mono text-[11px] text-gray-200 bg-[#070707]">
-                {serialLines.length === 0 ? (
-                  <span className="text-gray-600">Waiting for data...</span>
-                ) : (
-                  serialLines.map((line, i) => (
-                    <div key={i} className="py-0.5">
-                      <span className="text-gray-700 mr-2 select-none inline-block w-6 text-right">{i + 1}</span>
-                      <span className={line.startsWith('>') ? 'text-amber-300 font-bold' : line.startsWith('<') ? 'text-cyan-300' : 'text-gray-300'}>
-                        {line}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Command Input Bar */}
-              <div className="h-9 border-t border-gray-800 bg-[#0f0f0f] px-3 flex items-center gap-2">
-                <span className="text-gray-500 font-mono text-xs">&gt;</span>
-                <input
-                  type="text"
-                  value={serialInput}
-                  onChange={e => setSerialInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSendSerialCommand()}
-                  placeholder={`Send serial text to ${currentBoard.name}...`}
-                  className="flex-1 bg-transparent text-xs text-white placeholder-gray-600 outline-none font-mono"
-                />
-                <button
-                  onClick={handleSendSerialCommand}
-                  className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[11px] flex items-center gap-1 transition-colors"
-                >
-                  <Send size={10} />
-                  <span>Send</span>
-                </button>
-              </div>
-            </div>
-          ) : stage === 'success' ? (
-            /* Successfully Flashed View */
-            <div className="flex flex-col items-center justify-center h-full text-white gap-3 p-4">
-              <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-full text-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.2)]">
-                <Check size={32} strokeWidth={2.5} />
-              </div>
-              <div className="text-center">
-                <p className="text-sm font-bold text-white">Successfully Flashed!</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Code uploaded to <span className="text-white font-semibold">{currentBoard.name}</span> on <span className="text-amber-300 font-mono">{selectedPort}</span>.
-                </p>
-                <div className="flex items-center justify-center gap-2 mt-2 text-[10px] font-mono text-gray-500">
-                  <span>S/N: {currentBoard.serialNumber}</span>
-                  <span>•</span>
-                  <span>{baudRate} baud</span>
-                </div>
-                <button
-                  onClick={startSerialMonitor}
-                  className="mt-4 px-4 py-1.5 bg-white hover:bg-gray-200 text-black font-semibold text-xs rounded-lg flex items-center gap-2 mx-auto transition-colors shadow-lg"
-                >
-                  <Terminal size={12} /> Open Serial Monitor
-                </button>
-              </div>
-            </div>
-          ) : compileOutput ? (
-            /* Compiler Output */
-            <div className="flex-1 overflow-y-auto p-3 font-mono text-[10px] text-gray-400 whitespace-pre-wrap leading-relaxed">
-              {compileOutput}
-            </div>
-          ) : errorText ? (
-            /* Error Log */
-            <div className="flex-1 overflow-y-auto p-4 font-mono text-xs text-red-400">
-              <div className="flex items-center gap-1.5 text-red-500 font-bold mb-2">
-                <AlertTriangle size={14} /> Compilation Error
-              </div>
-              <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-red-300 whitespace-pre-wrap">
-                {errorText}
-              </div>
-            </div>
-          ) : (
-            /* Connected Microcontroller View — Clean, Only This Board! */
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-[#141414] border border-[#262626] flex items-center justify-center text-3xl mb-3 shadow-xl">
-                {currentBoard.icon}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white tracking-wide">{currentBoard.name}</h3>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-medium flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Connected
-                </span>
-              </div>
-
-              <p className="text-[11px] text-gray-400 font-mono mt-1">{currentBoard.chip}</p>
-
-              {/* Microcontroller Specifications Badges */}
-              <div className="flex flex-wrap items-center justify-center gap-2 mt-3 font-mono text-[10px]">
-                <div className="px-2.5 py-1 rounded bg-[#121212] border border-[#222222] text-amber-300">
-                  <span className="text-gray-500 mr-1">PORT:</span>
-                  <span className="font-bold">{selectedPort}</span>
-                </div>
-                <div className="px-2.5 py-1 rounded bg-[#121212] border border-[#222222] text-cyan-300">
-                  <span className="text-gray-500 mr-1">SPEED:</span>
-                  <span className="font-bold">{baudRate} baud</span>
-                </div>
-                <div className="px-2.5 py-1 rounded bg-[#121212] border border-[#222222] text-emerald-300">
-                  <span className="text-gray-500 mr-1">S/N:</span>
-                  <span className="font-bold">{currentBoard.serialNumber}</span>
-                </div>
-                <div className="px-2.5 py-1 rounded bg-[#121212] border border-[#222222] text-purple-300">
-                  <span className="text-gray-500 mr-1">MEMORY:</span>
-                  <span className="font-bold">{currentBoard.flashMemory} Flash / {currentBoard.sram} RAM</span>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 mt-5">
-                <button
-                  onClick={handleCompileAndFlash}
-                  className="px-4 py-2 bg-white hover:bg-gray-200 text-black text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-lg transition-colors"
-                >
-                  <Upload size={13} strokeWidth={2.5} />
-                  <span>Flash Sketch</span>
-                </button>
-                <button
-                  onClick={startSerialMonitor}
-                  className="px-3.5 py-2 bg-[#171717] hover:bg-[#222222] border border-[#333333] hover:border-gray-500 text-gray-300 hover:text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
-                >
-                  <Terminal size={13} />
-                  <span>Open Serial Monitor</span>
-                </button>
-              </div>
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0a0e13]">
+          {busy && <div className="h-0.5 w-full overflow-hidden bg-slate-800"><motion.div className="h-full w-1/3 bg-slate-200" animate={{ x: ['-100%', '300%'] }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }} /></div>}
+          {serviceError && !serviceReady && (
+            <div className="m-3 rounded-md border border-amber-900/70 bg-amber-950/30 p-3 text-xs text-amber-100">
+              <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={14} /> Local USB service not ready</div>
+              <p className="mt-1 text-amber-100/80">{serviceError}</p>
+              <p className="mt-2 text-amber-100/70">When using the Vercel site, start this computer&apos;s bridge in the project folder with <code className="rounded bg-black/30 px-1">npm run hardware:bridge</code>. The local app starts it automatically. Allow the browser&apos;s local-network prompt when it appears.</p>
             </div>
           )}
+          {errorText && (
+            <div className="m-3 flex min-h-0 flex-col rounded-md border border-red-900/70 bg-red-950/20 p-3 text-xs text-red-200">
+              <div className="mb-2 flex items-center gap-2 font-semibold"><AlertTriangle size={14} /> {stage === 'error' ? 'Operation failed' : 'Serial write failed'}</div>
+              <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-5">{errorText}</pre>
+            </div>
+          )}
+      {stage === 'success' && !errorText && (
+        <div className="flex items-center gap-2 border-b border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200">
+          <CheckCircle2 size={15} /> Firmware upload completed on {currentPort?.port}.
         </div>
+      )}
+      {compileOutput && !errorText && stage !== 'monitoring' && (
+            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-3 font-mono text-[11px] leading-5 text-slate-300">{compileOutput}</pre>
+          )}
+          {stage === 'monitoring' && !errorText && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex h-9 items-center justify-between border-b border-slate-800 px-3 text-[11px] text-slate-400">
+                <span className="flex items-center gap-2"><MonitorSpeaker size={13} /> {currentPort?.port} · {baudRate} baud</span>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={autoScroll} onChange={(event) => setAutoScroll(event.target.checked)} /> Auto-scroll</label>
+                  <button type="button" onClick={() => setSerialLines([])} className="hover:text-white">Clear</button>
+                  <span>{serialLines.length} lines</span>
+                </div>
+              </div>
+              <div ref={serialContainerRef} className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-[11px] leading-5 text-slate-300">
+                {serialLines.length ? serialLines.map((line, index) => <div key={index} className="whitespace-pre-wrap">{line}</div>) : <p className="text-slate-600">Connected. Waiting for serial data.</p>}
+              </div>
+              <form onSubmit={(event) => { event.preventDefault(); void handleSendSerialCommand(); }} className="flex h-10 items-center gap-2 border-t border-slate-800 bg-[#10151c] px-3">
+                <span className="font-mono text-slate-500">&gt;</span>
+                <input value={serialInput} onChange={(event) => setSerialInput(event.target.value)} placeholder="Send text to the board" className="min-w-0 flex-1 bg-transparent font-mono text-xs text-white outline-none placeholder:text-slate-600" />
+                <button type="submit" disabled={!serialInput.trim() || isSending} className="flex items-center gap-1.5 rounded bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-950 disabled:opacity-40">{isSending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Send</button>
+              </form>
+            </div>
+          )}
+          {!errorText && !compileOutput && stage !== 'monitoring' && (
+            <div className="flex flex-1 flex-col items-center justify-center p-5 text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-slate-800 bg-[#111821]">
+                {currentPort ? <Cpu size={21} className="text-slate-200" /> : <Usb size={21} className="text-slate-400" />}
+              </div>
+              {stage === 'success' ? (
+                <>
+                  <CheckCircle2 size={19} className="mb-2 text-emerald-400" />
+                  <h2 className="text-sm font-semibold text-slate-100">Upload complete</h2>
+                  <p className="mt-1 max-w-lg text-xs text-slate-400">Firmware was uploaded to {currentBoard?.name} on {currentPort?.port}. Open the serial monitor to confirm the board&apos;s output.</p>
+                </>
+              ) : currentPort ? (
+                <>
+                  <h2 className="text-sm font-semibold text-slate-100">{currentBoard?.name || currentPort.board || 'USB serial device detected'}</h2>
+                  <p className="mt-1 max-w-lg text-xs text-slate-400">{currentPort.description || currentPort.product || currentPort.port} · {currentBoard ? currentBoard.chip + ' · ' + currentBoard.fqbn : 'Choose the board model before building or flashing.'}</p>
+                  {currentPort.serial_number && <p className="mt-1 font-mono text-[10px] text-slate-500">USB serial number: {currentPort.serial_number}</p>}
+                </>
+              ) : (
+                <>
+                  <h2 className="text-sm font-semibold text-slate-100">Connect a microcontroller over USB</h2>
+                  <p className="mt-1 max-w-lg text-xs text-slate-400">Connect a data-capable cable. The local bridge scans serial ports and fills in the board identity when its USB descriptor is known.</p>
+                </>
+              )}
+              <div className="mt-4 flex flex-wrap justify-center gap-1.5 text-[10px] text-slate-400">
+                <span className="rounded border border-slate-800 px-2 py-1">Arduino Uno / Nano / Mega</span>
+                <span className="rounded border border-slate-800 px-2 py-1">ESP32 / S3 / C3</span>
+                <span className="rounded border border-slate-800 px-2 py-1">RP2040 Pico</span>
+                <span className="rounded border border-slate-800 px-2 py-1">STM32 Blue Pill with UART bootloader</span>
+              </div>
+              {!currentPort && serviceReady && ports.length > 0 && <p className="mt-3 text-xs text-amber-200">Choose a port from the list. The USB serial number may be omitted by some boards.</p>}
+            </div>
+          )}
+        </main>
       </div>
-    </motion.div>
+    </motion.section>
   );
 }

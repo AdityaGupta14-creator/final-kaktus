@@ -9,6 +9,7 @@ import { extractTutorialResponse, cleanAgentText } from '@/lib/agent/protocol';
 import { buildHardwareStudioSystemPrompt } from '@/lib/agent/system-prompt';
 import { compactConversationContext } from '@/lib/agent/context-compaction';
 import { breadboardLaneKey } from '@/lib/circuit-networks';
+import { hardwareFetch } from '@/lib/hardware-api';
 
 const EMPTY_BOARD_POSITIONS = {};
 
@@ -362,26 +363,24 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
     try { localStorage.setItem(`kaktus_canvas_chat_${sessionId || 'local'}`, JSON.stringify(canvasChatMessages)); } catch { /* Keep canvas chat usable if storage is full. */ }
   }, [canvasChatMessages, canvasChatReady, sessionId]);
 
-  const [isBoardConnected, setIsBoardConnected] = useState(true);
+  const [isBoardConnected, setIsBoardConnected] = useState(false);
 
   useEffect(() => {
     const checkBoard = async () => {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 600);
-        const res = await fetch('http://localhost:8000/flash/boards', { signal: controller.signal });
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const res = await hardwareFetch('/flash/boards', { signal: controller.signal });
         clearTimeout(timeout);
         if (res.ok) {
           const data = await res.json();
-          if (data.ports && data.ports.some((p: any) => p.board)) {
-            setIsBoardConnected(true);
-            return;
-          }
+          setIsBoardConnected(Array.isArray(data.ports) && data.ports.length > 0);
+          return;
         }
       } catch {
-        // Auto-connected supported microcontrollers are always ready
+        setIsBoardConnected(false);
       }
-      setIsBoardConnected(true);
+      setIsBoardConnected(false);
     };
     checkBoard();
   }, []);

@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node hardware-setup.js",
     "dev": "node server.js",
     "build": "next build",
-    "start": "NODE_ENV=production node server.js",
+    "prestart": "node hardware-setup.js",
+    "start": "node server.js --production",
+    "hardware:setup": "node hardware-setup.js",
+    "hardware:bridge": "node hardware-bridge.js",
     "lint": "eslint"
   },
   "dependencies": {
