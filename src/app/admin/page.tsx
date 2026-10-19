@@ -36,7 +36,8 @@ import {
   Ban,
   Unlock,
   DollarSign,
-  Sparkles
+  Sparkles,
+  Eye
 } from 'lucide-react';
 import { 
   fetchAdminApiPool, 
@@ -793,8 +794,8 @@ export default function AdminPanel() {
                   paginatedUsers.map((u) => (
                     <tr 
                       key={u.uid} 
-                      className={`hover:bg-gray-50 transition-colors ${userRole === 'SUPER_ADMIN' ? 'cursor-pointer' : ''}`}
-                      onClick={() => userRole === 'SUPER_ADMIN' && setInspectedUserId(u.uid)}
+                      className={`hover:bg-gray-50 transition-colors ${(userRole === 'SUPER_ADMIN' || userRole === 'ADMIN') ? 'cursor-pointer' : ''}`}
+                      onClick={() => (userRole === 'SUPER_ADMIN' || userRole === 'ADMIN') && setInspectedUserId(u.uid)}
                     >
                       <td className="px-4 py-3">
                         <div className="flex flex-col">
@@ -863,6 +864,15 @@ export default function AdminPanel() {
                       </td>
                       <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="inline-flex items-center gap-1.5">
+                          {(userRole === 'SUPER_ADMIN' || userRole === 'ADMIN') && (
+                            <button
+                              onClick={() => setInspectedUserId(u.uid)}
+                              className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors inline-flex"
+                              title="Inspect User Profile & API Usage"
+                            >
+                              <Eye size={15} />
+                            </button>
+                          )}
                           {userRole === 'SUPER_ADMIN' && u.uid !== user?.uid && (
                             <button
                               onClick={() => handleSuspend(u.uid, u.accountStatus === 'active')}

@@ -1,6 +1,10 @@
 export const runtime = 'nodejs';
-
+ 
 import { getServerCandidateKeyRecords, type ServerCandidateKeyInfo } from '@/lib/server/api-keys';
+import { extractBearerToken } from '@/lib/server/auth';
+import { verifyUserToken } from '@/lib/server/firebase-admin';
+import { recordApiUsage } from '@/lib/server/usage-meter';
+import { classifyProviderError } from '@/lib/server/api-key-manager';
 
 const MAX_BODY_BYTES = 1_500_000;
 const MODEL_PATTERN = /^(?:models\/)?gemini-[a-zA-Z0-9._-]+$/;
@@ -30,6 +34,18 @@ interface GeminiResponse {
 }
 
 export async function POST(request: Request) {
+  const startTime = Date.now();
+  let callerUid: string | null = null;
+  const token = extractBearerToken(request);
+  if (token) {
+    try {
+      const user = await verifyUserToken(token);
+      if (user) callerUid = user.uid;
+    } catch {
+      // Proceed anonymously if token fails verification
+    }
+  }
+
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_BODY_BYTES) {
     return Response.json({ error: 'Request is too large.' }, { status: 413 });
@@ -43,6 +59,7 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
   }
+
 
   if (!validText(body.model, 160) || !MODEL_PATTERN.test(body.model)) {
     return Response.json({ error: 'A valid Gemini model identifier is required.' }, { status: 400 });
@@ -157,9 +174,28 @@ export async function POST(request: Request) {
             : [];
           const searchQueries = Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries.slice(0, 12) : [];
           const usage = result.usageMetadata?.totalTokenCount || 0;
+          const inputTokens = result.usageMetadata?.promptTokenCount || 0;
+          const outputTokens = result.usageMetadata?.candidatesTokenCount || 0;
 
           // Safe diagnostic log (never logs plaintext keys)
           console.log(`[AgentRoute] Request succeeded with model ${modelToTry} using key [id="${candidate.id}", label="${candidate.label}", source="${candidate.source}"]`);
+
+          if (callerUid) {
+            recordApiUsage({
+              uid: callerUid,
+              endpoint: '/api/agent',
+              provider: 'Gemini',
+              model: modelToTry,
+              timestamp: new Date().toISOString(),
+              success: true,
+              failure: false,
+              durationMs: Date.now() - startTime,
+              inputTokens,
+              outputTokens,
+              totalTokens: usage,
+              keyId: candidate.id,
+            }).catch(err => console.warn('[AgentRoute] Failed to record usage:', err));
+          }
 
           return Response.json({
             text,
@@ -216,9 +252,27 @@ export async function POST(request: Request) {
     }
   }
 
-
   // Prioritize returning quota error if all keys were exhausted so UI can trigger plan upgrade
   const finalError = lastQuotaError || lastGeneralError || lastAuthError;
+
+  if (callerUid) {
+    const errorType = lastQuotaError ? 'quota_exceeded' : lastAuthError ? 'auth_error' : 'request_error';
+    recordApiUsage({
+      uid: callerUid,
+      endpoint: '/api/agent',
+      provider: 'Gemini',
+      model: rawModel || 'gemini-model',
+      timestamp: new Date().toISOString(),
+      success: false,
+      failure: true,
+      errorType,
+      durationMs: Date.now() - startTime,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      keyId: 'all_exhausted',
+    }).catch(err => console.warn('[AgentRoute] Failed to record failure usage:', err));
+  }
 
   return Response.json({
     error: finalError?.message || 'Gemini request failed. Please check your keys or quota.',

@@ -73,6 +73,10 @@ export function getTokenLimit(
   const resolvedRole = (role || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_role') : null) || '').toUpperCase();
   const resolvedMode = (testQuotaMode || (typeof window !== 'undefined' ? localStorage.getItem('kaktus_user_test_quota_mode') : null) || 'HIGH').toUpperCase();
 
+  if (resolvedRole === 'SUPER_ADMIN' || resolvedRole === 'ADMIN') {
+    return PLAN_TOKEN_LIMITS[resolvedRole.toLowerCase()] ?? 1_000_000;
+  }
+
   if (resolvedRole === 'TEST') {
     // Both HIGH and UNLIMITED modes are capped at 500,000 tokens (500k limit)
     if (resolvedMode === 'UNLIMITED' || resolvedMode === 'HIGH') {
