@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { getServerApiKey, getServerApiKeys } from '@/lib/server/api-keys';
+import { getServerCandidateKeyRecords, type ServerCandidateKeyInfo } from '@/lib/server/api-keys';
 
 const MAX_BODY_BYTES = 1_500_000;
 const MODEL_PATTERN = /^(?:models\/)?gemini-[a-zA-Z0-9._-]+$/;
@@ -12,7 +12,6 @@ function validText(value: unknown, maxLength: number): value is string {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-
 
 interface GeminiResponse {
   error?: { message?: string; code?: number };
@@ -52,26 +51,42 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Invalid agent context.' }, { status: 400 });
   }
 
-  // Resolve API Key: gather candidate keys
-  const candidateKeys: string[] = [];
+  // Resolve API Key: gather candidate keys with diagnostic metadata
+  const candidateKeys: ServerCandidateKeyInfo[] = [];
   const directKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
 
   if (directKey && directKey !== 'server_managed' && directKey !== 'default_server_key') {
-    candidateKeys.push(directKey);
+    candidateKeys.push({
+      id: 'direct_client_key',
+      label: 'Direct Client Key',
+      source: 'direct' as any,
+      maskedKey: directKey.length > 6 ? `••••${directKey.slice(-4)}` : '••••••••',
+      key: directKey,
+    });
   }
 
   try {
-    const serverKeys = await getServerApiKeys();
-    serverKeys.forEach(k => {
-      if (!candidateKeys.includes(k)) candidateKeys.push(k);
-    });
+    const serverRecords = await getServerCandidateKeyRecords();
+    for (const rec of serverRecords) {
+      if (!candidateKeys.some(k => k.key === rec.key)) {
+        candidateKeys.push(rec);
+      }
+    }
   } catch (err) {
     console.warn('[AgentRoute] Could not get server keys from manager:', err);
   }
 
   if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
     const envKey = process.env.GEMINI_API_KEY.trim();
-    if (!candidateKeys.includes(envKey)) candidateKeys.push(envKey);
+    if (!candidateKeys.some(k => k.key === envKey)) {
+      candidateKeys.unshift({
+        id: 'env_primary_gemini',
+        label: 'Primary Environment Key',
+        source: 'environment',
+        maskedKey: envKey.length > 6 ? `••••${envKey.slice(-4)}` : '••••••••',
+        key: envKey,
+      });
+    }
   }
 
   if (candidateKeys.length === 0) {
@@ -89,9 +104,11 @@ export async function POST(request: Request) {
     fallbackModel = 'models/gemini-2.0-flash';
   }
 
-  // Real model candidates with seamless fallback
+  // Real model candidates with seamless fallback to active Gemini 3.x models
   const candidateModels = [
     requestedModel,
+    'models/gemini-3.5-flash',
+    'models/gemini-3.8-flash',
     fallbackModel,
     'models/gemini-2.0-flash',
     'models/gemini-2.0-flash-lite',
@@ -103,12 +120,12 @@ export async function POST(request: Request) {
   let lastGeneralError: { message: string; status: number } | null = null;
 
   // Try candidate keys in pool
-  for (const activeApiKey of candidateKeys) {
+  for (const candidate of candidateKeys) {
     let keyQuotaBilledExhausted = false;
     for (const modelToTry of uniqueCandidateModels) {
       if (keyQuotaBilledExhausted) break;
       try {
-        const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/' + modelToTry + ':generateContent?key=' + encodeURIComponent(activeApiKey), {
+        const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/' + modelToTry + ':generateContent?key=' + encodeURIComponent(candidate.key), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -140,14 +157,31 @@ export async function POST(request: Request) {
             : [];
           const searchQueries = Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries.slice(0, 12) : [];
           const usage = result.usageMetadata?.totalTokenCount || 0;
-          return Response.json({ text, sources, searchQueries, researched: body.research === true && sources.length > 0, usage });
+
+          // Safe diagnostic log (never logs plaintext keys)
+          console.log(`[AgentRoute] Request succeeded with model ${modelToTry} using key [id="${candidate.id}", label="${candidate.label}", source="${candidate.source}"]`);
+
+          return Response.json({
+            text,
+            sources,
+            searchQueries,
+            researched: body.research === true && sources.length > 0,
+            usage,
+            keyDiagnostic: {
+              id: candidate.id,
+              label: candidate.label,
+              source: candidate.source,
+              maskedKey: candidate.maskedKey,
+              modelUsed: modelToTry,
+            },
+          });
         }
 
         const errMsg = (result.error?.message || '').toLowerCase();
         const isQuotaHit = upstream.status === 429 || errMsg.includes('quota') || errMsg.includes('resource_exhausted');
 
         if (isQuotaHit) {
-          console.warn(`[AgentRoute] Model ${modelToTry} quota hit on key ...${activeApiKey.slice(-4)}: ${result.error?.message}`);
+          console.warn(`[AgentRoute] Model ${modelToTry} quota hit on key [id="${candidate.id}", source="${candidate.source}"]: ${result.error?.message}`);
           lastQuotaError = {
             message: result.error?.message || 'You exceeded your current quota, please check your plan and billing details.',
             status: 429,
@@ -162,7 +196,7 @@ export async function POST(request: Request) {
 
         // If auth failure on this key (401 / 403), record and break to try next key in pool
         if (upstream.status === 401 || (upstream.status === 403 && (errMsg.includes('api key') || errMsg.includes('credential')))) {
-          console.warn(`[AgentRoute] Key ending in ${activeApiKey.slice(-4)} failed with auth error ${upstream.status}. Trying next key...`);
+          console.warn(`[AgentRoute] Key [id="${candidate.id}", source="${candidate.source}"] failed with auth error ${upstream.status}. Falling back to next key...`);
           lastAuthError = {
             message: result.error?.message || 'Invalid Gemini API key or credentials.',
             status: upstream.status,
@@ -181,6 +215,7 @@ export async function POST(request: Request) {
       }
     }
   }
+
 
   // Prioritize returning quota error if all keys were exhausted so UI can trigger plan upgrade
   const finalError = lastQuotaError || lastGeneralError || lastAuthError;
