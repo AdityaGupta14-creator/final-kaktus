@@ -28,7 +28,7 @@ IDENTITY AND OPERATING STANDARD
 You are Hardware Studio's engineering design agent: a rigorous, practical design partner for electronics, embedded systems, robotics, mechanisms, controls, and prototyping. Convert user intent into an executable engineering workflow, not a generic answer or a tiny demonstration unrelated to the request.
 Treat every deliverable as part of a system with requirements, interfaces, physical constraints, dependencies, decisions, failure modes, and verification. Think through the design privately; expose concise rationale, equations, assumptions, trade-offs, evidence, and next actions, never private chain-of-thought.
 Do not promise a perfect design, universal physical capability, real-world validation, physical construction, or live measurement. State the boundary between a researched proposal, a generated canvas, a simulation, a bench test, and verified hardware.
-Preserve the user's intent and language. A short prompt does not mean the requested system is trivial. Infer a useful safe scope, state reasonable assumptions, and ask only the smallest architecture-changing question when blocked.
+Preserve the user's intent, language, and stated scope. Fill only the gaps needed to deliver that outcome; do not turn a short request into extra subsystems, unrelated hardware, or unnecessary steps. State reversible assumptions and ask only when an architecture-changing unknown blocks safe progress.
 
 TASK ROUTING
 - First classify the actual requested outcome: explanation, research, new design, modification, debugging, test-plan insertion, coding, fabrication, or continuation of an approved project.
@@ -202,38 +202,54 @@ RESPONSE
 - A complete-looking diagram is not proof of electrical, mechanical, thermal, firmware, or regulatory correctness. Name unresolved risks and required real-world checks.
 `;
 
-const DOMAIN_EXPERTISE: Array<{ match: RegExp; title: string; guidance: string }> = [
-  {
-    match: /robot|arm|gripper|joint|linkage|actuat|servo|motor|gear|wheel|rover/i, title: 'MECHANISM, MOTION, AND ACTUATION', guidance: `
-Identify degrees of freedom, joint types, reach, payload, mounting pose, velocity, acceleration, cycle time, backlash, and cable routing. Create a load-path/free-body model and calculate worst-pose gravity moment, inertia torque, friction, and disturbance before selecting each actuator. Compare continuous torque and torque-speed behavior, not only stall torque. Check driver current, supply droop, thermal duty, mount stiffness, fasteners, travel stops, pinch zones, and low-energy commissioning. For an arm, analyze every joint and the cumulative distal payload through upstream joints; show which pose is worst and why. For a mobile robot, include traction, wheel geometry, center of mass, motor stall current, sensor height/spacing, turning radius, and ground conditions. Give a geometry drawing with axes, dimensions, load arrows, and the uncertainty of each estimate.` },
-  {
-    match: /circuit|wire|wiring|schematic|breadboard|pcb|driver|l298|h.bridge|voltage|current|resistor|capacitor|diode|transistor|mosfet/i, title: 'CIRCUIT AND SIGNAL INTEGRITY', guidance: `
-Derive every net from the actual part pinout and exact module revision. Separate source, logic rail, load rail, switched outputs, return, and chassis. Check input/output voltage levels, GPIO limits, current path, connector/wire rating, protection, startup transient, reverse polarity, decoupling, ground bounce, EMI, and thermal losses. Make a pin-to-pin connection table and preserve net naming between steps. For motor drivers, compare motor stall/startup current with per-channel and total thermal capability, include voltage drop, and verify enable/PWM and direction logic from the datasheet. Never infer a breadboard or breakout's current limit from the IC headline rating.` },
-  {
-    match: /battery|cell|charger|power supply|regulator|buck|boost|runtime|energy|solar|thermal|heat/i, title: 'POWER, BATTERY, AND THERMAL BUDGET', guidance: `
-Draw a power tree and calculate simultaneous steady, startup, and fault current. Verify source range, converter efficiency, transient response, dropout, ripple, battery discharge/charge limits, usable energy, connector/wire voltage drop, fuse coordination, and return-path rating. Calculate P=VI and conversion loss; estimate junction/ambient rise using the actual thermal path, airflow, enclosure, and derating. State chemistry-specific limitations only from reliable sources. Estimate runtime from a stated load profile and usable capacity, not nominal capacity alone. Provide staged power-up checks with a current limit and measurable voltage/current pass limits.` },
-  {
-    match: /sensor|ir |infrared|line.follow|encoder|camera|ultrasonic|lidar|imu|gps|temperature|humidity|control|pid|feedback/i, title: 'SENSING, CONTROL, AND CALIBRATION', guidance: `
-For each sensor define measurand, units, range, accuracy, resolution, bandwidth, placement, field of view, environment, interface, sample rate, noise, and calibration. Specify threshold/hysteresis or filter from the expected signal rather than guessing universal values. Define controller state transitions, timing, direction convention, actuator saturation, fault timeout, reset and disconnected-sensor behavior. For feedback control, expose setpoint/units, sample period, gains/ranges, anti-windup and measurable response criteria. Include repeatable calibration and boundary/noise/fault tests.` },
-  {
-    match: /firmware|arduino|esp32|microcontroller|embedded|code|flash|serial|i2c|spi|uart|bluetooth|wifi|protocol/i, title: 'EMBEDDED SOFTWARE AND INTERFACES', guidance: `
-Bind code to the exact board/core, pin map, voltage, library and version assumptions. State boot/programming pin constraints and avoid reassigning reserved pins. Implement explicit initialization, safe outputs, bounded state machines, fault reporting, watchdog/recovery where appropriate, and nonblocking scheduling when timing or control needs it. Include units and safe ranges for tuning parameters. Check race, timeout, reset, brownout, communication loss and malformed input. Compile/simulate where tools permit, but report compile status separately from hardware behavior.` },
-  {
-    match: /drone|uav|quadcopter|aircraft|flight|propeller|aerial/i, title: 'AERIAL-SYSTEM RISK REVIEW', guidance: `
-Do not provide actionable instructions for constructing, modifying, or operating an aerial vehicle. For benign educational discussion, keep guidance to non-operational architecture, physics concepts, risk analysis, or software simulation with no flight-ready build details. Do not specify a parts list, thrust sizing, assembly/wiring sequence, or procedures enabling a real flight system. Explain that safe, lawful operation requires qualified adult/professional supervision and applicable rules.` },
-  {
-    match: /mechanical|3d print|enclosure|frame|chassis|bearing|fastener|material|fabricat|laser.cut|cnc|mount/i, title: 'MECHANICAL DESIGN AND FABRICATION', guidance: `
-State coordinate frame, datums, envelope, interfaces, loads, tolerances, material/process assumptions, and service access. Check load paths, deflection, buckling, fatigue, fastener engagement, fit, vibration, clearance, and cable/connector strain relief as applicable. Dimensions without validated CAD or measurements are conceptual estimates. A fabrication drawing must include units, datum references, critical dimensions/tolerances, material and process; never describe a conceptual SVG as manufacturing-ready.` },
-  {
-    match: /test|debug|troubleshoot|verify|validation|after this step|after step|after the current step|continuity|short circuit|short-circuit/i, title: 'TEST DESIGN AND DEBUGGING', guidance: `
-State a falsifiable pass condition, baseline, instrument/observation, test setup, expected result and units, failure symptom, and next safe isolation step. Preserve the current build state when inserting a test. Put the requested test immediately after the visible one-based step ordinal; keep all inserted steps ordered. Distinguish static review, simulated behavior, successful compile, bench measurement, and system acceptance. Add regression checks for completed modules when integrating.
-For any continuity or resistance test, explicitly disconnect the battery and all other sources first, confirm the circuit is de-energized, and never probe a live source in ohms/continuity mode. Never define a generic >1 kOhm pass criterion for supply rails; it is not a universal short-circuit test.
-Base the criterion on the exact netlist and meter: expected connected nodes should read near the measured lead/contact baseline; isolated nodes should remain open only when no semiconductor, capacitor, motor winding, or parallel load creates another path. Isolate parts or state the limitation when readings are ambiguous.
-Never measure resistance across a battery pack or its live terminals. If the design and exact component topology do not justify a numeric threshold, do not guess one; state the qualitative pass condition and what part data or isolation is needed to make it numeric.` },
-];
-
 function compact(value: unknown, maxLength = 24000): string {
   try { return JSON.stringify(value).slice(0, maxLength); } catch { return 'unavailable'; }
+}
+
+function selectEngineeringContract(context: AgentContext, requestAndWorkspace: string, hasArduinoFirmwareContext: boolean, testIntent: boolean): string {
+  const required = new Set([
+    'IDENTITY AND OPERATING STANDARD',
+    'TASK ROUTING',
+    'COMPLEX PROJECT GATE',
+    'ENGINEERING METHOD',
+    'SAFETY AND SCOPE',
+    'RESPONSE',
+  ]);
+  const request = context.userRequest || '';
+  const hardwareAction = /\b(?:build|create|make|design|construct|prototype|wire|connect|add|insert|replace|change|modify)\b/i.test(request);
+  const motion = /\b(?:robot|robotic|arm|wrist|hand|joint|linkage|servo|motor|actuator|mechanism|move|motion|movement)\b/i.test(requestAndWorkspace);
+  const electrical = context.surface === 'circuit' || context.surface === 'pcb'
+    || /\b(?:circuit|wire|wiring|breadboard|schematic|pcb|driver|voltage|current|pin)\b/i.test(requestAndWorkspace);
+  const explicitlyRequestsResearch = /\b(?:research|source|datasheet|manufacturer|latest|specification|rating)\b/i.test(request);
+  const research = explicitlyRequestsResearch || (context.workflow?.stage !== 'implementation' && hardwareAction
+    && /\b(?:robot|robotic|wrist|joint|motor|servo|actuator|battery|mains|high[- ]current|power supply|drone|pcb)\b/i.test(requestAndWorkspace));
+  const sensor = /\b(?:sensor|encoder|camera|ultrasonic|lidar|imu|gps|temperature|humidity|pid|feedback)\b/i.test(requestAndWorkspace);
+  const power = /\b(?:battery|cell|charger|power supply|regulator|buck|boost|runtime|energy|thermal|heat|motor|servo|actuator)\b/i.test(requestAndWorkspace);
+  const code = hasArduinoFirmwareContext || /\b(?:firmware|arduino|esp32|microcontroller|embedded|code|flash|serial|i2c|spi|uart|bluetooth|wifi|protocol)\b/i.test(requestAndWorkspace);
+
+  if (research) required.add('RESEARCH');
+  if (context.surface === 'circuit' || context.surface === 'canvas') {
+    required.add('CANVAS CONTRACT');
+    required.add('BUILD SEQUENCE AND TESTING');
+  }
+  if (electrical) required.add('ELECTRICAL AND CIRCUIT DESIGN');
+  if (motion) {
+    required.add('MECHANICS AND MOTION');
+    required.add('MOTORS, ACTUATORS, AND DRIVERS');
+    if (context.surface === 'circuit' || context.surface === 'canvas') {
+      required.add('ELECTRICAL AND CIRCUIT DESIGN');
+      required.add('POWER, BATTERIES, AND THERMAL');
+    }
+  }
+  if (power) required.add('POWER, BATTERIES, AND THERMAL');
+  if (sensor) required.add('SENSING AND CONTROL');
+  if (code) required.add('EMBEDDED SOFTWARE');
+  if (testIntent) required.add('BUILD SEQUENCE AND TESTING');
+
+  return ENGINEERING_CONTRACT.trim()
+    .split(/\n(?=[A-Z][A-Z ,&()'-]+\n)/)
+    .filter(section => required.has(section.split('\n', 1)[0].trim()))
+    .join('\n\n');
 }
 
 export function buildHardwareStudioSystemPrompt(context: AgentContext): string {
@@ -245,8 +261,7 @@ export function buildHardwareStudioSystemPrompt(context: AgentContext): string {
     : 'none';
   const tabs = context.allTabs?.length ? context.allTabs.map(tab => [
     `${tab.isActive ? '[ACTIVE] ' : ''}${tab.name}: ${tab.componentCount} components, ${tab.wireCount} wires, ${tab.stepCount} steps`,
-    tab.components.length ? `Components: ${tab.components.map(item => `${item.id}(${item.type})`).join(', ')}` : '',
-    tab.wires.length ? `Connections: ${tab.wires.map(item => `${item.from}->${item.to}`).join(', ')}` : '',
+    !tab.isActive && tab.components.length ? `Components: ${tab.components.map(item => `${item.id}(${item.type})`).join(', ')}` : '',
     tab.pinAssignments?.length ? `Occupied pin assignments: ${tab.pinAssignments.join('; ')}` : '',
     tab.stepOutline?.length ? `Completed steps: ${tab.stepOutline.join(' | ')}` : '',
   ].filter(Boolean).join('\n')).join('\n\n') : 'none';
@@ -274,8 +289,11 @@ export function buildHardwareStudioSystemPrompt(context: AgentContext): string {
   ].join(' ');
   const firmwareIntent = /\b(?:firmware|sketch|program(?:ming)?|code|coding|flash|upload|serial monitor)\b|कोड|कोडिंग/i.test(context.userRequest || '');
   const programmableBoardEvidence = /\b(?:arduino|esp32|microcontroller|pca9685|raspberry\s*pi)\b/i.test(requestAndWorkspace);
+  const motionBuildEvidence = /\b(?:robot|robotic|arm|wrist|hand|joint|mechanism)\b/i.test(requestAndWorkspace)
+    && /\b(?:build|create|make|design|construct|prototype|move|moves|moving|motion|movement|actuat\w*)\b/i.test(context.userRequest || '');
   const controlledActuatorEvidence = /\b(?:servo|stepper|motor driver|motor controller|actuator)\b/i.test(requestAndWorkspace)
-    && /\b(?:robot|arm|motion|drive|control|automation|build|make|design)\b/i.test(requestAndWorkspace);
+    && /\b(?:robot|arm|motion|drive|control|automation|build|make|design)\b/i.test(requestAndWorkspace)
+    || motionBuildEvidence;
   const hasArduinoFirmwareContext = context.surface !== 'pcb' && (
     firmwareIntent
     || programmableBoardEvidence
@@ -283,7 +301,11 @@ export function buildHardwareStudioSystemPrompt(context: AgentContext): string {
     || /\b(?:flash|upload|serial monitor)\b/i.test(requestAndWorkspace)
   );
   const testIntent = /\b(?:test|testing|validate|validation|verify|verification|debug|troubleshoot)\b|(?:test|testing|check|verify|validate|debug)\s*(?:kar|karo|kare|karke|please)|टेस्ट|जाँच|जांच/i.test(context.userRequest || '');
+  const selectedEngineeringContract = selectEngineeringContract(context, requestAndWorkspace, hasArduinoFirmwareContext, testIntent);
   const selectedExpertise = [
+    ...(/\b(?:drone|uav|quadcopter|aircraft|flight|propeller|aerial)\b/i.test(requestAndWorkspace) ? [`
+AERIAL-SYSTEM SAFETY
+Do not provide actionable instructions for constructing, modifying, or operating an aerial vehicle. Keep educational help to non-operational architecture, physics, risk analysis, or software simulation without flight-ready parts, wiring, sizing, assembly, or procedures.`] : []),
     ...(hasArduinoFirmwareContext ? [`
 ARDUINO FIRMWARE AND TESTING — STRICT IN-APP RULE
 This user is working in Hardware Studio/Kaktus. Never tell them to leave this app, open Arduino IDE, PlatformIO, VS Code, or another app to edit, compile, upload, flash, or test firmware. Keep code editing in this app's Code Preview; tell them to save edits to the named circuit step. For hardware testing, direct them to this app's Flash to Board / Connect controls: select the detected board and USB port, compile and flash here, then use this app's Serial Monitor. Name the exact module and one-based step to test, and give the expected observation/pass condition from that step. A compiler pass is not a physical board test. If the board or in-app USB service is unavailable, say that physical testing cannot happen yet, preserve the code, and explain the exact in-app steps to do when it is available. Never claim a flash, connection, simulation, or physical test succeeded unless the app reports that result.`] : []),
@@ -293,9 +315,6 @@ The user expects the requested system's behavior to work. Check the approved pla
     ...(testIntent ? [`
 EXPLICIT TEST REQUEST
 Treat this as an artifact change: add the requested test/diagnostic step(s) to the current canvas module, based on its actual components, wiring, and visible step number. Preserve prior work and insert only where requested. When a controller sketch is required to run the test, include its complete editable source in that test step's \`code\` field with \`code_language\`; do not substitute a prose promise or generic checklist. Provide a falsifiable pass condition and report only the status actually reached. Keep physical board testing inside Kaktus.`] : []),
-    ...DOMAIN_EXPERTISE
-      .filter(module => module.match.test(context.userRequest || ''))
-      .map(module => `\n${module.title}\n${module.guidance.trim()}`),
   ].join('\n');
   const insertionContext = context.userRequest && /after this step|after the current step|after step\s+\d+|iss step ke baad|is step ke baad|current step ke baad/i.test(context.userRequest)
     ? `\n\nREQUESTED STEP INSERTION\nThe active UI step is the one-based ordinal ${(context.currentStep ?? 0) + 1}. For "after this/current step", set insert_after_step to that ordinal. For "after step N", N is the visible one-based step number. Keep multiple insertions after that same anchor in their given order. Do not overwrite, restart, or renumber unrelated existing steps.`
@@ -304,7 +323,12 @@ Treat this as an artifact change: add the requested test/diagnostic step(s) to t
     ? `\n\nREQUESTED STEP REPLACEMENT\nThe active UI step is the one-based ordinal ${(context.currentStep ?? 0) + 1}. Honor an explicit step number; otherwise use this active ordinal only when the user names the current/selected step. Emit the replacement with replace_step set to that one-based ordinal. Replace only that step's content; do not add a second copy, move it, or change other steps or wiring.`
     : '';
 
-  return `${ENGINEERING_CONTRACT}${selectedExpertise ? `\n\nTASK-SPECIFIC EXPERTISE${selectedExpertise}` : ''}\n\nACTIVE WORKSPACE\nSurface: ${context.surface}\nUser's exact request:\n${context.userRequest || '(see conversation)'}\nProject: ${context.projectName || 'untitled'}\nCurrent step: ${(context.currentStep ?? 0) + 1} of ${context.totalSteps ?? 0}\nVisible components:\n${components}\nVisible connections:\n${wires}\nWorkspace tabs and completed work:\n${tabs}\nAdditional state:\n${compact(context.currentState ?? {})}${insertionContext}${replacementContext}${workflow}
+  return `${selectedEngineeringContract}${selectedExpertise ? `\n\nTASK-SPECIFIC EXPERTISE${selectedExpertise}` : ''}\n\nACTIVE WORKSPACE\nSurface: ${context.surface}\nUser's exact request:\n${context.userRequest || '(see conversation)'}\nProject: ${context.projectName || 'untitled'}\nCurrent step: ${(context.currentStep ?? 0) + 1} of ${context.totalSteps ?? 0}\nVisible components:\n${components}\nVisible connections:\n${wires}\nWorkspace tabs and completed work:\n${tabs}\nAdditional state:\n${compact(context.currentState ?? {})}${insertionContext}${replacementContext}${workflow}
+
+REQUEST SCOPE
+- Keep the user's named target as the design boundary. If they ask for only a wrist, design the wrist module only; do not expand it into a complete arm or add unrelated modules.
+- Add sensors, controls, and helper hardware only when required for the stated behavior or chosen architecture. Label assumptions and give a brief reason for necessary additions.
+- For mechanical motion, show the requested mechanism and its axes in blueprint_svg; keep electrical wiring in circuit steps. Mark conceptual geometry as such and do not present electronics alone as a complete moving mechanism.
 
 OUTPUT FORMAT ENFORCEMENT (CRITICAL — READ THIS LAST)
 When the user asks to BUILD, MAKE, CREATE, WIRE, DESIGN, or CONSTRUCT anything:

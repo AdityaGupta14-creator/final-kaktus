@@ -33,6 +33,15 @@ interface GeminiResponse {
   };
 }
 
+type AgentGatewayErrorCode = 'API_KEY_MISSING' | 'PROVIDER_RATE_LIMIT' | 'PROVIDER_QUOTA_EXHAUSTED' | 'PROVIDER_AUTH_ERROR' | 'UPSTREAM_ERROR';
+
+function providerLimitMessage(status: number): string {
+  if (status === 429) {
+    return 'Gemini API quota or rate limit reached for the configured Google project or model. This is separate from your Kaktus token allowance. Check the project limits in Google AI Studio, wait for the limit to reset, or try another configured key or model.';
+  }
+  return 'Gemini provider quota is unavailable for the configured key or model. This is separate from your Kaktus token allowance. Check the Google AI Studio or Google Cloud project quota and billing for that key.';
+}
+
 export async function POST(request: Request) {
   const startTime = Date.now();
   let callerUid: string | null = null;
@@ -109,6 +118,7 @@ export async function POST(request: Request) {
   if (candidateKeys.length === 0) {
     return Response.json({
       error: 'No active Gemini API key found. Please add a Gemini key in the Admin Panel or set GEMINI_API_KEY.',
+      code: 'API_KEY_MISSING' satisfies AgentGatewayErrorCode,
     }, { status: 503 });
   }
 
@@ -132,7 +142,7 @@ export async function POST(request: Request) {
   ];
   const uniqueCandidateModels = Array.from(new Set(candidateModels));
 
-  let lastQuotaError: { message: string; status: number } | null = null;
+  let lastQuotaError: { message: string; status: number; code: AgentGatewayErrorCode } | null = null;
   let lastAuthError: { message: string; status: number } | null = null;
   let lastGeneralError: { message: string; status: number } | null = null;
 
@@ -219,8 +229,9 @@ export async function POST(request: Request) {
         if (isQuotaHit) {
           console.warn(`[AgentRoute] Model ${modelToTry} quota hit on key [id="${candidate.id}", source="${candidate.source}"]: ${result.error?.message}`);
           lastQuotaError = {
-            message: result.error?.message || 'You exceeded your current quota, please check your plan and billing details.',
-            status: 429,
+            message: providerLimitMessage(upstream.status),
+            status: upstream.status === 429 ? 429 : 503,
+            code: upstream.status === 429 ? 'PROVIDER_RATE_LIMIT' : 'PROVIDER_QUOTA_EXHAUSTED',
           };
           if (errMsg.includes('exceeded your current quota') || errMsg.includes('billing')) {
             // Entire key billing quota exhausted, switch to next key immediately
@@ -276,6 +287,7 @@ export async function POST(request: Request) {
 
   return Response.json({
     error: finalError?.message || 'Gemini request failed. Please check your keys or quota.',
+    code: lastQuotaError?.code || (lastAuthError ? 'PROVIDER_AUTH_ERROR' : 'UPSTREAM_ERROR'),
   }, { status: finalError?.status || 502 });
 }
 

@@ -410,6 +410,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
         
       const systemPrompt = buildHardwareStudioSystemPrompt({
         surface: 'canvas',
+        userRequest: userMsg,
         projectName: data?.project_name,
         currentStep: currentStepIndex,
         totalSteps: data?.steps?.length || 0,
@@ -427,13 +428,20 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
 
 
     try {
+      const isComplexHardwareBuild = /\b(?:build|create|design|construct|prototype|make)\b/i.test(userMsg)
+        && /\b(?:robot|robotic|wrist|arm|motor|servo|actuator|battery|power supply|pcb|drone)\b/i.test(userMsg);
+      const researchRequested = /\b(?:research|look\s*up|find\s+sources?|datasheet|manufacturer|latest|specification|rating)\b/i.test(userMsg);
+      const hardwareAction = /\b(?:build|create|make|design|construct|prototype|wire|connect|add|insert|replace|change|modify)\b/i.test(userMsg);
+      const groundedResearch = researchRequested || (hardwareAction
+        && /\b(?:robot|robotic|wrist|joint|motor|servo|actuator|battery|mains|high[- ]current|power supply|drone|pcb)\b/i.test(userMsg));
       const agentReply = await requestAgent({
         apiKeys: apiKeys || [],
         model,
         systemPrompt: systemPrompt,
         contents: requestContents,
         temperature: 0.2,
-        maxOutputTokens: 32768,
+        maxOutputTokens: isComplexHardwareBuild || groundedResearch || userMsg.length > 320 ? 16_384 : 8_192,
+        research: groundedResearch,
       });
       const replyText = agentReply.text;
 

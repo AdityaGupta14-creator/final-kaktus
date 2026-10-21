@@ -504,6 +504,38 @@ export default function Home() {
     });
   }, []);
 
+  const handleApplyFirmwareRepair = useCallback((repair: {
+    targetTabId?: string;
+    targetTabName: string;
+    stepInstruction: string;
+    phase?: string;
+    expectedCode: string;
+    repairedCode: string;
+  }) => {
+    const normalizeCode = (source: string) => source.replace(/\r\n?/g, '\n').trim();
+    setWorkspace(previous => {
+      let targetIndex = previous.tabs.findIndex(tab => tab.kind !== 'plan'
+        && tab.name.trim().toLowerCase() === repair.targetTabName.trim().toLowerCase());
+      if (targetIndex < 0 && repair.targetTabId) {
+        targetIndex = previous.tabs.findIndex(tab => tab.kind !== 'plan' && tab.id === repair.targetTabId);
+      }
+      if (targetIndex < 0) return previous;
+      const target = previous.tabs[targetIndex];
+      if (!target.data) return previous;
+
+      const stepIndex = target.data.steps.findIndex(step => step.instruction === repair.stepInstruction
+        && (!repair.phase || step.phase === repair.phase)
+        && normalizeCode(step.code || '') === normalizeCode(repair.expectedCode));
+      if (stepIndex < 0) return previous;
+
+      const steps = [...target.data.steps];
+      steps[stepIndex] = { ...steps[stepIndex], code: repair.repairedCode };
+      const tabs = [...previous.tabs];
+      tabs[targetIndex] = { ...target, data: { ...target.data, steps } };
+      return { ...previous, tabs };
+    });
+  }, []);
+
   const handleStepChange = useCallback((step: number) => {
     setWorkspace(prev => {
       const tabs = [...prev.tabs];
@@ -812,6 +844,7 @@ export default function Home() {
               onModelChange={setSelectedModel}
               onExecuteCommand={handleExecuteCommand}
               onUpdateCircuit={handleCircuitUpdate}
+              onApplyFirmwareRepair={handleApplyFirmwareRepair}
               onStepChange={handleStepChange}
               currentStep={currentStep}
               totalSteps={circuitData?.steps?.length || 0}

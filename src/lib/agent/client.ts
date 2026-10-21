@@ -19,6 +19,29 @@ export interface AgentResponse {
   researched: boolean;
 }
 
+export type AgentErrorCode = 'APP_QUOTA_EXCEEDED' | 'PROVIDER_RATE_LIMIT' | 'PROVIDER_QUOTA_EXHAUSTED' | 'PROVIDER_AUTH_ERROR' | 'API_KEY_MISSING' | 'UPSTREAM_ERROR' | string;
+
+export class AgentRequestError extends Error {
+  readonly code?: AgentErrorCode;
+  readonly status?: number;
+
+  constructor(message: string, code?: AgentErrorCode, status?: number) {
+    super(message);
+    this.name = 'AgentRequestError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function responseError(data: unknown, status: number): AgentRequestError {
+  const payload = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+  const message = typeof payload.error === 'string' ? payload.error : 'Agent request failed.';
+  const code = typeof payload.code === 'string'
+    ? payload.code
+    : status === 429 ? 'PROVIDER_RATE_LIMIT' : undefined;
+  return new AgentRequestError(message, code, status);
+}
+
 interface AgentRequest {
   apiKeys: string[];
   model: string;
@@ -97,7 +120,7 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
       const limit = getTokenLimit(plan, planExpiresAt, role, testQuotaMode);
       const currentTotal = getStoredTokensUsed(uid);
       window.dispatchEvent(new CustomEvent('geminiQuotaExceeded', { detail: { currentTotal, limit } }));
-      throw new Error(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens daily limit. Please upgrade your plan to continue.`);
+      throw new AgentRequestError(`Daily Quota Reached. You have exceeded your ${limit / 1000}k tokens daily limit. Please upgrade your plan to continue.`, 'APP_QUOTA_EXCEEDED', 429);
     }
   }
 
@@ -126,7 +149,7 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
       signal: request.abortSignal,
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Agent request failed');
+    if (!response.ok) throw responseError(data, response.status);
 
     // Track usage for default server key
     if (typeof window !== 'undefined') {
@@ -147,8 +170,8 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
     ? getOrderedKeys(request.apiKeys) 
     : [...request.apiKeys];
   
-  let lastError: any = null;
-  let lastQuotaError: any = null;
+  let lastError: AgentRequestError | null = null;
+  let lastQuotaError: AgentRequestError | null = null;
   let triedCount = 0;
 
   for (const key of orderedKeys) {
@@ -172,12 +195,12 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
       const data = await response.json().catch(() => ({}));
       
       if (!response.ok) {
-        const errorMsg = data.error || 'Agent request failed.';
+        const agentError = responseError(data, response.status);
         
         if (typeof window !== 'undefined') {
-          const isQuota = response.status === 429 || (typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('quota'));
-          if (isQuota) {
-            lastQuotaError = new Error(errorMsg);
+          const isProviderLimit = agentError.code === 'PROVIDER_RATE_LIMIT' || agentError.code === 'PROVIDER_QUOTA_EXHAUSTED';
+          if (isProviderLimit) {
+            lastQuotaError = agentError;
             const errsRaw = localStorage.getItem('gemini_key_errors') || '{}';
             const errs = JSON.parse(errsRaw);
             if (!errs[key]) errs[key] = {};
@@ -188,7 +211,7 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
           }
         }
         
-        throw new Error(errorMsg);
+        throw agentError;
       }
       
       // Clear error state on success
@@ -219,19 +242,23 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
         searchQueries: Array.isArray(data.searchQueries) ? data.searchQueries : [],
         researched: data.researched === true,
       };
-    } catch (e: any) {
-      console.warn(`[Smart Handler] Key ending in ${key.slice(-4)} failed for model ${request.model}:`, e.message);
-      lastError = e;
+    } catch (e: unknown) {
+      const error = e instanceof AgentRequestError
+        ? e
+        : new AgentRequestError(e instanceof Error ? e.message : 'Agent request failed.');
+      if (error.code === 'APP_QUOTA_EXCEEDED') throw error;
+      console.warn(`[Smart Handler] Key ending in ${key.slice(-4)} failed for model ${request.model}:`, error.message);
+      lastError = error;
     }
   }
 
   if (triedCount === 0) {
     localStorage.removeItem('gemini_key_errors');
-    throw new Error('All keys were recently rate-limited. Please wait a moment and try again.');
+    throw new AgentRequestError('All configured Gemini keys were recently rate-limited. Wait for the provider limit to reset, or try another model.', 'PROVIDER_RATE_LIMIT', 429);
   }
 
   const finalError = lastQuotaError || lastError;
-  throw new Error(`All keys failed. Last error: ${finalError?.message || 'Gemini request failed. Please check your keys or quota.'}`);
+  throw finalError || new AgentRequestError('Gemini request failed. Please check the configured API key and try again.', 'UPSTREAM_ERROR');
 }
 
 export async function listAgentModels(apiKey: string): Promise<Array<{
