@@ -349,25 +349,28 @@ export default function Home() {
   const terminalRef = useRef<TerminalRef>(null);
 
   const [sidebarWidth, setSidebarWidth] = useState(340);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const isDraggingSidebar = useRef(false);
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
       if (!isDraggingSidebar.current) return;
-      const newWidth = Math.max(260, Math.min(e.clientX, window.innerWidth * 0.6));
+      const newWidth = Math.max(240, Math.min(e.clientX, window.innerWidth * 0.7));
       setSidebarWidth(newWidth);
     };
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       if (isDraggingSidebar.current) {
         isDraggingSidebar.current = false;
         document.body.style.cursor = 'default';
       }
     };
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     };
   }, []);
   
@@ -673,9 +676,15 @@ export default function Home() {
               </g>
             </svg>
           </div>
-          <nav className="hidden md:flex items-center text-[13px] text-[#cccccc] h-full gap-1 ml-2">
-            <button className="px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors">
-              File
+          <nav className="flex items-center text-[12px] sm:text-[13px] text-[#cccccc] h-full gap-1 ml-1 sm:ml-2">
+            <button 
+              onClick={() => setIsSidebarOpen(prev => !prev)}
+              className={`px-2 sm:px-2.5 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors gap-1.5 cursor-pointer ${isSidebarOpen ? 'text-blue-400 bg-[#252525]' : 'text-gray-400'}`}
+              title={isSidebarOpen ? "Collapse Chat Sidebar (full screen canvas for tablets)" : "Expand Chat Sidebar"}
+              aria-label="Toggle Chat Sidebar"
+            >
+              <Layers size={13} />
+              <span className="hidden sm:inline">{isSidebarOpen ? 'Hide Chat' : 'Chat'}</span>
             </button>
 
             <button 
@@ -684,7 +693,7 @@ export default function Home() {
                 setIsTerminalOpen(open);
                 if (open) setIsFlashOpen(false);
               }}
-              className={`px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors ${isTerminalOpen ? 'bg-[#333333] text-white' : ''}`}
+              className={`px-2.5 sm:px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors cursor-pointer ${isTerminalOpen ? 'bg-[#333333] text-white' : ''}`}
             >
               Terminal
             </button>
@@ -694,11 +703,11 @@ export default function Home() {
                 setIsFlashOpen(open);
                 if (open) setIsTerminalOpen(false);
               }}
-              className={`px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors ${isFlashOpen ? 'bg-[#333333] text-white' : ''} gap-1.5`}
+              className={`px-2.5 sm:px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors cursor-pointer ${isFlashOpen ? 'bg-[#333333] text-white' : ''} gap-1.5`}
               title="Connect a microcontroller and open the hardware console"
             >
               <Usb size={13} />
-              Connect
+              <span className="hidden sm:inline">Connect</span>
             </button>
           </nav>
         </div>
@@ -815,68 +824,73 @@ export default function Home() {
       <main className="flex-1 flex overflow-hidden relative">
         
         {/* Left: Chat Pane */}
-        <div 
-          className="flex-shrink-0 bg-[#111] flex flex-col relative z-10"
-          style={{ width: `${sidebarWidth}px` }}
-        >
-          {/* Drag Handle */}
+        {isSidebarOpen && (
           <div 
-            className="absolute right-0 top-0 bottom-0 w-1 hover:w-1.5 bg-gray-800/40 hover:bg-blue-500/50 cursor-col-resize z-50 transition-colors"
-            onMouseDown={() => {
-              isDraggingSidebar.current = true;
-              document.body.style.cursor = 'col-resize';
-            }}
-          />
-          <div className="flex-1 overflow-hidden">
-            {workspaceReady && sessionId && <ChatBox
-              key={sessionId}
-              apiKeys={apiKeys} 
-              model={selectedModel}
-              availableModels={availableModels}
-              onModelChange={setSelectedModel}
-              onExecuteCommand={handleExecuteCommand}
-              onUpdateCircuit={handleCircuitUpdate}
-              onApplyFirmwareRepair={handleApplyFirmwareRepair}
-              onStepChange={handleStepChange}
-              currentStep={currentStep}
-              totalSteps={circuitData?.steps?.length || 0}
-              circuitData={circuitData}
-              allTabs={allTabs}
-              projectMemory={projectMemory}
-              activeTabId={activeCircuitTab.id}
-              targetWorkspaceTabId={activeTab.kind === 'plan' ? activeTab.planTargetTabId || 'main' : activeTab.id}
-              sessionId={sessionId}
-              sessionTitle={sessions.find(session => session.id === sessionId)?.title || 'New chat'}
-              sessions={sessions}
-              onNewChat={startNewChat}
-              onSelectSession={selectChatSession}
-              onUpdateSessionTitle={updateSessionActivity}
-              onDeleteSession={deleteChatSession}
-              onOpenImplementationPlan={handleOpenImplementationPlan}
-              pendingPlanAction={pendingPlanAction}
-              onPlanActionConsumed={handlePlanActionConsumed}
-              onQuotaReached={() => {
-                setIsQuotaModalDismissed(false);
-                setIsUpgradeModalOpen(true);
+            className="flex-shrink-0 bg-[#111] flex flex-col relative z-10"
+            style={{ width: `${sidebarWidth}px`, maxWidth: '85vw' }}
+          >
+            {/* Drag Handle (Touch & Mouse) */}
+            <div 
+              className="absolute right-0 top-0 bottom-0 w-2 hover:w-2.5 bg-gray-800/40 hover:bg-blue-500/50 cursor-col-resize z-50 transition-colors touch-none"
+              onPointerDown={(e) => {
+                isDraggingSidebar.current = true;
+                document.body.style.cursor = 'col-resize';
+                try {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                } catch {}
               }}
-              isQuotaReached={totalTokens >= tokenLimit}
-              onMessagesChange={triggerAutoSave}
-              modelSelectorNode={<ModelSelector apiKey={apiKeys[0] || ''} selectedModel={selectedModel} onModelChange={setSelectedModel} onAvailableModelsChange={setAvailableModels} onUpgradeClick={() => setIsUpgradeModalOpen(true)} variant="minimal" />}
-            />}
+            />
+            <div className="flex-1 overflow-hidden">
+              {workspaceReady && sessionId && <ChatBox
+                key={sessionId}
+                apiKeys={apiKeys} 
+                model={selectedModel}
+                availableModels={availableModels}
+                onModelChange={setSelectedModel}
+                onExecuteCommand={handleExecuteCommand}
+                onUpdateCircuit={handleCircuitUpdate}
+                onApplyFirmwareRepair={handleApplyFirmwareRepair}
+                onStepChange={handleStepChange}
+                currentStep={currentStep}
+                totalSteps={circuitData?.steps?.length || 0}
+                circuitData={circuitData}
+                allTabs={allTabs}
+                projectMemory={projectMemory}
+                activeTabId={activeCircuitTab.id}
+                targetWorkspaceTabId={activeTab.kind === 'plan' ? activeTab.planTargetTabId || 'main' : activeTab.id}
+                sessionId={sessionId}
+                sessionTitle={sessions.find(session => session.id === sessionId)?.title || 'New chat'}
+                sessions={sessions}
+                onNewChat={startNewChat}
+                onSelectSession={selectChatSession}
+                onUpdateSessionTitle={updateSessionActivity}
+                onDeleteSession={deleteChatSession}
+                onOpenImplementationPlan={handleOpenImplementationPlan}
+                pendingPlanAction={pendingPlanAction}
+                onPlanActionConsumed={handlePlanActionConsumed}
+                onQuotaReached={() => {
+                  setIsQuotaModalDismissed(false);
+                  setIsUpgradeModalOpen(true);
+                }}
+                isQuotaReached={totalTokens >= tokenLimit}
+                onMessagesChange={triggerAutoSave}
+                modelSelectorNode={<ModelSelector apiKey={apiKeys[0] || ''} selectedModel={selectedModel} onModelChange={setSelectedModel} onAvailableModelsChange={setAvailableModels} onUpgradeClick={() => setIsUpgradeModalOpen(true)} variant="minimal" />}
+              />}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Center: Circuit Canvas & Tabs */}
         <div className="flex-1 flex flex-col relative bg-[#0a0a0a] overflow-hidden">
           {/* Tab Bar with Actions */}
-          <div className="h-8 bg-[#111] border-b border-[#2b2b2b] flex items-stretch justify-between pl-0 overflow-x-auto select-none relative flex-shrink-0">
+          <div className="h-9 sm:h-8 bg-[#111] border-b border-[#2b2b2b] flex items-stretch justify-between pl-0 overflow-x-auto select-none relative flex-shrink-0 touch-pan-x">
             {/* Left: Tabs */}
             <div className="flex items-stretch gap-0">
               {workspace.tabs.map(tab => (
                 <div 
                   key={tab.id} 
                   onClick={() => setWorkspace(s => ({ ...s, activeTabId: tab.id }))}
-                  className={`group flex items-center gap-2 px-4 rounded-t-md cursor-pointer text-xs transition-colors border-t border-l border-r ${
+                  className={`group flex items-center gap-2 px-3 sm:px-4 rounded-t-md cursor-pointer text-xs transition-colors border-t border-l border-r select-none ${
                     workspace.activeTabId === tab.id 
                       ? 'bg-[#0a0a0a] text-gray-100 border-[#2b2b2b] font-medium relative top-[1px] border-b-[#0a0a0a]' 
                       : 'bg-[#111] text-gray-500 border-transparent border-b-[#2b2b2b] hover:bg-[#1a1a1a] hover:text-gray-300'

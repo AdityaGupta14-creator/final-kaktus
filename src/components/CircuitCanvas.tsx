@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { Move, CheckCircle2, ChevronLeft, ChevronRight, ChevronUp, Play, ZoomIn, ZoomOut, Maximize, Send, Loader2, MessageCircle, X, SkipBack, Search, Zap } from 'lucide-react';
+import { Move, CheckCircle2, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Play, ZoomIn, ZoomOut, Maximize, Send, Loader2, MessageCircle, X, SkipBack, Search, Zap, Minus, Info, Cable, Minimize2, Maximize2 } from 'lucide-react';
 import { requestAgent } from '@/lib/agent/client';
 // system-prompt not used here; canvas chat uses contextPrompt directly
 import { extractTutorialResponse, cleanAgentText } from '@/lib/agent/protocol';
@@ -255,10 +255,17 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
   const [wirePaths, setWirePaths] = useState<RenderedWirePath[]>([]);
   const [wokwiLoaded, setWokwiLoaded] = useState(false);
   const [expandedPanel, setExpandedPanel] = useState(false);
+  const [routingPanelCollapsed, setRoutingPanelCollapsed] = useState(false);
+  const [stepInfoCollapsed, setStepInfoCollapsed] = useState(false);
+  const [routingPanelMinimized, setRoutingPanelMinimized] = useState(true);
+  const [stepInfoMinimized, setStepInfoMinimized] = useState(true);
   const [dockPosition, setDockPosition] = useState<'bottom-right' | 'top-left'>('bottom-right');
-  const dragControls = useDragControls();
+  const barDragControls = useDragControls();
   const stepInfoDragControls = useDragControls();
   const routingPanelDragControls = useDragControls();
+  const allStepsDragControls = useDragControls();
+  const inspectDragControls = useDragControls();
+  const chatDragControls = useDragControls();
   const boardDragRef = useRef<{ pointerId: number; index: number; startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
   const [boardPositionsByProject, setBoardPositionsByProject] = useState<Record<string, Record<number, { x: number; y: number }>>>({});
   const [boardPositionsReady, setBoardPositionsReady] = useState(false);
@@ -916,13 +923,202 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [accumulatedState.components, accumulatedState.wiring, boardPositionsFingerprint, breadboardPosition?.x, breadboardPosition?.y, breadboardPosition?.boardCount, boardLayoutKey, wokwiLoaded, currentStepIndex]);
 
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.5 });
   const [isPanning, setIsPanning] = useState(false);
-  const startPanRef = useRef({ x: 0, y: 0 });
+  const transformRef = useRef(transform);
+  transformRef.current = transform;
+
+  // Active pointers tracker for multi-touch (pinch-to-zoom and multi-finger pan)
+  const activePointersRef = useRef<Map<number, { clientX: number; clientY: number }>>(new Map());
+  const pinchStateRef = useRef<{
+    initialDist: number;
+    initialScale: number;
+    initialMidpoint: { x: number; y: number };
+    initialTransform: { x: number; y: number; scale: number };
+  } | null>(null);
+  const panStartRef = useRef<{ clientX: number; clientY: number; transformAtStart: { x: number; y: number; scale: number } } | null>(null);
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
   const boardDragRAF = useRef<number>(0);
 
+  // Zoom centered around focal point in container coordinates
+  const zoomAtPoint = useCallback((targetScale: number, fx: number, fy: number) => {
+    setTransform(prev => {
+      const clampedScale = Math.min(5, Math.max(0.1, targetScale));
+      const wx = (fx - prev.x) / prev.scale;
+      const wy = (fy - prev.y) / prev.scale;
+      return {
+        x: fx - wx * clampedScale,
+        y: fy - wy * clampedScale,
+        scale: clampedScale,
+      };
+    });
+  }, []);
+
+  // Zoom centered at the canvas viewport center (for +/- buttons)
+  const zoomCentered = useCallback((delta: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    zoomAtPoint(transformRef.current.scale + delta, cx, cy);
+  }, [zoomAtPoint]);
+
+  // Fit view so the entire circuit (breadboard, Arduino, components, wires) is comfortably visible and centered
+  const fitViewToCircuit = useCallback(() => {
+    if (!containerRef.current) return;
+    const container = containerRef.current;
+    const viewportWidth = container.clientWidth || window.innerWidth;
+    const viewportHeight = container.clientHeight || window.innerHeight;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    if (breadboardPosition) {
+      for (let i = 0; i < breadboardPosition.boardCount; i++) {
+        const bPos = getBreadboardPosition(i);
+        if (bPos) {
+          minX = Math.min(minX, bPos.x);
+          minY = Math.min(minY, bPos.y);
+          maxX = Math.max(maxX, bPos.x + 820);
+          maxY = Math.max(maxY, bPos.y + 360);
+        }
+      }
+    }
+
+    const comps = accumulatedState.components || [];
+    for (const comp of comps) {
+      const cx = Number(comp.x);
+      const cy = Number(comp.y);
+      if (isNaN(cx) || isNaN(cy)) continue;
+
+      const type = (comp.type || '').toLowerCase();
+      const id = (comp.id || '').toLowerCase();
+      const label = (comp.label || '').toLowerCase();
+      const combined = `${type} ${id} ${label}`;
+
+      // Default dimensions and center-scale factors matching render sizing
+      let compW = 160;
+      let compH = 120;
+      let compScale = 1;
+
+      if (combined.includes('uno') || combined.includes('arduino')) {
+        compW = 320;
+        compH = 240;
+        compScale = 1.3;
+      } else if (combined.includes('mega')) {
+        compW = 440;
+        compH = 280;
+        compScale = 1.2;
+      } else if (combined.includes('esp32')) {
+        compW = 200;
+        compH = 240;
+        compScale = 1.3;
+      } else if (combined.includes('nano')) {
+        compW = 140;
+        compH = 200;
+        compScale = 1;
+      } else if (combined.includes('raspberry') || combined.includes('rpi')) {
+        compW = 240;
+        compH = 170;
+        compScale = 1;
+      } else if (combined.includes('breadboard')) {
+        compW = 820;
+        compH = 360;
+        compScale = 1;
+      } else if (combined.includes('battery')) {
+        compW = 120;
+        compH = 180;
+        compScale = 1;
+      } else if (combined.includes('chassis')) {
+        compW = 220;
+        compH = 150;
+        compScale = 1;
+      } else if (combined.includes('motor') || combined.includes('wheel')) {
+        compW = 150;
+        compH = 120;
+        compScale = 1;
+      } else if (combined.includes('driver') || combined.includes('l298')) {
+        compW = 190;
+        compH = 140;
+        compScale = 1;
+      } else if (combined.includes('lcd') || combined.includes('display')) {
+        compW = 260;
+        compH = 160;
+        compScale = 1;
+      }
+
+      const effectiveW = compW * compScale;
+      const effectiveH = compH * compScale;
+      const offsetX = (effectiveW - compW) / 2;
+      const offsetY = (effectiveH - compH) / 2;
+
+      const left = cx - offsetX;
+      const top = cy - offsetY;
+      const right = cx + compW + offsetX;
+      const bottom = cy + compH + offsetY;
+
+      minX = Math.min(minX, left);
+      minY = Math.min(minY, top);
+      maxX = Math.max(maxX, right);
+      maxY = Math.max(maxY, bottom);
+    }
+
+    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+      setTransform({ x: 0, y: 0, scale: 0.5 });
+      return;
+    }
+
+    // Extra margin around circuit content
+    minX -= 50;
+    minY -= 50;
+    maxX += 50;
+    maxY += 50;
+
+    const contentWidth = Math.max(100, maxX - minX);
+    const contentHeight = Math.max(100, maxY - minY);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    // Viewport padding: generous breathing room so elements never touch borders or bottom dock
+    const padX = 90;
+    const padTop = 60;
+    const padBottom = 110;
+    const availWidth = Math.max(100, viewportWidth - padX * 2);
+    const availHeight = Math.max(100, viewportHeight - (padTop + padBottom));
+
+    // Scale with 0.90 safety factor for comfortable padding, floored to 0.05 step
+    const rawScale = Math.min(availWidth / contentWidth, availHeight / contentHeight);
+    let fitScale = Math.min(1.0, Math.max(0.15, rawScale * 0.90));
+    fitScale = Math.floor(fitScale * 20) / 20;
+    if (fitScale < 0.15) fitScale = 0.15;
+
+    // Center in visible viewport area
+    const targetX = Math.round(viewportWidth / 2 - centerX * fitScale);
+    const visibleCenterY = padTop + availHeight / 2;
+    const targetY = Math.round(visibleCenterY - centerY * fitScale);
+
+    setTransform({ x: targetX, y: targetY, scale: fitScale });
+  }, [accumulatedState.components, breadboardPosition, getBreadboardPosition]);
+
+  const lastFittedCircuitRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!data || !data.steps || data.steps.length === 0) return;
+    const circuitKey = `${workspaceTabId || ''}:${data.project_name || 'circuit'}:${data.steps.length}:${accumulatedState.components.length}`;
+    if (lastFittedCircuitRef.current !== circuitKey) {
+      lastFittedCircuitRef.current = circuitKey;
+      const t1 = setTimeout(() => fitViewToCircuit(), 60);
+      const t2 = setTimeout(() => fitViewToCircuit(), 300);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    }
+  }, [data, workspaceTabId, accumulatedState.components.length, fitViewToCircuit]);
+
   const handleBreadboardPointerDown = (event: React.PointerEvent<SVGGElement>, boardIndex: number, x: number, y: number) => {
+    // If user is pinch-zooming with 2+ fingers, do not drag breadboard
+    if (activePointersRef.current.size >= 2) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.ownerSVGElement?.setPointerCapture(event.pointerId);
@@ -938,7 +1134,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
 
   const handleBreadboardPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const drag = boardDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag || drag.pointerId !== event.pointerId || activePointersRef.current.size >= 2) return;
     const clientX = event.clientX;
     const clientY = event.clientY;
 
@@ -978,10 +1174,66 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).id === 'workspace-bg' || (e.target as HTMLElement).tagName === 'svg') {
+    activePointersRef.current.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+
+    // Multi-touch pinch-to-zoom (2 fingers on screen)
+    if (activePointersRef.current.size === 2) {
+      if (boardDragRef.current) {
+        boardDragRef.current = null;
+      }
+      panStartRef.current = null;
+      setIsPanning(false);
+
+      const pointers = Array.from(activePointersRef.current.values());
+      const p1 = pointers[0];
+      const p2 = pointers[1];
+      const dist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
+      const midX = (p1.clientX + p2.clientX) / 2;
+      const midY = (p1.clientY + p2.clientY) / 2;
+
+      pinchStateRef.current = {
+        initialDist: Math.max(dist, 1),
+        initialScale: transformRef.current.scale,
+        initialMidpoint: { x: midX, y: midY },
+        initialTransform: { ...transformRef.current },
+      };
+      return;
+    }
+
+    // Single touch or mouse click:
+    const target = e.target as HTMLElement;
+    const isBg = target.id === 'workspace-bg' || target.tagName === 'svg' || target.id === 'circuit-canvas-container';
+    if (isBg && activePointersRef.current.size === 1) {
       setIsPanning(true);
-      startPanRef.current = { x: e.clientX - transform.x, y: e.clientY - transform.y };
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      panStartRef.current = {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        transformAtStart: { ...transformRef.current },
+      };
+      try {
+        target.setPointerCapture(e.pointerId);
+      } catch {}
+
+      // Double tap detection for touch devices
+      if (e.pointerType === 'touch') {
+        const now = Date.now();
+        const last = lastTapRef.current;
+        if (last && now - last.time < 320 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 30) {
+          if (containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            const fx = e.clientX - rect.left;
+            const fy = e.clientY - rect.top;
+            if (transformRef.current.scale > 1.35) {
+              fitViewToCircuit();
+            } else {
+              zoomAtPoint(Math.min(5, transformRef.current.scale * 1.6), fx, fy);
+            }
+          }
+          lastTapRef.current = null;
+        } else {
+          lastTapRef.current = { time: now, x: e.clientX, y: e.clientY };
+        }
+      }
     }
   };
 
@@ -990,15 +1242,74 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
       const rect = containerRef.current.getBoundingClientRect();
       setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     }
-    if (isPanning) {
-      setTransform(prev => ({ ...prev, x: e.clientX - startPanRef.current.x, y: e.clientY - startPanRef.current.y }));
+
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    }
+
+    // 2-finger pinch gesture
+    if (activePointersRef.current.size === 2 && pinchStateRef.current && containerRef.current) {
+      const pointers = Array.from(activePointersRef.current.values());
+      const p1 = pointers[0];
+      const p2 = pointers[1];
+      const currentDist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
+      const currentMidX = (p1.clientX + p2.clientX) / 2;
+      const currentMidY = (p1.clientY + p2.clientY) / 2;
+
+      const { initialDist, initialScale, initialMidpoint, initialTransform } = pinchStateRef.current;
+      const scaleFactor = currentDist / initialDist;
+      const newScale = Math.min(5, Math.max(0.1, initialScale * scaleFactor));
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const fx = initialMidpoint.x - rect.left;
+      const fy = initialMidpoint.y - rect.top;
+
+      const wx = (fx - initialTransform.x) / initialTransform.scale;
+      const wy = (fy - initialTransform.y) / initialTransform.scale;
+
+      const deltaX = currentMidX - initialMidpoint.x;
+      const deltaY = currentMidY - initialMidpoint.y;
+
+      const newX = (fx + deltaX) - wx * newScale;
+      const newY = (fy + deltaY) - wy * newScale;
+
+      setTransform({ x: newX, y: newY, scale: newScale });
+      return;
+    }
+
+    // Single-finger or mouse pan
+    if (panStartRef.current && isPanning) {
+      const dx = e.clientX - panStartRef.current.clientX;
+      const dy = e.clientY - panStartRef.current.clientY;
+      setTransform({
+        x: panStartRef.current.transformAtStart.x + dx,
+        y: panStartRef.current.transformAtStart.y + dy,
+        scale: panStartRef.current.transformAtStart.scale,
+      });
     }
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    if (isPanning) {
+    activePointersRef.current.delete(e.pointerId);
+
+    if (activePointersRef.current.size < 2) {
+      pinchStateRef.current = null;
+    }
+
+    if (activePointersRef.current.size === 1) {
+      const remaining = Array.from(activePointersRef.current.values())[0];
+      panStartRef.current = {
+        clientX: remaining.clientX,
+        clientY: remaining.clientY,
+        transformAtStart: { ...transformRef.current },
+      };
+      setIsPanning(true);
+    } else if (activePointersRef.current.size === 0) {
+      panStartRef.current = null;
       setIsPanning(false);
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
     }
   };
 
@@ -1047,8 +1358,18 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
       });
     };
 
+    const handleNativeTouchMove = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        e.preventDefault();
+      }
+    };
+
     el.addEventListener('wheel', handleNativeWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleNativeWheel);
+    el.addEventListener('touchmove', handleNativeTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleNativeWheel);
+      el.removeEventListener('touchmove', handleNativeTouchMove);
+    };
   }, []);
 
   return (
@@ -1318,7 +1639,6 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                   top: comp.y, 
                   transformOrigin: 'center center',
                   scale: scaleVal,
-                  zIndex: selectedComponentId === comp.id ? 30 : 20,
                 }}
               >
                 {useWokwiElement ? (
@@ -1583,320 +1903,688 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
         </div>
       </div>
 
-      {breadboardPosition && wirePaths.length > 0 && (
-        <motion.div
-          drag
-          dragControls={routingPanelDragControls}
-          dragListener={false}
-          dragMomentum={false}
-          dragConstraints={containerRef}
-          data-canvas-overlay="true"
-          onWheel={event => event.stopPropagation()}
-          style={{ overscrollBehavior: 'contain' }}
-          className="absolute right-3 top-3 z-30 w-[min(360px,calc(100%-24px))] overflow-hidden rounded-xl border border-neutral-800 bg-[#090909]/95 shadow-2xl backdrop-blur-md"
-        >
-          <div className="border-b border-gray-800 px-3 py-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-sm border border-gray-300 bg-[#e3e7e1] shadow-[0_0_10px_rgba(220,230,220,0.22)]" />
-                <h3 className="text-[11px] font-semibold tracking-wide text-gray-100">Auto breadboard routing</h3>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="rounded-full bg-gray-800 px-2 py-0.5 text-[9px] font-medium text-gray-300">{wirePaths.length} wires</span>
-                <button
-                  type="button"
-                  onPointerDown={event => { event.stopPropagation(); routingPanelDragControls.start(event); }}
-                  style={{ touchAction: 'none' }}
-                  title="Move routing panel"
-                  aria-label="Move routing panel"
-                  className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-white cursor-grab active:cursor-grabbing"
-                ><Move size={12} /></button>
-              </div>
-            </div>
-            <p className="mt-1 text-[10px] leading-relaxed text-gray-500">Each wire uses one isolated five-hole strip. Select a row to highlight both exact device pins.</p>
-          </div>
-          <div className="max-h-[34vh] space-y-1 overflow-y-auto p-2" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
-            {wirePaths.map(wire => (
-              <button
-                key={wire.id}
-                type="button"
-                aria-pressed={selectedWireId === wire.id}
-                onClick={() => { setSelectedWireId(wire.id); setSelectedComponentId(null); }}
-                className={`flex w-full items-center gap-2 rounded-lg border px-2 py-2 text-left transition-colors ${selectedWireId === wire.id ? 'border-neutral-600 bg-white/[0.07]' : 'border-transparent bg-white/[0.025] hover:border-neutral-700 hover:bg-white/[0.05]'}`}
-              >
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: wire.color }} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-mono text-[10px] text-gray-200" title={`${wire.fromComp}:${wire.fromPin} → ${wire.toComp}:${wire.labelText}`}>
-                    {wire.fromComp}:<strong className="text-white">{wire.fromPin}</strong>
-                    <span className="px-1.5 text-gray-500">→</span>
-                    {wire.toComp}:<strong className="text-white">{wire.labelText}</strong>
-                  </span>
-                  <span className="mt-1 block text-[9px] text-gray-500">Breadboard holes: <span className="font-mono text-gray-300">{wire.breadboardFrom?.label} ↔ {wire.breadboardTo?.label}</span></span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </motion.div>
-      )}
 
-      {/* Zoom Controls - Bottom Left Corner */}
-      <div data-canvas-overlay="true" className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-[#111]/80 backdrop-blur-md border border-gray-700 rounded-lg p-1 shadow-lg">
+
+
+      {/* Zoom Controls - Bottom Left Corner (Touch, Tablet & Desktop Optimized) */}
+      <div 
+        data-canvas-overlay="true"
+        className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-[#121316]/90 backdrop-blur-md border border-gray-700/80 rounded-xl px-2.5 py-1.5 shadow-2xl select-none"
+        style={{ touchAction: 'manipulation' }}
+      >
         <button 
-          onClick={() => {
-            if (!containerRef.current) return;
-            const rect = containerRef.current.getBoundingClientRect();
-            const cx = rect.width / 2;
-            const cy = rect.height / 2;
-            setTransform(p => {
-              const newScale = Math.min(4.5, p.scale * 1.25);
-              const ratio = newScale / p.scale;
-              return { x: cx - (cx - p.x) * ratio, y: cy - (cy - p.y) * ratio, scale: newScale };
-            });
-          }} 
-          className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors cursor-pointer" 
-          title="Zoom In"
+          type="button"
+          onClick={() => zoomCentered(0.25)} 
+          className="h-9 w-9 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 active:scale-95 active:bg-white/20 rounded-lg transition-all cursor-pointer" 
+          title="Zoom In (Tap, Scroll or Pinch)"
+          aria-label="Zoom In"
         >
           <ZoomIn size={16} />
         </button>
-        <div className="w-px h-4 bg-gray-700 mx-1"></div>
-        <button onClick={() => setTransform({ x: 0, y: 0, scale: 1 })} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors cursor-pointer" title="Reset View">
-          <Maximize size={16} />
-        </button>
-        <div className="w-px h-4 bg-gray-700 mx-1"></div>
+        <div className="w-px h-5 bg-gray-700/80"></div>
         <button 
-          onClick={() => {
-            if (!containerRef.current) return;
-            const rect = containerRef.current.getBoundingClientRect();
-            const cx = rect.width / 2;
-            const cy = rect.height / 2;
-            setTransform(p => {
-              const newScale = Math.max(0.15, p.scale / 1.25);
-              const ratio = newScale / p.scale;
-              return { x: cx - (cx - p.x) * ratio, y: cy - (cy - p.y) * ratio, scale: newScale };
-            });
-          }} 
-          className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors cursor-pointer" 
-          title="Zoom Out"
+          type="button"
+          onClick={fitViewToCircuit} 
+          className="h-9 px-2.5 flex items-center justify-center text-[11px] font-mono font-semibold text-gray-300 hover:text-white hover:bg-white/10 active:scale-95 active:bg-white/20 rounded-lg transition-all cursor-pointer gap-1.5" 
+          title="Fit entire circuit to screen (Double-tap canvas or click here)"
+          aria-label="Fit entire circuit to screen"
+        >
+          <Maximize size={13} />
+          <span>{Math.round(transform.scale * 100)}%</span>
+        </button>
+        <div className="w-px h-5 bg-gray-700/80"></div>
+        <button 
+          type="button"
+          onClick={() => zoomCentered(-0.25)} 
+          className="h-9 w-9 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 active:scale-95 active:bg-white/20 rounded-lg transition-all cursor-pointer" 
+          title="Zoom Out (Tap, Scroll or Pinch)"
+          aria-label="Zoom Out"
         >
           <ZoomOut size={16} />
         </button>
       </div>
 
-      {/* Step Controller */}
-      {data && data.steps.length > 0 && (
-        <motion.div 
-          initial={{ y: 50, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          drag
-          dragControls={dragControls}
-          dragListener={false}
-          dragMomentum={false}
-          dragConstraints={containerRef}
-          data-canvas-overlay="true"
-          onWheel={event => event.stopPropagation()}
-          className={`absolute ${dockPosition === 'bottom-right' ? 'bottom-10 right-6 items-end' : 'top-4 left-4 items-start'} z-30 flex flex-col gap-2 max-h-[calc(100vh-32px)] pointer-events-none`}
-        >
-          {/* We wrap children in a pointer-events-auto div to allow interaction while keeping the wrapper strictly for layout */}
-          {/* Expanded step detail panel (toggle) */}
-          <AnimatePresence>
-            {(selectedComponentId || selectedWireId) && (
-              <motion.div
-                initial={{ opacity: 0, y: 10, x: 20 }}
-                animate={{ opacity: 1, y: 0, x: 0 }}
-                exit={{ opacity: 0, y: 10, x: 20 }}
-                data-canvas-overlay="true"
-                onWheel={event => event.stopPropagation()}
-                style={{ overscrollBehavior: 'contain' }}
-                className="bg-[#0a0a0a]/95 backdrop-blur-md border border-neutral-800 rounded-xl p-3 w-[260px] shadow-2xl mb-2 pointer-events-auto"
-              >
-                <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
-                  <h3 className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
-                    <Search size={14} /> Inspect: {selectedWireId ? 'Wire Connection' : selectedComponentId}
-                  </h3>
-                  <button onClick={() => { setSelectedComponentId(null); setSelectedWireId(null); }} className="text-gray-500 hover:text-white">
+      {/* Auto Breadboard Routing Window - Independent Draggable Panel */}
+      <AnimatePresence>
+        {breadboardPosition && wirePaths.length > 0 && !routingPanelMinimized && (
+          <motion.div
+            key="breadboard-routing-window"
+            initial={{ opacity: 0, scale: 0.94, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 20 }}
+            transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
+            drag
+            dragControls={routingPanelDragControls}
+            dragListener={false}
+            dragMomentum={false}
+            dragConstraints={containerRef}
+            className="absolute bottom-20 right-6 z-30 w-[min(380px,calc(100vw-32px))] overflow-hidden rounded-xl border border-gray-700/90 bg-[#101418]/95 shadow-2xl backdrop-blur-md pointer-events-auto transform-gpu select-none"
+          >
+            <div className="border-b border-gray-800 px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div 
+                  className="flex items-center gap-2 cursor-pointer select-none"
+                  onClick={() => setRoutingPanelCollapsed(c => !c)}
+                >
+                  <span className="h-2.5 w-2.5 rounded-sm border border-emerald-400/50 bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.3)]" />
+                  <h3 className="text-[11px] font-semibold tracking-wide text-gray-100">Auto breadboard routing</h3>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="rounded-full bg-gray-800 px-2 py-0.5 text-[9px] font-medium text-gray-300">{wirePaths.length} wires</span>
+                  {/* Minimize Button */}
+                  <button
+                    type="button"
+                    onClick={() => setRoutingPanelMinimized(true)}
+                    className="h-7 px-2 flex items-center gap-1 rounded-lg text-gray-300 hover:text-white bg-gray-800/80 hover:bg-gray-700 transition-all active:scale-95 cursor-pointer border border-gray-700/60 hover:border-gray-500"
+                    title="Minimize into bar"
+                    aria-label="Minimize into bar"
+                  >
+                    <Minus size={13} className="stroke-[2.5]" />
+                    <span className="text-[10px] font-semibold hidden sm:inline">Minimize</span>
+                  </button>
+                  {/* Collapse/Expand list */}
+                  <button
+                    type="button"
+                    onClick={() => setRoutingPanelCollapsed(c => !c)}
+                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors cursor-pointer"
+                    title={routingPanelCollapsed ? "Expand wire list" : "Collapse wire list"}
+                    aria-label={routingPanelCollapsed ? "Expand wire list" : "Collapse wire list"}
+                  >
+                    {routingPanelCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                  </button>
+                  {/* Independent drag handle */}
+                  <button
+                    type="button"
+                    onPointerDown={event => { event.stopPropagation(); routingPanelDragControls.start(event); }}
+                    style={{ touchAction: 'none' }}
+                    title="Drag routing window individually"
+                    aria-label="Drag routing window individually"
+                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white cursor-grab active:cursor-grabbing"
+                  >
+                    <Move size={13} />
+                  </button>
+                  {/* Close button */}
+                  <button
+                    type="button"
+                    onClick={() => setRoutingPanelMinimized(true)}
+                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors cursor-pointer"
+                    title="Close window"
+                    aria-label="Close window"
+                  >
                     <X size={14} />
                   </button>
                 </div>
-                
-                <div className="max-h-[200px] overflow-y-auto space-y-1.5 pr-1" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
-                  {selectedWireId ? (
-                    (() => {
-                      const w = wirePaths.find(w => w.id === selectedWireId);
-                      if (!w) return null;
-                      return (
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between bg-gray-900/50 p-3 rounded-lg border border-gray-700">
-                            <div className="flex flex-col text-left">
-                              <span className="text-[10px] text-gray-500 truncate max-w-[80px]" title={w.fromComp}>{w.fromComp}</span>
-                              <span className="text-xs font-mono font-bold text-gray-300">{w.fromPin}</span>
-                            </div>
-                            <div className="flex-1 px-4 flex items-center justify-center relative">
-                              <div className="w-full h-px border-t border-dashed border-gray-600"></div>
-                              <div className="absolute w-2 h-2 rounded-full" style={{ backgroundColor: w.color }}></div>
-                            </div>
-                            <div className="flex flex-col text-right">
-                              <span className="text-[10px] text-gray-500 truncate max-w-[80px]" title={w.toComp}>{w.toComp}</span>
-                              <span className="text-xs font-mono font-bold text-gray-300">{w.labelText}</span>
-                            </div>
-                          </div>
-                          
-                          <div className="bg-[#141414]/80 rounded-lg p-2.5 border border-neutral-800">
-                            <h4 className="text-[9px] uppercase tracking-wider text-neutral-400 font-bold mb-1.5">Estimated Telemetry</h4>
-                            <div className="grid grid-cols-2 gap-2">
-                              {Object.entries(getWireStats(w.color, w.fromPin, w.labelText)).map(([k, v]) => (
-                                <div key={k} className="flex flex-col">
-                                  <span className="text-[9px] text-gray-500">{k}</span>
-                                  <span className="text-[10px] text-gray-300 font-medium">{v}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+              </div>
+              {!routingPanelCollapsed && (
+                <p className="mt-1 text-[10px] leading-relaxed text-gray-500">Each wire uses one isolated five-hole strip. Select a row to highlight both exact device pins.</p>
+              )}
+            </div>
+            {!routingPanelCollapsed && (
+              <div className="max-h-[30vh] space-y-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-gray-800">
+                {wirePaths.map(wire => (
+                  <button
+                    key={wire.id}
+                    type="button"
+                    aria-pressed={selectedWireId === wire.id}
+                    onClick={() => { setSelectedWireId(wire.id); setSelectedComponentId(null); }}
+                    className={`flex w-full items-center gap-2 rounded-lg border px-2 py-2 text-left transition-colors ${selectedWireId === wire.id ? 'border-blue-500/50 bg-blue-500/10' : 'border-transparent bg-white/[0.025] hover:border-gray-700 hover:bg-white/[0.06]'}`}
+                  >
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: wire.color }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-mono text-[10px] text-gray-200" title={`${wire.fromComp}:${wire.fromPin} → ${wire.toComp}:${wire.labelText}`}>
+                        {wire.fromComp}:<strong className="text-white">{wire.fromPin}</strong>
+                        <span className="px-1.5 text-gray-500">→</span>
+                        {wire.toComp}:<strong className="text-white">{wire.labelText}</strong>
+                      </span>
+                      <span className="mt-1 block text-[9px] text-gray-500">Breadboard holes: <span className="font-mono text-gray-300">{wire.breadboardFrom?.label} ↔ {wire.breadboardTo?.label}</span></span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Inspect Window - Independent Draggable Panel */}
+      <AnimatePresence>
+        {(selectedComponentId || selectedWireId) && (
+          <motion.div
+            key="inspector-window"
+            initial={{ opacity: 0, scale: 0.94, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 20 }}
+            transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
+            drag
+            dragControls={inspectDragControls}
+            dragListener={false}
+            dragMomentum={false}
+            dragConstraints={containerRef}
+            className="absolute bottom-20 right-6 z-30 bg-[#0a0a0a]/95 backdrop-blur-md border border-neutral-800 rounded-xl p-3 w-[min(320px,calc(100vw-32px))] shadow-2xl pointer-events-auto transform-gpu overflow-hidden select-none"
+          >
+            <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
+              <h3 className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+                <Search size={14} /> Inspect: {selectedWireId ? 'Wire Connection' : selectedComponentId}
+              </h3>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => { setSelectedComponentId(null); setSelectedWireId(null); }}
+                  className="h-6 px-1.5 flex items-center gap-1 rounded text-gray-400 hover:text-white hover:bg-gray-800 transition-colors cursor-pointer"
+                  title="Minimize inspection"
+                >
+                  <Minus size={13} />
+                  <span className="text-[10px]">Minimize</span>
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={event => { event.stopPropagation(); inspectDragControls.start(event); }}
+                  style={{ touchAction: 'none' }}
+                  title="Drag inspector individually"
+                  className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-800 hover:text-white cursor-grab active:cursor-grabbing"
+                >
+                  <Move size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedComponentId(null); setSelectedWireId(null); }}
+                  className="text-gray-500 hover:text-white p-1 rounded hover:bg-gray-800 transition-colors"
+                  title="Close inspector"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="max-h-[220px] overflow-y-auto space-y-1.5 pr-1">
+              {selectedWireId ? (
+                (() => {
+                  const w = wirePaths.find(w => w.id === selectedWireId);
+                  if (!w) return null;
+                  return (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between bg-gray-900/50 p-3 rounded-lg border border-gray-700">
+                        <div className="flex flex-col text-left">
+                          <span className="text-[10px] text-gray-500 truncate max-w-[80px]" title={w.fromComp}>{w.fromComp}</span>
+                          <span className="text-xs font-mono font-bold text-gray-300">{w.fromPin}</span>
                         </div>
-                      );
-                    })()
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {(() => {
-                        const compDef = accumulatedState.components.find((component: any) => component.id === selectedComponentId);
-                        if (!compDef) return null;
-                        return (
-                          <div className="bg-[#141414]/80 rounded-lg p-2.5 border border-neutral-800">
-                            <h4 className="text-[9px] uppercase tracking-wider text-neutral-400 font-bold mb-1.5">Component Specs</h4>
-                            <div className="grid grid-cols-2 gap-2">
-                              {Object.entries(getComponentStats(compDef.type)).map(([k, v]) => (
-                                <div key={k} className="flex flex-col">
-                                  <span className="text-[9px] text-gray-500">{k}</span>
-                                  <span className="text-[10px] text-gray-300 font-medium">{v}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
+                        <div className="flex-1 px-4 flex items-center justify-center relative">
+                          <div className="w-full h-px border-t border-dashed border-gray-600"></div>
+                          <div className="absolute w-2 h-2 rounded-full" style={{ backgroundColor: w.color }}></div>
+                        </div>
+                        <div className="flex-col text-right">
+                          <span className="text-[10px] text-gray-500 truncate max-w-[80px]" title={w.toComp}>{w.toComp}</span>
+                          <span className="text-xs font-mono font-bold text-gray-300">{w.labelText}</span>
+                        </div>
+                      </div>
                       
-                      <div className="space-y-1.5">
-                        <h4 className="text-[9px] uppercase tracking-wider text-gray-400 font-bold px-1">Connections</h4>
-                        {selectedComponentConnections.length === 0 ? (
-                          <div className="text-[10px] text-gray-500 italic py-2 text-center">No wires connected in this step</div>
-                        ) : (
-                          selectedComponentConnections.map(connection => {
-                            return (
-                              <div key={connection.id} className="text-[10px] flex items-center justify-between bg-gray-900/50 px-2 py-1.5 rounded">
-                                <span className="font-mono text-gray-300 font-bold">{connection.myPin}</span>
-                                <div className="flex-1 border-b border-dashed border-gray-700 mx-2"></div>
-                                <span className="text-gray-400 truncate max-w-[100px]" title={`${connection.otherComp}:${connection.otherPin}`}>
-                                  {connection.otherComp}:<span className="font-mono text-gray-300">{connection.otherPin}</span>
-                                </span>
-                              </div>
-                            );
-                          })
-                        )}
+                      <div className="bg-[#141414]/80 rounded-lg p-2.5 border border-neutral-800">
+                        <h4 className="text-[9px] uppercase tracking-wider text-neutral-400 font-bold mb-1.5">Estimated Telemetry</h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          {Object.entries(getWireStats(w.color, w.fromPin, w.labelText)).map(([k, v]) => (
+                            <div key={k} className="flex flex-col">
+                              <span className="text-[9px] text-gray-500">{k}</span>
+                              <span className="text-[10px] text-gray-300 font-medium">{v}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            {expandedPanel && (
-              <motion.div
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                data-canvas-overlay="true"
-                onWheel={event => event.stopPropagation()}
-                style={{ overscrollBehavior: 'contain' }}
-                className="bg-[#111]/95 backdrop-blur-md border border-gray-700 rounded-xl p-4 w-[300px] max-h-[50vh] overflow-y-auto shadow-2xl pointer-events-auto"
-              >
-                <h3 className="text-xs font-bold text-neutral-300 uppercase tracking-wider mb-3">All Steps</h3>
-                <div className="space-y-1.5">
-                  {data.steps.map((step, i) => {
-                    const isComp = step.add_components && step.add_components.length > 0;
-                    const isWire = step.add_wiring && step.add_wiring.length > 0;
-                    const isDone = i < currentStepIndex;
-                    const isCurrent = i === currentStepIndex;
+                  );
+                })()
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {(() => {
+                    const compDef = accumulatedState.components.find((component: any) => component.id === selectedComponentId);
+                    if (!compDef) return null;
                     return (
-                      <button
-                        key={i}
-                        onClick={() => setCurrentStepIndex(i)}
-                        className={`w-full text-left flex items-start gap-2 p-2 rounded-lg text-xs transition-all ${
-                          isCurrent ? 'bg-white/[0.07] border border-neutral-600 text-white' :
-                          isDone ? 'text-gray-400 hover:bg-gray-800/50' : 'text-gray-600 hover:bg-gray-800/30'
-                        }`}
-                      >
-                        <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5" style={{
-                          background: isDone ? '#525252' : isCurrent ? '#737373' : '#262626',
-                          color: 'white'
-                        }}>
-                          {isDone ? '✓' : i + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            {step.phase && <span className="text-[8px] font-bold uppercase text-gray-500 bg-gray-800 px-1 rounded">{step.phase}</span>}
-                            {step.code && <span className="text-[8px] text-neutral-400">{'</>'}</span>}
-                          </div>
-                          <span className="block truncate">{step.instruction || `Step ${i+1}`}</span>
-                          <span className="text-[10px] text-gray-500 mt-0.5 flex gap-2">
-                            {isComp && <span>{step.add_components?.length || 0} part{(step.add_components?.length || 0) > 1 ? 's' : ''}</span>}
-                            {isWire && <span>{step.add_wiring?.length || 0} wire{(step.add_wiring?.length || 0) > 1 ? 's' : ''}</span>}
-                            {step.code && <span>code</span>}
-                          </span>
+                      <div className="bg-[#141414]/80 rounded-lg p-2.5 border border-neutral-800">
+                        <h4 className="text-[9px] uppercase tracking-wider text-neutral-400 font-bold mb-1.5">Component Specs</h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          {Object.entries(getComponentStats(compDef.type)).map(([k, v]) => (
+                            <div key={k} className="flex flex-col">
+                              <span className="text-[9px] text-gray-500">{k}</span>
+                              <span className="text-[10px] text-gray-300 font-medium">{v}</span>
+                            </div>
+                          ))}
                         </div>
-                      </button>
+                      </div>
                     );
-                  })}
+                  })()}
+                  
+                  <div className="space-y-1.5">
+                    <h4 className="text-[9px] uppercase tracking-wider text-gray-400 font-bold px-1">Connections</h4>
+                    {selectedComponentConnections.length === 0 ? (
+                      <div className="text-[10px] text-gray-500 italic py-2 text-center">No wires connected in this step</div>
+                    ) : (
+                      selectedComponentConnections.map(connection => {
+                        return (
+                          <div key={connection.id} className="text-[10px] flex items-center justify-between bg-gray-900/50 px-2 py-1.5 rounded">
+                            <span className="font-mono text-gray-300 font-bold">{connection.myPin}</span>
+                            <div className="flex-1 border-b border-dashed border-gray-700 mx-2"></div>
+                            <span className="text-gray-400 truncate max-w-[100px]" title={`${connection.otherComp}:${connection.otherPin}`}>
+                              {connection.otherComp}:<span className="font-mono text-gray-300">{connection.otherPin}</span>
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          {/* Compact step bar */}
-          <div className="bg-[#111]/95 backdrop-blur-md border border-gray-700 rounded-xl shadow-2xl flex items-center gap-2 px-3 py-2 pointer-events-auto">
+      {/* All Steps Window - Independent Draggable Panel */}
+      <AnimatePresence>
+        {expandedPanel && data && data.steps.length > 0 && (
+          <motion.div
+            key="all-steps-window"
+            initial={{ opacity: 0, scale: 0.94, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 20 }}
+            transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
+            drag
+            dragControls={allStepsDragControls}
+            dragListener={false}
+            dragMomentum={false}
+            dragConstraints={containerRef}
+            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 bg-[#111]/95 backdrop-blur-md border border-gray-700 rounded-xl p-4 w-[min(340px,calc(100vw-32px))] max-h-[50vh] overflow-y-auto shadow-2xl pointer-events-auto transform-gpu select-none"
+          >
+            <div className="flex items-center justify-between mb-3 pb-1 border-b border-neutral-800">
+              <h3 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">All Steps ({data.steps.length})</h3>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setExpandedPanel(false)}
+                  className="h-6 px-1.5 flex items-center gap-1 rounded text-gray-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+                  title="Minimize all steps"
+                >
+                  <Minus size={13} />
+                  <span className="text-[10px]">Minimize</span>
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={event => { event.stopPropagation(); allStepsDragControls.start(event); }}
+                  style={{ touchAction: 'none' }}
+                  title="Drag all steps individually"
+                  className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-neutral-800 hover:text-white cursor-grab active:cursor-grabbing"
+                >
+                  <Move size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpandedPanel(false)}
+                  className="text-gray-500 hover:text-white p-1 rounded hover:bg-neutral-800 transition-colors"
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {data.steps.map((step, i) => {
+                const isComp = step.add_components && step.add_components.length > 0;
+                const isWire = step.add_wiring && step.add_wiring.length > 0;
+                const isDone = i < currentStepIndex;
+                const isCurrent = i === currentStepIndex;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setCurrentStepIndex(i)}
+                    className={`w-full text-left flex items-start gap-2 p-2 rounded-lg text-xs transition-all ${
+                      isCurrent ? 'bg-white/[0.07] border border-neutral-600 text-white' :
+                      isDone ? 'text-gray-400 hover:bg-gray-800/50' : 'text-gray-600 hover:bg-gray-800/30'
+                    }`}
+                  >
+                    <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5" style={{
+                      background: isDone ? '#525252' : isCurrent ? '#737373' : '#262626',
+                      color: 'white'
+                    }}>
+                      {isDone ? '✓' : i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        {step.phase && <span className="text-[8px] font-bold uppercase text-gray-500 bg-gray-800 px-1 rounded">{step.phase}</span>}
+                        {step.code && <span className="text-[8px] text-neutral-400">{'</>'}</span>}
+                      </div>
+                      <span className="block truncate">{step.instruction || `Step ${i+1}`}</span>
+                      <span className="text-[10px] text-gray-500 mt-0.5 flex gap-2">
+                        {isComp && <span>{step.add_components?.length || 0} part{(step.add_components?.length || 0) > 1 ? 's' : ''}</span>}
+                        {isWire && <span>{step.add_wiring?.length || 0} wire{(step.add_wiring?.length || 0) > 1 ? 's' : ''}</span>}
+                        {step.code && <span>code</span>}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Current Step Info Window - Independent Draggable Panel */}
+      <AnimatePresence>
+        {data && data.steps.length > 0 && !stepInfoMinimized && (() => {
+          const step = data.steps[currentStepIndex];
+          if (!step) return null;
+          const pc = 'bg-gray-800 text-gray-200 border-gray-700';
+          return (
+            <motion.div
+              key="current-step-info-window"
+              initial={{ opacity: 0, scale: 0.94, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 20 }}
+              transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
+              drag
+              dragControls={stepInfoDragControls}
+              dragListener={false}
+              dragMomentum={false}
+              dragConstraints={containerRef}
+              className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 w-[min(420px,calc(100vw-32px))] max-h-[min(420px,calc(100vh-180px))] overflow-y-auto bg-[#0a0a0a]/95 backdrop-blur-md border border-neutral-800 rounded-xl px-3.5 py-3 shadow-2xl space-y-2 pointer-events-auto select-none transform-gpu scrollbar-thin scrollbar-thumb-gray-800"
+            >
+              {/* Phase badge + instruction */}
+              <div className="flex items-start gap-2">
+                {step.phase && (
+                  <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border flex-shrink-0 ${pc}`}>
+                    {step.phase}
+                  </span>
+                )}
+                <p 
+                  className="flex-1 text-xs text-gray-200 font-medium leading-relaxed cursor-pointer"
+                  onClick={() => setStepInfoCollapsed(c => !c)}
+                >
+                  {step.instruction}
+                </p>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Minimize Button */}
+                  <button
+                    type="button"
+                    onClick={() => setStepInfoMinimized(true)}
+                    className="h-7 px-2 flex items-center gap-1 rounded-lg text-gray-300 hover:text-white bg-gray-800/80 hover:bg-gray-700 transition-all active:scale-95 cursor-pointer border border-gray-700/60 hover:border-gray-500"
+                    title="Minimize into bar"
+                    aria-label="Minimize into bar"
+                  >
+                    <Minus size={13} className="stroke-[2.5]" />
+                    <span className="text-[10px] font-semibold hidden sm:inline">Minimize</span>
+                  </button>
+                  {/* Collapse/Expand details */}
+                  <button
+                    type="button"
+                    onClick={() => setStepInfoCollapsed(c => !c)}
+                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors cursor-pointer"
+                    title={stepInfoCollapsed ? "Expand details" : "Collapse details"}
+                    aria-label={stepInfoCollapsed ? "Expand details" : "Collapse details"}
+                  >
+                    {stepInfoCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                  </button>
+                  {/* Individual drag handle */}
+                  <button
+                    type="button"
+                    onPointerDown={event => { event.stopPropagation(); stepInfoDragControls.start(event); }}
+                    style={{ touchAction: 'none' }}
+                    title="Drag step info window individually"
+                    aria-label="Drag step info window individually"
+                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white cursor-grab active:cursor-grabbing"
+                  >
+                    <Move size={13} />
+                  </button>
+                  {/* Close button */}
+                  <button
+                    type="button"
+                    onClick={() => setStepInfoMinimized(true)}
+                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors cursor-pointer"
+                    title="Close window"
+                    aria-label="Close window"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+              
+              {!stepInfoCollapsed && (() => {
+                const detailText = step.detail || '';
+                const codeBlockRegex = /```(\w*)\s*([\s\S]*?)```/g;
+                let match;
+                let lastIndex = 0;
+                const parts = [];
+                let extractedCode = step.code ? step.code.replace(/\\n/g, '\n') : null;
+                let extractedLang = step.code_language || 'cpp';
+
+                while (!step.code && (match = codeBlockRegex.exec(detailText)) !== null) {
+                  if (match.index > lastIndex) {
+                    parts.push(<span key={lastIndex}>{detailText.slice(lastIndex, match.index)}</span>);
+                  }
+                  extractedCode = match[2].trim();
+                  extractedLang = match[1] || 'cpp';
+                  lastIndex = match.index + match[0].length;
+                }
+                if (lastIndex < detailText.length) {
+                  parts.push(<span key={lastIndex}>{detailText.slice(lastIndex)}</span>);
+                }
+
+                return (
+                  <div className="max-h-[300px] overflow-y-auto pr-1">
+                    {parts.length > 0 && (
+                      <p className="text-[11px] text-gray-500 leading-relaxed border-l-2 border-gray-700 pl-2 whitespace-pre-wrap">
+                        {parts}
+                      </p>
+                    )}
+                    
+                    {extractedCode && (
+                      <div className="bg-[#0a0a0a] rounded-lg p-2 border border-gray-800 shadow-inner mt-2">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[9px] text-gray-400 font-mono uppercase tracking-wider bg-gray-900 px-1.5 py-0.5 rounded border border-gray-700">{extractedLang}</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openCodePreview(extractedCode!, extractedLang, currentStepIndex)}
+                              className="flex items-center gap-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-2 py-1 rounded text-[9px] font-medium transition-colors border border-neutral-700"
+                              title="Preview code in editor"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                              Preview
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => navigator.clipboard.writeText(extractedCode!)}
+                              className="flex items-center gap-1 bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded text-[9px] font-medium transition-colors border border-gray-700"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                              Copy
+                            </button>
+                          </div>
+                        </div>
+                        <pre className="text-[10px] font-mono text-gray-300 max-h-[160px] overflow-y-auto overflow-x-auto whitespace-pre-wrap p-1 bg-black/40 rounded">
+                          <code dangerouslySetInnerHTML={{ __html: highlightCode(extractedCode) }} />
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+              
+              {/* Verification */}
+              {!stepInfoCollapsed && step.verify && (
+                <div className="flex items-start gap-1.5 text-[11px] text-gray-300 bg-gray-900 rounded-lg px-2 py-1.5 border border-gray-700">
+                  <span className="flex-shrink-0 mt-0.5 text-gray-400"><CheckCircle2 size={12}/></span>
+                  <div className="flex-1 overflow-hidden relative">
+                    <div className="line-clamp-4">{step.verify}</div>
+                    {step.verify.length > 150 && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedVerifyText(step.verify!)}
+                        className="mt-1 text-neutral-300 hover:text-white text-[9px] flex items-center gap-1 font-medium bg-neutral-800 px-1.5 py-0.5 rounded border border-neutral-700"
+                      >
+                        <Maximize size={10} /> Full Screen
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* Step Controller Bar (The Dock) - Independent Draggable Bar */}
+      {((data && data.steps.length > 0) || (breadboardPosition && wirePaths.length > 0)) && (
+        <motion.div
+          key="step-controller-dock"
+          initial={{ y: 50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          drag
+          dragControls={barDragControls}
+          dragListener={false}
+          dragMomentum={false}
+          dragConstraints={containerRef}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto"
+        >
+          <div 
+            className="bg-[#121316]/90 backdrop-blur-md border border-gray-700/80 rounded-xl px-2.5 py-1.5 shadow-2xl flex items-center gap-1.5 select-none shrink-0"
+            style={{ touchAction: 'manipulation' }}
+          >
             <button 
-              onPointerDown={(e) => dragControls.start(e)}
+              type="button"
+              onPointerDown={(e) => { e.stopPropagation(); barDragControls.start(e); }}
               style={{ touchAction: 'none' }}
-              title="Move step controls and details"
-              className="p-1.5 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors text-gray-400 mr-1 cursor-grab active:cursor-grabbing pointer-events-auto"
+              title="Drag controller bar individually"
+              aria-label="Drag controller bar individually"
+              className="h-9 w-9 flex items-center justify-center bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors text-gray-400 hover:text-white cursor-grab active:cursor-grabbing shrink-0"
             >
               <Move size={14} />
             </button>
-            <button 
-              onClick={() => setCurrentStepIndex(0)}
-              disabled={currentStepIndex === 0}
-              title="Restart from Step 1"
-              className="p-1.5 bg-gray-800 rounded-lg hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <SkipBack size={14} />
-            </button>
-            <button 
-              onClick={() => setCurrentStepIndex(Math.max(0, currentStepIndex - 1))}
-              disabled={currentStepIndex === 0}
-              className="p-1.5 bg-gray-800 rounded-lg hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft size={14} />
-            </button>
 
-            {/* Step progress dots */}
-            <button 
-              onClick={() => setExpandedPanel(!expandedPanel)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-gray-800/50 transition-colors"
-            >
-              <span className="text-xs font-bold text-white">{currentStepIndex + 1}/{data.steps.length}</span>
-              <ChevronUp size={12} className={`text-gray-500 transition-transform ${expandedPanel ? 'rotate-180' : ''}`} />
-            </button>
-            
-            <button 
-              onClick={() => setCurrentStepIndex(Math.min(data.steps.length - 1, currentStepIndex + 1))}
-              disabled={currentStepIndex === data.steps.length - 1}
-              title="Next step"
-              aria-label="Next step"
-              className="p-1.5 bg-neutral-800 text-neutral-200 rounded-lg hover:bg-neutral-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronRight size={14} />
-            </button>
-            
+            {data && data.steps.length > 0 && (
+              <>
+                <button 
+                  type="button"
+                  onClick={() => setCurrentStepIndex(0)}
+                  disabled={currentStepIndex === 0}
+                  title="Restart from Step 1"
+                  aria-label="Restart from Step 1"
+                  className="h-9 w-9 flex items-center justify-center bg-gray-800 rounded-lg hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-white cursor-pointer active:scale-95 shrink-0"
+                >
+                  <SkipBack size={14} />
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setCurrentStepIndex(Math.max(0, currentStepIndex - 1))}
+                  disabled={currentStepIndex === 0}
+                  title="Previous step"
+                  aria-label="Previous step"
+                  className="h-9 w-9 flex items-center justify-center bg-gray-800 rounded-lg hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-white cursor-pointer active:scale-95 shrink-0"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                {/* Step progress dots */}
+                <button 
+                  type="button"
+                  onClick={() => setExpandedPanel(!expandedPanel)}
+                  className={`h-9 px-2.5 flex items-center gap-1.5 rounded-lg transition-colors cursor-pointer active:scale-95 shrink-0 ${
+                    expandedPanel ? 'bg-neutral-800 text-white border border-neutral-700' : 'hover:bg-gray-800/70 text-white'
+                  }`}
+                  title={expandedPanel ? "Minimize all steps" : "Expand all steps"}
+                  aria-label="Toggle all steps"
+                >
+                  <span className="text-xs font-bold font-mono text-white">{currentStepIndex + 1}/{data.steps.length}</span>
+                  <ChevronUp size={13} className={`text-gray-400 transition-transform duration-200 ${expandedPanel ? 'rotate-180' : ''}`} />
+                </button>
+                
+                <button 
+                  type="button"
+                  onClick={() => setCurrentStepIndex(Math.min(data.steps.length - 1, currentStepIndex + 1))}
+                  disabled={currentStepIndex === data.steps.length - 1}
+                  title="Next step"
+                  aria-label="Next step"
+                  className="h-9 w-9 flex items-center justify-center bg-white rounded-lg hover:bg-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-black font-bold cursor-pointer active:scale-95 shrink-0"
+                >
+                  <ChevronRight size={16} />
+                </button>
+
+                <div className="w-px h-5 bg-gray-700/80 mx-0.5 shrink-0"></div>
+
+                {/* Step Info Pill */}
+                {(() => {
+                  const currentStep = data.steps[currentStepIndex];
+                  if (!currentStep) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setStepInfoMinimized(m => !m)}
+                      title={stepInfoMinimized ? "Open step info window" : "Minimize step info window"}
+                      className={`h-9 px-2.5 flex items-center gap-1.5 rounded-lg text-xs font-medium transition-all active:scale-95 cursor-pointer shrink-0 ${
+                        !stepInfoMinimized
+                          ? 'bg-neutral-800 border border-neutral-700 text-neutral-200'
+                          : 'bg-gray-800/90 hover:bg-gray-700/90 border border-gray-700/60 text-gray-300 hover:text-white'
+                      }`}
+                    >
+                      <Info size={14} className={!stepInfoMinimized ? 'text-neutral-200' : 'text-gray-400'} />
+                      <span className="truncate max-w-[110px] sm:max-w-[150px]">
+                        {currentStep.instruction || 'Step Info'}
+                      </span>
+                      <ChevronDown size={13} className={`text-gray-400 transition-transform duration-200 ${!stepInfoMinimized ? 'rotate-180' : ''}`} />
+                    </button>
+                  );
+                })()}
+              </>
+            )}
+
+            {/* Breadboard Wires Routing Toggle */}
+            {breadboardPosition && wirePaths.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setRoutingPanelMinimized(m => !m)}
+                title={routingPanelMinimized ? "Open breadboard routing window" : "Minimize breadboard routing window"}
+                className={`h-9 px-2.5 flex items-center gap-1.5 rounded-lg text-xs font-medium transition-all active:scale-95 cursor-pointer shrink-0 ${
+                  !routingPanelMinimized
+                    ? 'bg-neutral-800 border border-neutral-700 text-neutral-200'
+                    : 'bg-gray-800/90 hover:bg-gray-700/90 border border-gray-700/60 text-gray-300 hover:text-white'
+                }`}
+              >
+                <Cable size={14} className={!routingPanelMinimized ? 'text-neutral-200' : 'text-gray-400'} />
+                <span>{wirePaths.length} Wires</span>
+                <ChevronDown size={13} className={`text-gray-400 transition-transform duration-200 ${!routingPanelMinimized ? 'rotate-180' : ''}`} />
+              </button>
+            )}
+
+            {/* Minimize / Expand All Button */}
             {(() => {
-              const currentStep = data.steps[currentStepIndex];
+              const hasOpenPanel = (!stepInfoMinimized && !!data?.steps?.[currentStepIndex]) ||
+                                    (!routingPanelMinimized && wirePaths.length > 0 && !!breadboardPosition) ||
+                                    expandedPanel ||
+                                    !!(selectedComponentId || selectedWireId);
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (hasOpenPanel) {
+                      setStepInfoMinimized(true);
+                      setRoutingPanelMinimized(true);
+                      setExpandedPanel(false);
+                      setSelectedComponentId(null);
+                      setSelectedWireId(null);
+                    } else {
+                      setStepInfoMinimized(false);
+                      if (wirePaths.length > 0) setRoutingPanelMinimized(false);
+                    }
+                  }}
+                  className="h-9 w-9 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white transition-all active:scale-95 cursor-pointer shrink-0"
+                  title={hasOpenPanel ? "Minimize all windows into bar" : "Expand all windows from bar"}
+                  aria-label={hasOpenPanel ? "Minimize all windows into bar" : "Expand all windows from bar"}
+                >
+                  {hasOpenPanel ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                </button>
+              );
+            })()}
+
+            {/* Flash code button */}
+            {(() => {
+              const currentStep = data?.steps?.[currentStepIndex];
               if (!currentStep) return null;
               
               let hasCode = !!currentStep.code;
@@ -1915,6 +2603,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
 
               return (
                 <button 
+                  type="button"
                   onClick={() => {
                     if (extractedCode && onCompileRequest) {
                       onCompileRequest(extractedCode);
@@ -1922,7 +2611,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                       alert('No code found on this step.');
                     }
                   }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-300 ${
+                  className={`flex items-center gap-1.5 h-9 px-3 sm:h-8 sm:px-2.5 rounded-lg font-bold text-xs transition-all duration-300 cursor-pointer active:scale-95 shrink-0 ${
                     isBoardConnected
                       ? 'bg-[#111] text-white hover:bg-[#1a1a1a] border border-neutral-700'
                       : 'bg-gray-800 text-gray-500 hover:bg-gray-700 border border-gray-800'
@@ -1934,194 +2623,116 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
               );
             })()}
           </div>
-          
-          {/* Current step info panel */}
-          {(() => {
-            const step = data.steps[currentStepIndex];
-            if (!step) return null;
-            const pc = 'bg-gray-800 text-gray-200 border-gray-700';
-            return (
-              <motion.div
-                drag
-                dragControls={stepInfoDragControls}
-                dragListener={false}
-                dragMomentum={false}
-                dragConstraints={containerRef}
-                data-canvas-overlay="true"
-                onWheel={event => event.stopPropagation()}
-                style={{ overscrollBehavior: 'contain' }}
-                className="bg-[#0a0a0a]/95 backdrop-blur-sm border border-neutral-800 rounded-xl px-3 py-2.5 max-w-[340px] shadow-lg space-y-2 pointer-events-auto"
-              >
-                {/* Phase badge + instruction */}
-                <div className="flex items-start gap-2">
-                  {step.phase && (
-                    <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border flex-shrink-0 ${pc}`}>
-                      {step.phase}
-                    </span>
-                  )}
-                  <p className="flex-1 text-xs text-gray-200 font-medium leading-relaxed">{step.instruction}</p>
-                  <button
-                    type="button"
-                    onPointerDown={event => { event.stopPropagation(); stepInfoDragControls.start(event); }}
-                    style={{ touchAction: 'none' }}
-                    title="Move this step info panel"
-                    aria-label="Move this step info panel"
-                    className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-white cursor-grab active:cursor-grabbing"
-                  ><Move size={12} /></button>
-                </div>
-                
-                                {(() => {
-                  // The AI sometimes buries markdown code blocks inside step.detail. We need to extract them.
-                  const detailText = step.detail || '';
-                  const codeBlockRegex = /```(\w*)\s*([\s\S]*?)```/g;
-                  let match;
-                  let lastIndex = 0;
-                  const parts = [];
-                  let extractedCode = step.code ? step.code.replace(/\\n/g, '\n') : null;
-                  let extractedLang = step.code_language || 'cpp';
-
-                  while (!step.code && (match = codeBlockRegex.exec(detailText)) !== null) {
-                    if (match.index > lastIndex) {
-                      parts.push(<span key={lastIndex}>{detailText.slice(lastIndex, match.index)}</span>);
-                    }
-                    extractedCode = match[2].trim();
-                    extractedLang = match[1] || 'cpp';
-                    lastIndex = match.index + match[0].length;
-                  }
-                  if (lastIndex < detailText.length) {
-                    parts.push(<span key={lastIndex}>{detailText.slice(lastIndex)}</span>);
-                  }
-
-                  return (
-                    <div className="max-h-[300px] overflow-y-auto pr-1" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
-                      {parts.length > 0 && (
-                        <p className="text-[11px] text-gray-500 leading-relaxed border-l-2 border-gray-700 pl-2 whitespace-pre-wrap">
-                          {parts}
-                        </p>
-                      )}
-                      
-                      {extractedCode && (
-                        <div className="bg-[#0a0a0a] rounded-lg p-2 border border-gray-800 shadow-inner mt-2">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-[9px] text-gray-400 font-mono uppercase tracking-wider bg-gray-900 px-1.5 py-0.5 rounded border border-gray-700">{extractedLang}</span>
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => openCodePreview(extractedCode!, extractedLang, currentStepIndex)}
-                                className="flex items-center gap-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-2 py-1 rounded text-[9px] font-medium transition-colors border border-neutral-700"
-                                title="Preview code in editor"
-                              >
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                                Preview
-                              </button>
-                              <button
-                                onClick={() => navigator.clipboard.writeText(extractedCode!)}
-                                className="flex items-center gap-1 bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded text-[9px] font-medium transition-colors border border-gray-700"
-                              >
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                Copy
-                              </button>
-                            </div>
-                          </div>
-                          <pre className="text-[10px] font-mono text-gray-300 max-h-[160px] overflow-y-auto overflow-x-auto whitespace-pre-wrap p-1 bg-black/40 rounded" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
-                            <code dangerouslySetInnerHTML={{ __html: highlightCode(extractedCode) }} />
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-                
-                {/* Verification */}
-                {step.verify && (
-                  <div className="flex items-start gap-1.5 text-[11px] text-gray-300 bg-gray-900 rounded-lg px-2 py-1.5 border border-gray-700">
-                    <span className="flex-shrink-0 mt-0.5 text-gray-400"><CheckCircle2 size={12}/></span>
-                    <div className="flex-1 overflow-hidden relative">
-                      <div className="line-clamp-4">{step.verify}</div>
-                      {step.verify.length > 150 && (
-                        <button
-                          onClick={() => setExpandedVerifyText(step.verify!)}
-                          className="mt-1 text-neutral-300 hover:text-white text-[9px] flex items-center gap-1 font-medium bg-neutral-800 px-1.5 py-0.5 rounded border border-neutral-700"
-                        >
-                          <Maximize size={10} /> Full Screen
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            );
-          })()}
-
-          {/* Inline Canvas Chat */}
-          <AnimatePresence>
-            {canvasChatOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 10, height: 0 }}
-                animate={{ opacity: 1, y: 0, height: 'auto' }}
-                exit={{ opacity: 0, y: 10, height: 0 }}
-                data-canvas-overlay="true"
-                onWheel={event => event.stopPropagation()}
-                style={{ overscrollBehavior: 'contain' }}
-                className="bg-[#090909]/95 backdrop-blur-md border border-neutral-800 rounded-xl max-w-[380px] shadow-2xl overflow-hidden"
-              >
-                {/* Chat Messages */}
-                <div ref={canvasChatRef} className="max-h-[200px] overflow-y-auto p-2 space-y-2" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
-                  {canvasChatMessages.length === 0 && (
-                    <p className="text-[10px] text-gray-600 text-center py-3">
-                      Ask anything about this circuit, or request changes...
-                    </p>
-                  )}
-                  {canvasChatMessages.map((msg, i) => (
-                    <div key={i} className={`text-[11px] leading-relaxed px-2 py-1.5 rounded-lg ${
-                      msg.role === 'user'
-                        ? 'bg-white/[0.07] text-neutral-200 ml-6'
-                        : 'bg-gray-800/50 text-gray-300 mr-4'
-                    }`}>
-                      {msg.text}
-                    </div>
-                  ))}
-                  {canvasChatLoading && (
-                    <div className="flex items-center gap-2 text-[10px] text-gray-500 px-2">
-                      <Loader2 size={10} className="animate-spin" /> Thinking...
-                    </div>
-                  )}
-                </div>
-                {/* Chat Input */}
-                <div className="flex items-center gap-1.5 p-1.5 border-t border-gray-800/50">
-                  <input
-                    value={canvasChatInput}
-                    onChange={e => setCanvasChatInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleCanvasChat()}
-                    placeholder="Ask or change anything..."
-                    className="flex-1 bg-transparent text-xs text-white placeholder-gray-600 outline-none px-2 py-1.5"
-                    disabled={canvasChatLoading || !apiKeys || apiKeys.length === 0}
-                  />
-                  <button
-                    onClick={handleCanvasChat}
-                    disabled={!canvasChatInput.trim() || canvasChatLoading || !apiKeys || apiKeys.length === 0}
-                    className="p-1.5 rounded-lg bg-neutral-200 hover:bg-white text-black disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Send size={10} />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Chat Toggle Button */}
-          <button
-            onClick={() => setCanvasChatOpen(!canvasChatOpen)}
-            className={`self-end p-2 rounded-full transition-all shadow-lg ${
-              canvasChatOpen 
-                ? 'bg-neutral-200 text-black ring-2 ring-white/20'
-                : 'bg-[#111]/90 text-gray-400 hover:text-white hover:bg-[#181818] border border-neutral-800'
-            }`}
-            title="Canvas AI Chat"
-          >
-            {canvasChatOpen ? <X size={14} /> : <MessageCircle size={14} />}
-          </button>
         </motion.div>
       )}
+
+      {/* Inline Canvas Chat Window - Independent Floating Panel */}
+      <AnimatePresence>
+        {canvasChatOpen && (
+          <motion.div
+            key="canvas-chat-window"
+            initial={{ opacity: 0, scale: 0.94, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 10 }}
+            drag
+            dragControls={chatDragControls}
+            dragListener={false}
+            dragMomentum={false}
+            dragConstraints={containerRef}
+            className="absolute bottom-16 right-4 z-40 bg-[#090909]/95 backdrop-blur-md border border-neutral-800 rounded-xl w-[min(380px,calc(100vw-32px))] shadow-2xl overflow-hidden select-none"
+          >
+            <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 bg-[#121212]/80">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-200">
+                <MessageCircle size={14} /> Canvas AI Assistant
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCanvasChatOpen(false)}
+                  className="h-6 px-1.5 flex items-center gap-1 rounded text-gray-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+                  title="Minimize chat"
+                >
+                  <Minus size={13} />
+                  <span className="text-[10px]">Minimize</span>
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={e => { e.stopPropagation(); chatDragControls.start(e); }}
+                  style={{ touchAction: 'none' }}
+                  title="Drag chat individually"
+                  className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-neutral-800 hover:text-white cursor-grab active:cursor-grabbing"
+                >
+                  <Move size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCanvasChatOpen(false)}
+                  className="text-gray-500 hover:text-white p-1 rounded hover:bg-neutral-800 transition-colors"
+                  title="Close chat"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+            {/* Chat Messages */}
+            <div ref={canvasChatRef} className="max-h-[220px] overflow-y-auto p-2.5 space-y-2">
+              {canvasChatMessages.length === 0 && (
+                <p className="text-[10px] text-gray-500 text-center py-4">
+                  Ask anything about this circuit, or request modifications...
+                </p>
+              )}
+              {canvasChatMessages.map((msg, i) => (
+                <div key={i} className={`text-[11px] leading-relaxed px-2.5 py-1.5 rounded-lg ${
+                  msg.role === 'user'
+                    ? 'bg-white/[0.08] text-neutral-200 ml-6'
+                    : 'bg-gray-800/60 text-gray-300 mr-4'
+                }`}>
+                  {msg.text}
+                </div>
+              ))}
+              {canvasChatLoading && (
+                <div className="flex items-center gap-2 text-[10px] text-gray-400 px-2 py-1">
+                  <Loader2 size={12} className="animate-spin text-neutral-400" /> Thinking...
+                </div>
+              )}
+            </div>
+            {/* Chat Input */}
+            <div className="flex items-center gap-1.5 p-2 border-t border-neutral-800/80 bg-neutral-900/40">
+              <input
+                value={canvasChatInput}
+                onChange={e => setCanvasChatInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleCanvasChat()}
+                placeholder="Ask or change anything..."
+                className="flex-1 bg-transparent text-xs text-white placeholder-gray-500 outline-none px-2 py-1.5"
+                disabled={canvasChatLoading || !apiKeys || apiKeys.length === 0}
+              />
+              <button
+                type="button"
+                onClick={handleCanvasChat}
+                disabled={!canvasChatInput.trim() || canvasChatLoading || !apiKeys || apiKeys.length === 0}
+                className="p-1.5 rounded-lg bg-neutral-200 hover:bg-white text-black disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <Send size={11} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Canvas AI Chat Button (Bottom-Right) */}
+      <button
+        type="button"
+        onClick={() => setCanvasChatOpen(o => !o)}
+        className={`absolute bottom-4 right-4 z-40 p-2.5 rounded-full transition-all shadow-xl cursor-pointer ${
+          canvasChatOpen 
+            ? 'bg-neutral-200 text-black ring-2 ring-white/20'
+            : 'bg-[#111]/90 text-gray-400 hover:text-white hover:bg-[#181818] border border-neutral-800'
+        }`}
+        title={canvasChatOpen ? "Close AI Chat" : "Open Canvas AI Chat"}
+        aria-label="Canvas AI Chat"
+      >
+        {canvasChatOpen ? <X size={15} /> : <MessageCircle size={15} />}
+      </button>
 
       {/* VS Code-like Code Preview Overlay */}
       <AnimatePresence>
@@ -2130,9 +2741,6 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            data-canvas-overlay="true"
-            onWheel={event => event.stopPropagation()}
-            style={{ overscrollBehavior: 'contain' }}
             className="absolute inset-0 z-[200] bg-[#090909] flex flex-col"
           >
             {/* Title Bar */}
@@ -2237,9 +2845,8 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                     setCodeSaveStatus('Unsaved code edits. Save to update this circuit step.');
                   }}
                   onScroll={syncCodePreviewScroll}
-                  onWheel={event => event.stopPropagation()}
                   className="absolute inset-0 z-10 h-full w-full resize-none overflow-auto whitespace-pre border-0 bg-transparent px-4 py-2 pr-8 font-mono text-[12px] leading-[20px] text-transparent caret-white outline-none selection:bg-white/20"
-                  style={{ tabSize: 2, overscrollBehavior: 'contain' }}
+                  style={{ tabSize: 2 }}
                 />
               </div>
             </div>

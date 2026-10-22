@@ -43,6 +43,9 @@ body {
 
 html {
   scroll-behavior: smooth;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
 }
 
 .katex-display {
@@ -51,3 +54,30 @@ html {
   overflow-y: hidden;
   padding: 0.25rem 0 0.5rem;
 }
+
+/* Touch screen & gesture optimizations */
+.touch-canvas {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Prevent unwanted callout menus or selections during dragging */
+.touch-draggable {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Hide scrollbar across all browsers */
+.scrollbar-none {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+

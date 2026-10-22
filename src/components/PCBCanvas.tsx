@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize, Play, Pause, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize, Play, Pause, RotateCcw, Minus, ChevronUp } from 'lucide-react';
 
 // ─── Interfaces ───
 export interface PCBPad {
@@ -302,6 +302,7 @@ export function PCBCanvas({ data, currentStep, onStepChange, layers, mousePos, o
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [cursorGlowPos, setCursorGlowPos] = useState({ x: -1000, y: -1000 });
   const [isPlaying, setIsPlaying] = useState(false);
+  const [stepMinimized, setStepMinimized] = useState(false);
 
   // Auto-play through steps
   useEffect(() => {
@@ -337,40 +338,212 @@ export function PCBCanvas({ data, currentStep, onStepChange, layers, mousePos, o
     };
   }, [data, currentStep]);
 
-  // Mouse tracking for coordinates
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
+  const positionRef = useRef(position);
+  positionRef.current = position;
+
+  const activePointersRef = useRef<Map<number, { clientX: number; clientY: number }>>(new Map());
+  const pinchStateRef = useRef<{
+    initialDist: number;
+    initialScale: number;
+    initialMidpoint: { x: number; y: number };
+    initialPosition: { x: number; y: number };
+  } | null>(null);
+  const panStartRef = useRef<{ clientX: number; clientY: number; posAtStart: { x: number; y: number } } | null>(null);
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
+
+  const zoomAtPoint = useCallback((targetScale: number, fx: number, fy: number) => {
+    setScale(prevScale => {
+      const clampedScale = Math.min(5, Math.max(0.15, targetScale));
+      setPosition(prevPos => {
+        const wx = (fx - prevPos.x) / prevScale;
+        const wy = (fy - prevPos.y) / prevScale;
+        return {
+          x: fx - wx * clampedScale,
+          y: fy - wy * clampedScale,
+        };
+      });
+      return clampedScale;
+    });
+  }, []);
+
+  const zoomCentered = useCallback((delta: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    zoomAtPoint(scaleRef.current + delta, cx, cy);
+  }, [zoomAtPoint]);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    activePointersRef.current.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+
+    // Multi-touch pinch zoom (2 fingers)
+    if (activePointersRef.current.size === 2) {
+      panStartRef.current = null;
+      setIsPanning(false);
+
+      const pointers = Array.from(activePointersRef.current.values());
+      const p1 = pointers[0];
+      const p2 = pointers[1];
+      const dist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
+      const midX = (p1.clientX + p2.clientX) / 2;
+      const midY = (p1.clientY + p2.clientY) / 2;
+
+      pinchStateRef.current = {
+        initialDist: Math.max(dist, 1),
+        initialScale: scaleRef.current,
+        initialMidpoint: { x: midX, y: midY },
+        initialPosition: { ...positionRef.current },
+      };
+      return;
+    }
+
+    if (activePointersRef.current.size === 1) {
+      setIsPanning(true);
+      panStartRef.current = {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        posAtStart: { ...positionRef.current },
+      };
+      try {
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {}
+
+      // Double-tap zoom on touchscreen
+      if (e.pointerType === 'touch') {
+        const now = Date.now();
+        const last = lastTapRef.current;
+        if (last && now - last.time < 320 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 30) {
+          if (containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            const fx = e.clientX - rect.left;
+            const fy = e.clientY - rect.top;
+            if (scaleRef.current > 1.2) {
+              setScale(0.8);
+              setPosition({ x: 0, y: 0 });
+            } else {
+              zoomAtPoint(Math.min(5, scaleRef.current * 1.6), fx, fy);
+            }
+          }
+          lastTapRef.current = null;
+        } else {
+          lastTapRef.current = { time: now, x: e.clientX, y: e.clientY };
+        }
+      }
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       setCursorGlowPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     }
-    if (isPanning) {
-      setPosition({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    }
+
+    // 2-finger pinch gesture
+    if (activePointersRef.current.size === 2 && pinchStateRef.current && containerRef.current) {
+      const pointers = Array.from(activePointersRef.current.values());
+      const p1 = pointers[0];
+      const p2 = pointers[1];
+      const currentDist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
+      const currentMidX = (p1.clientX + p2.clientX) / 2;
+      const currentMidY = (p1.clientY + p2.clientY) / 2;
+
+      const { initialDist, initialScale, initialMidpoint, initialPosition } = pinchStateRef.current;
+      const scaleFactor = currentDist / initialDist;
+      const newScale = Math.min(5, Math.max(0.15, initialScale * scaleFactor));
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const fx = initialMidpoint.x - rect.left;
+      const fy = initialMidpoint.y - rect.top;
+
+      const wx = (fx - initialPosition.x) / initialScale;
+      const wy = (fy - initialPosition.y) / initialScale;
+
+      const deltaX = currentMidX - initialMidpoint.x;
+      const deltaY = currentMidY - initialMidpoint.y;
+
+      const newX = (fx + deltaX) - wx * newScale;
+      const newY = (fy + deltaY) - wy * newScale;
+
+      setScale(newScale);
+      setPosition({ x: newX, y: newY });
       return;
     }
+
+    // Single-pointer pan
+    if (panStartRef.current && isPanning) {
+      const dx = e.clientX - panStartRef.current.clientX;
+      const dy = e.clientY - panStartRef.current.clientY;
+      setPosition({
+        x: panStartRef.current.posAtStart.x + dx,
+        y: panStartRef.current.posAtStart.y + dy,
+      });
+      return;
+    }
+
     if (!svgRef.current || !data) return;
     const rect = svgRef.current.getBoundingClientRect();
     const svgX = ((e.clientX - rect.left) / rect.width) * (data.board_width + 40) - 20;
     const svgY = ((e.clientY - rect.top) / rect.height) * (data.board_height + 40) - 20;
     onMousePosChange({ x: Math.round(svgX * 10) / 10, y: Math.round(svgY * 10) / 10 });
-  }, [isPanning, panStart, data, onMousePosChange]);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsPanning(true);
-    setPanStart({ x: e.clientX - position.x, y: e.clientY - position.y });
   };
-  const handleMouseUp = () => setIsPanning(false);
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    activePointersRef.current.delete(e.pointerId);
+
+    if (activePointersRef.current.size < 2) {
+      pinchStateRef.current = null;
+    }
+
+    if (activePointersRef.current.size === 1) {
+      const remaining = Array.from(activePointersRef.current.values())[0];
+      panStartRef.current = {
+        clientX: remaining.clientX,
+        clientY: remaining.clientY,
+        posAtStart: { ...positionRef.current },
+      };
+      setIsPanning(true);
+    } else if (activePointersRef.current.size === 0) {
+      panStartRef.current = null;
+      setIsPanning(false);
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+  };
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     
     const handleNativeWheel = (e: WheelEvent) => {
       e.preventDefault();
-      setScale(s => Math.max(0.15, Math.min(5, s + (e.deltaY > 0 ? -0.1 : 0.1))));
+      const rect = el.getBoundingClientRect();
+      const fx = e.clientX - rect.left;
+      const fy = e.clientY - rect.top;
+      const delta = e.deltaY > 0 ? -0.12 : 0.12;
+      zoomAtPoint(scaleRef.current + delta, fx, fy);
+    };
+
+    const handleNativeTouchMove = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        e.preventDefault();
+      }
     };
 
     el.addEventListener('wheel', handleNativeWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleNativeWheel);
-  }, []);
+    el.addEventListener('touchmove', handleNativeTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleNativeWheel);
+      el.removeEventListener('touchmove', handleNativeTouchMove);
+    };
+  }, [zoomAtPoint]);
 
   if (!data) {
     return (
@@ -422,11 +595,12 @@ export function PCBCanvas({ data, currentStep, onStepChange, layers, mousePos, o
       {/* Canvas */}
       <div
         ref={containerRef}
-        className="flex-1 cursor-crosshair relative overflow-hidden"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={() => { handleMouseUp(); onMousePosChange(null); }}
+        className="flex-1 cursor-crosshair relative overflow-hidden touch-none select-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onPointerLeave={() => { onMousePosChange(null); }}
       >
         {/* Mouse Hover Glow Effect */}
         <div 
@@ -604,15 +778,27 @@ export function PCBCanvas({ data, currentStep, onStepChange, layers, mousePos, o
 
       {/* Bottom Controls */}
       {currentStepData && (
-        <div className="absolute bottom-2 right-2 z-20 w-72 bg-[#0d1220]/95 backdrop-blur border border-[#1a2540] rounded-lg overflow-hidden text-[10px]">
-          <div className="px-3 py-2 border-b border-[#1a2540]">
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border uppercase tracking-wider ${PHASE_COLORS[currentStepData.phase] || 'bg-gray-800 text-gray-300 border-gray-700'}`}>
-                {currentStepData.phase}
-              </span>
+        <div className="absolute bottom-2 right-2 z-20 w-72 bg-[#0d1220]/95 backdrop-blur border border-[#1a2540] rounded-lg overflow-hidden text-[10px] shadow-2xl">
+          <div className="px-3 py-2 border-b border-[#1a2540] flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border uppercase tracking-wider ${PHASE_COLORS[currentStepData.phase] || 'bg-gray-800 text-gray-300 border-gray-700'}`}>
+                  {currentStepData.phase}
+                </span>
+              </div>
+              <p className="text-gray-200 font-medium text-[11px] truncate">{currentStepData.instruction}</p>
+              {!stepMinimized && (
+                <p className="text-gray-500 leading-relaxed line-clamp-2 mt-0.5">{currentStepData.detail}</p>
+              )}
             </div>
-            <p className="text-gray-200 font-medium text-[11px]">{currentStepData.instruction}</p>
-            <p className="text-gray-600 leading-relaxed line-clamp-2 mt-0.5">{currentStepData.detail}</p>
+            <button
+              type="button"
+              onClick={() => setStepMinimized(m => !m)}
+              className="p-1 rounded text-gray-400 hover:text-white hover:bg-[#1a2540] transition-colors shrink-0"
+              title={stepMinimized ? "Expand step info" : "Minimize step info"}
+            >
+              {stepMinimized ? <ChevronUp size={12} /> : <Minus size={12} />}
+            </button>
           </div>
           <div className="px-3 py-1.5 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
@@ -641,21 +827,41 @@ export function PCBCanvas({ data, currentStep, onStepChange, layers, mousePos, o
         </div>
       )}
 
-      {/* Zoom controls */}
-      <div className="absolute bottom-2 left-2 z-20 flex gap-1">
-        <button onClick={() => setScale(s => Math.min(5, s + 0.2))}
-          className="p-1.5 rounded bg-[#0d1220] border border-[#1a2540] text-gray-500 hover:text-white text-[10px] transition-colors">
-          <ZoomIn size={12} />
+      {/* Zoom controls (Touch, Tablet & Desktop Optimized) */}
+      <div 
+        className="absolute bottom-3 left-3 z-20 flex items-center gap-1 bg-[#0d1220]/90 backdrop-blur-md border border-[#1a2540] rounded-xl p-1 shadow-2xl select-none"
+        style={{ touchAction: 'manipulation' }}
+      >
+        <button 
+          type="button"
+          onClick={() => zoomCentered(0.25)}
+          className="h-9 w-9 flex items-center justify-center rounded-lg bg-transparent text-gray-300 hover:text-white hover:bg-white/10 active:scale-95 active:bg-white/20 transition-all cursor-pointer"
+          title="Zoom In (Tap, Scroll or Pinch)"
+          aria-label="Zoom In"
+        >
+          <ZoomIn size={16} />
         </button>
-        <button onClick={() => setScale(s => Math.max(0.15, s - 0.2))}
-          className="p-1.5 rounded bg-[#0d1220] border border-[#1a2540] text-gray-500 hover:text-white text-[10px] transition-colors">
-          <ZoomOut size={12} />
+        <div className="w-px h-5 bg-[#1a2540]"></div>
+        <button 
+          type="button"
+          onClick={() => { setScale(0.8); setPosition({ x: 0, y: 0 }); }}
+          className="h-9 px-2 flex items-center justify-center gap-1 rounded-lg bg-transparent text-[11px] font-mono font-semibold text-gray-300 hover:text-white hover:bg-white/10 active:scale-95 active:bg-white/20 transition-all cursor-pointer"
+          title="Reset View (Double-tap canvas or click here)"
+          aria-label="Reset View"
+        >
+          <Maximize size={13} />
+          <span>{Math.round(scale * 100)}%</span>
         </button>
-        <button onClick={() => { setScale(0.8); setPosition({ x: 0, y: 0 }); }}
-          className="p-1.5 rounded bg-[#0d1220] border border-[#1a2540] text-gray-500 hover:text-white text-[10px] transition-colors">
-          <Maximize size={12} />
+        <div className="w-px h-5 bg-[#1a2540]"></div>
+        <button 
+          type="button"
+          onClick={() => zoomCentered(-0.25)}
+          className="h-9 w-9 flex items-center justify-center rounded-lg bg-transparent text-gray-300 hover:text-white hover:bg-white/10 active:scale-95 active:bg-white/20 transition-all cursor-pointer"
+          title="Zoom Out (Tap, Scroll or Pinch)"
+          aria-label="Zoom Out"
+        >
+          <ZoomOut size={16} />
         </button>
-        <span className="p-1.5 text-gray-600 font-mono text-[10px]">{Math.round(scale * 100)}%</span>
       </div>
 
       {/* Trace animation CSS */}
