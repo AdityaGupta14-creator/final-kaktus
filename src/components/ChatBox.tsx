@@ -844,7 +844,7 @@ function NextModuleCard({
   const needsCustomName = selected?.id === 'custom';
 
   return (
-    <section className="mb-3 mt-4 w-full max-w-[95%] overflow-hidden rounded-xl border border-neutral-700 bg-[#0b0b0b]" aria-label="Choose the next module">
+    <section className="w-full overflow-hidden rounded-t-xl border border-neutral-700 border-b-0 bg-[#0b0b0b]" aria-label="Choose the next module">
       <header className="border-b border-neutral-800 bg-[#101010] px-3 py-2.5">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Module handoff</p>
         <h3 className="mt-1 text-xs font-semibold text-neutral-100">Final step reached: {moduleName}</h3>
@@ -1630,6 +1630,49 @@ RULES:
       && targetName.trim().toLowerCase() !== activeWorkspaceTabName.trim().toLowerCase()) return latestIndex;
     return index;
   }, -1);
+  const nextModuleMessage = reachedFinalStep && !isProcessing && !pendingModelWarning && latestTutorialMessageIndex >= 0
+    ? messages[latestTutorialMessageIndex]
+    : undefined;
+  const nextModuleTutorial = nextModuleMessage?.tutorialData;
+  const plannedNextModuleChoices = nextModuleMessage?.phasePlan
+    ? getPlannedModuleChoices(nextModuleMessage.phasePlan, nextModuleMessage.phaseCompletedIndices || [])
+    : [];
+  const nextModuleChoices = nextModuleTutorial
+    ? plannedNextModuleChoices.length
+      ? plannedNextModuleChoices
+      : getSuggestedModuleChoices(nextModuleTutorial, circuitData, allTabs)
+    : [];
+  const nextModuleName = nextModuleTutorial?.targetTabName
+    || nextModuleTutorial?.target_tab
+    || activeWorkspaceTabName
+    || 'Current module';
+
+  const handleNextModuleSubmit = (choice: NextModuleChoice, customName: string) => {
+    if (!nextModuleMessage?.tutorialData) return;
+    if (choice.phaseIndex != null && nextModuleMessage.phasePlan) {
+      const completedPhaseIndices = Array.from(new Set([
+        ...(nextModuleMessage.phaseCompletedIndices || []),
+        choice.phaseIndex,
+      ]));
+      void handleSend(
+        `Continue the approved project. Build subsystem ${choice.phaseIndex + 1}: ${nextModuleMessage.phasePlan.subsystems[choice.phaseIndex].name}.`,
+        {
+          plan: nextModuleMessage.phasePlan,
+          phaseIndex: choice.phaseIndex,
+          completedPhaseIndices,
+          targetTabId: nextModuleMessage.phaseTargetTabId || targetWorkspaceTabId || activeTabId,
+          startApproach: nextModuleMessage.phaseStartApproach,
+        },
+      );
+      return;
+    }
+
+    const projectName = circuitData?.project_name || nextModuleMessage.tutorialData.projectName || 'this project';
+    const request = choice.id === 'custom'
+      ? `Create a new module tab named ${customName} for the existing project ${projectName}. Build this module only, include its complete relevant steps and checks, and preserve the existing modules.`
+      : choice.prompt || `Create a new module tab named ${choice.label} for the existing project ${projectName}. Build this module only, include its complete relevant steps and checks, and preserve the existing modules.`;
+    void handleSend(request);
+  };
 
   return (
     <div className="flex flex-col h-full bg-[#111] text-gray-200 text-sm font-sans relative">
@@ -1913,47 +1956,6 @@ RULES:
               </div>
             </div>
 
-            {idx === latestTutorialMessageIndex && reachedFinalStep && msg.tutorialData && !isProcessing && !pendingModelWarning && (() => {
-              const plannedChoices = msg.phasePlan
-                ? getPlannedModuleChoices(msg.phasePlan, msg.phaseCompletedIndices || [])
-                : [];
-              const options = plannedChoices.length
-                ? plannedChoices
-                : getSuggestedModuleChoices(msg.tutorialData, circuitData, allTabs);
-              const moduleName = msg.tutorialData.targetTabName || msg.tutorialData.target_tab || activeWorkspaceTabName || 'Current module';
-
-              return <NextModuleCard
-                key={`${idx}-${moduleName}`}
-                moduleName={moduleName}
-                options={options}
-                disabled={isProcessing || isPreparingImages || isQuotaReached || apiKeys.length === 0 || !model || !onUpdateCircuit}
-                onSubmit={(choice, customName) => {
-                  if (choice.phaseIndex != null && msg.phasePlan) {
-                    const completedPhaseIndices = Array.from(new Set([
-                      ...(msg.phaseCompletedIndices || []),
-                      choice.phaseIndex,
-                    ]));
-                    void handleSend(
-                      `Continue the approved project. Build subsystem ${choice.phaseIndex + 1}: ${msg.phasePlan.subsystems[choice.phaseIndex].name}.`,
-                      {
-                        plan: msg.phasePlan,
-                        phaseIndex: choice.phaseIndex,
-                        completedPhaseIndices,
-                        targetTabId: msg.phaseTargetTabId || targetWorkspaceTabId || activeTabId,
-                        startApproach: msg.phaseStartApproach,
-                      },
-                    );
-                    return;
-                  }
-
-                  const request = choice.id === 'custom'
-                    ? `Create a new module tab named ${customName} for the existing project ${circuitData?.project_name || msg.tutorialData?.projectName || 'this project'}. Build this module only, include its complete relevant steps and checks, and preserve the existing modules.`
-                    : choice.prompt || `Create a new module tab named ${choice.label} for the existing project ${circuitData?.project_name || msg.tutorialData?.projectName || 'this project'}. Build this module only, include its complete relevant steps and checks, and preserve the existing modules.`;
-                  void handleSend(request);
-                }}
-              />;
-            })()}
-
             {msg.role === 'assistant' && msg.errorCode === 'APP_QUOTA_EXCEEDED' && (
               <div 
                 onClick={() => { window.location.href = '/#pricing'; }}
@@ -2108,7 +2110,16 @@ RULES:
             ))}
           </div>
         )}
-        <div className={`bg-[#212121] border ${isQuotaReached ? 'border-red-500/60 bg-red-950/20 shadow-[0_0_20px_rgba(239,68,68,0.25)]' : 'border-gray-700/50'} ${messages.length === 0 ? 'rounded-3xl shadow-xl' : 'rounded-3xl'} p-2 flex flex-col focus-within:border-gray-500/50 transition-all`}>
+        {nextModuleTutorial && (
+          <NextModuleCard
+            key={`${latestTutorialMessageIndex}-${nextModuleName}-${nextModuleChoices.map(choice => choice.id).join('-')}`}
+            moduleName={nextModuleName}
+            options={nextModuleChoices}
+            disabled={isProcessing || isPreparingImages || isQuotaReached || apiKeys.length === 0 || !model || !onUpdateCircuit}
+            onSubmit={handleNextModuleSubmit}
+          />
+        )}
+        <div className={`bg-[#212121] border ${isQuotaReached ? 'border-red-500/60 bg-red-950/20 shadow-[0_0_20px_rgba(239,68,68,0.25)]' : nextModuleTutorial ? 'border-gray-700' : 'border-gray-700/50'} ${messages.length === 0 ? 'rounded-3xl shadow-xl' : nextModuleTutorial ? 'rounded-b-xl rounded-t-none border-t-0' : 'rounded-3xl'} p-2 flex flex-col focus-within:border-gray-500/50 transition-all`}>
           <input
             ref={imageInputRef}
             type="file"
