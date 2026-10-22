@@ -991,26 +991,40 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
       const target = e.target as HTMLElement | null;
       if (!target) return;
 
-      // When the mouse is over any card, panel, overlay, textarea, pre, or scrollable area,
-      // allow the card/code to scroll naturally and DO NOT zoom or move the canvas panel.
-      const isInsideCardOrEditor = target.closest(
-        '[data-canvas-overlay], .pointer-events-auto, textarea, pre, code, .overflow-y-auto, .overflow-auto, .overflow-x-auto, [role="dialog"]'
+      // Check if cursor is over any floating card, drawer, overlay, or code editor
+      const isOverlayElement = Boolean(
+        target.closest('[data-canvas-overlay]') ||
+        target.closest('textarea, pre, code, [role="dialog"]') ||
+        (target.closest('.overflow-y-auto, .overflow-auto, .overflow-x-auto') && !target.closest('#workspace-bg'))
       );
 
-      if (isInsideCardOrEditor) {
+      // If user is scrolling over a card or code editor, let it scroll naturally and do NOT zoom the canvas
+      if (isOverlayElement && target.id !== 'workspace-bg' && !target.closest('#workspace-bg')) {
         return;
       }
 
-      if (e.ctrlKey || e.metaKey || true) {
-        // We always want to prevent default scroll when inside canvas
-        // so the user can zoom without scrolling the whole page
-        e.preventDefault();
-      }
-      const zoomSensitivity = 0.0015;
-      const delta = -e.deltaY * zoomSensitivity;
+      // User is scrolling on the canvas panel / background / circuit - zoom canvas smoothly
+      e.preventDefault();
+
+      const rect = el.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      // Responsive zoom calculation
+      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
+
       setTransform(prev => {
-        const newScale = Math.min(Math.max(0.1, prev.scale * (1 + delta)), 5);
-        return { ...prev, scale: newScale };
+        const newScale = Math.min(Math.max(0.15, prev.scale * zoomFactor), 4.5);
+        // Anchor zoom around cursor position for intuitive Figma/IDE feel:
+        const scaleRatio = newScale / prev.scale;
+        const newX = mouseX - (mouseX - prev.x) * scaleRatio;
+        const newY = mouseY - (mouseY - prev.y) * scaleRatio;
+
+        return {
+          x: newX,
+          y: newY,
+          scale: newScale,
+        };
       });
     };
 
@@ -1606,16 +1620,44 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
       )}
 
       {/* Zoom Controls - Bottom Left Corner */}
-      <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-[#111]/80 backdrop-blur-md border border-gray-700 rounded-lg p-1 shadow-lg">
-        <button onClick={() => setTransform(p => ({ ...p, scale: Math.min(5, p.scale + 0.2) }))} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Zoom In">
+      <div data-canvas-overlay="true" className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-[#111]/80 backdrop-blur-md border border-gray-700 rounded-lg p-1 shadow-lg">
+        <button 
+          onClick={() => {
+            if (!containerRef.current) return;
+            const rect = containerRef.current.getBoundingClientRect();
+            const cx = rect.width / 2;
+            const cy = rect.height / 2;
+            setTransform(p => {
+              const newScale = Math.min(4.5, p.scale * 1.25);
+              const ratio = newScale / p.scale;
+              return { x: cx - (cx - p.x) * ratio, y: cy - (cy - p.y) * ratio, scale: newScale };
+            });
+          }} 
+          className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors cursor-pointer" 
+          title="Zoom In"
+        >
           <ZoomIn size={16} />
         </button>
         <div className="w-px h-4 bg-gray-700 mx-1"></div>
-        <button onClick={() => setTransform({ x: 0, y: 0, scale: 1 })} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Reset View">
+        <button onClick={() => setTransform({ x: 0, y: 0, scale: 1 })} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors cursor-pointer" title="Reset View">
           <Maximize size={16} />
         </button>
         <div className="w-px h-4 bg-gray-700 mx-1"></div>
-        <button onClick={() => setTransform(p => ({ ...p, scale: Math.max(0.1, p.scale - 0.2) }))} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Zoom Out">
+        <button 
+          onClick={() => {
+            if (!containerRef.current) return;
+            const rect = containerRef.current.getBoundingClientRect();
+            const cx = rect.width / 2;
+            const cy = rect.height / 2;
+            setTransform(p => {
+              const newScale = Math.max(0.15, p.scale / 1.25);
+              const ratio = newScale / p.scale;
+              return { x: cx - (cx - p.x) * ratio, y: cy - (cy - p.y) * ratio, scale: newScale };
+            });
+          }} 
+          className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors cursor-pointer" 
+          title="Zoom Out"
+        >
           <ZoomOut size={16} />
         </button>
       </div>
