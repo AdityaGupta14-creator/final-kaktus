@@ -183,68 +183,66 @@ export default function LandingPage() {
       </section>
 
       {/* High-Level Info Sections for Main Page */}
-      <section className="w-full py-32 px-6 md:px-12 bg-white border-t border-gray-100 overflow-hidden">
+      <section className="w-full py-28 px-6 md:px-12 bg-white border-t border-gray-100 overflow-hidden">
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-20 items-center">
           <FadeIn>
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200/80 text-orange-600 text-xs font-semibold tracking-wide uppercase mb-6 shadow-xs">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Conversational Hardware Agent</span>
+            <div className="w-12 h-12 rounded-xl bg-gray-100 border border-gray-200/80 flex items-center justify-center mb-8">
+              <Cpu className="w-6 h-6 text-gray-900" />
             </div>
-            
-            <h2 className="text-4xl md:text-6xl font-bold tracking-tight mb-6 text-[#111] leading-[1.1]">
-              Prompt to <span className="bg-gradient-to-r from-orange-500 via-amber-500 to-green-600 bg-clip-text text-transparent">Physical Reality.</span>
+
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-[#111] mb-6">
+              Hardware Copilot.
             </h2>
             
-            <p className="text-lg md:text-xl text-gray-600 leading-relaxed mb-6">
-              Skip deciphering thousands of datasheets and hours of manual pin mapping. Tell Kaktus what you want to build—from an LED blinker to a multi-axis robotic arm. Powered by Gemini, the agent plans the circuit, checks voltage limits, auto-routes wires, and writes production-ready firmware in seconds.
+            <p className="text-lg md:text-xl text-gray-500 leading-relaxed mb-8 max-w-xl">
+              Describe the device or subsystem you want to build. Kaktus auto-resolves pin assignments, verifies electrical constraints, and compiles production C++ directly to your hardware.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-8 text-sm text-gray-700">
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                <span className="font-medium">Natural Language Prompts</span>
+            <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-10 pt-6 border-t border-gray-100 max-w-lg">
+              <div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-1">Synthesis</div>
+                <div className="text-sm font-medium text-gray-800">Natural language to schematic</div>
               </div>
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                <span className="font-medium">Pin Conflict & Physics Check</span>
+              <div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-1">Safety</div>
+                <div className="text-sm font-medium text-gray-800">Pin voltage & current rules</div>
               </div>
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>
-                <span className="font-medium">Instant Firmware Generation</span>
+              <div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-1">Firmware</div>
+                <div className="text-sm font-medium text-gray-800">Real-time C++ compilation</div>
               </div>
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
-                <span className="font-medium">Live Serial Telemetry</span>
+              <div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-1">Telemetry</div>
+                <div className="text-sm font-medium text-gray-800">Live bidirectional serial</div>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-5">
               <Link 
                 href="/ide" 
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-full bg-[#111] text-white text-sm font-semibold hover:bg-black transition-all hover:scale-105 shadow-md group"
+                className="px-6 py-3 rounded-full bg-[#111] text-white text-sm font-semibold hover:bg-black transition-all hover:scale-105 shadow-sm"
               >
-                <span>Launch Agent in Workspace</span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="group-hover:translate-x-0.5 transition-transform"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                Open IDE
               </Link>
-              <Link href="/app-info" className="inline-flex items-center gap-2 text-sm text-gray-600 font-semibold hover:text-orange-600 transition-colors px-4 py-3">
-                Read how the engine works →
+              <Link 
+                href="/app-info" 
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-black transition-colors"
+              >
+                <span>Architecture overview</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               </Link>
             </div>
           </FadeIn>
 
           <FadeIn delay={0.2} className="relative flex items-center justify-center">
-            {/* Ambient Multi-Color Neon Glow matching mockup */}
-            <div className="absolute -inset-4 md:-inset-8 bg-gradient-to-tr from-cyan-500/20 via-purple-500/20 to-orange-500/20 rounded-[3rem] blur-3xl opacity-75 pointer-events-none"></div>
+            {/* Ambient Background Glow */}
+            <div className="absolute -inset-4 md:-inset-8 bg-gradient-to-tr from-cyan-500/10 via-purple-500/10 to-orange-500/10 rounded-[3rem] blur-3xl opacity-60 pointer-events-none"></div>
             
             {/* Dark Theme Mockup Card Wrapper */}
-            <div className="relative w-full max-w-lg rounded-3xl overflow-hidden border border-gray-800/80 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.4)] bg-[#0d0f14] transition-all duration-300 hover:scale-[1.02] group">
-              <div className="absolute top-3 right-4 z-20 flex items-center gap-2 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[11px] font-mono text-gray-300 shadow-sm">
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-ping"></span>
-                <span>Gemini 3.5 Flash Active</span>
-              </div>
+            <div className="relative w-full max-w-lg rounded-2xl overflow-hidden border border-gray-800/80 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.35)] bg-[#0d0f14] transition-all duration-300 hover:scale-[1.01] group">
               <img 
                 src="/images/kaktus-agent-dark.jpg" 
-                alt="Kaktus Autonomous Hardware Agent UI" 
+                alt="Kaktus Hardware Copilot Interface" 
                 className="w-full h-auto object-contain block select-none"
                 loading="lazy"
               />
