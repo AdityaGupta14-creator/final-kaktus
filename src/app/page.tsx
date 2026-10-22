@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { 
   Settings, Cpu, Cable, Zap, CircuitBoard, Usb, 
   TerminalSquare, Box, Component, MonitorDot, Database, Rocket,
-  Brain, Code2, LogOut
+  Brain, Code2, LogOut, Sparkles
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -183,27 +183,71 @@ export default function LandingPage() {
       </section>
 
       {/* High-Level Info Sections for Main Page */}
-      <section className="w-full py-32 px-6 md:px-12 bg-white border-t border-gray-100">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
+      <section className="w-full py-32 px-6 md:px-12 bg-white border-t border-gray-100 overflow-hidden">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-20 items-center">
           <FadeIn>
-            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-8">
-              <Brain className="w-8 h-8 text-orange-500" />
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200/80 text-orange-600 text-xs font-semibold tracking-wide uppercase mb-6 shadow-xs">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Conversational Hardware Agent</span>
             </div>
-            <h2 className="text-4xl md:text-6xl font-bold tracking-tight mb-6">Omniscient Intelligence.</h2>
-            <p className="text-xl text-gray-500 leading-relaxed mb-8">
-              We replaced thousands of datasheets and hours of manual routing with a single, omniscient AGI core that understands physics.
+            
+            <h2 className="text-4xl md:text-6xl font-bold tracking-tight mb-6 text-[#111] leading-[1.1]">
+              Prompt to <span className="bg-gradient-to-r from-orange-500 via-amber-500 to-green-600 bg-clip-text text-transparent">Physical Reality.</span>
+            </h2>
+            
+            <p className="text-lg md:text-xl text-gray-600 leading-relaxed mb-6">
+              Skip deciphering thousands of datasheets and hours of manual pin mapping. Tell Kaktus what you want to build—from an LED blinker to a multi-axis robotic arm. Powered by Gemini, the agent plans the circuit, checks voltage limits, auto-routes wires, and writes production-ready firmware in seconds.
             </p>
-            <Link href="/app-info" className="inline-flex items-center gap-2 text-orange-600 font-medium hover:text-orange-700">
-              Read how the engine works <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </Link>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-8 text-sm text-gray-700">
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                <span className="font-medium">Natural Language Prompts</span>
+              </div>
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                <span className="font-medium">Pin Conflict & Physics Check</span>
+              </div>
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>
+                <span className="font-medium">Instant Firmware Generation</span>
+              </div>
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
+                <span className="font-medium">Live Serial Telemetry</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4">
+              <Link 
+                href="/ide" 
+                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-full bg-[#111] text-white text-sm font-semibold hover:bg-black transition-all hover:scale-105 shadow-md group"
+              >
+                <span>Launch Agent in Workspace</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="group-hover:translate-x-0.5 transition-transform"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </Link>
+              <Link href="/app-info" className="inline-flex items-center gap-2 text-sm text-gray-600 font-semibold hover:text-orange-600 transition-colors px-4 py-3">
+                Read how the engine works →
+              </Link>
+            </div>
           </FadeIn>
-          <FadeIn delay={0.2} className="bg-gray-50 rounded-3xl p-12 h-96 flex items-center justify-center border border-gray-100 shadow-inner">
-            {/* Minimal graphic representing intelligence */}
-            <div className="relative w-40 h-40">
-              <div className="absolute inset-0 border-2 border-orange-200 rounded-full animate-ping opacity-20"></div>
-              <div className="absolute inset-4 border-2 border-orange-300 rounded-full animate-spin" style={{ animationDuration: '4s' }}></div>
-              <div className="absolute inset-8 border-2 border-orange-400 rounded-full animate-spin" style={{ animationDuration: '3s', animationDirection: 'reverse' }}></div>
-              <div className="absolute inset-0 flex items-center justify-center"><Brain className="w-8 h-8 text-orange-500" /></div>
+
+          <FadeIn delay={0.2} className="relative flex items-center justify-center">
+            {/* Ambient Multi-Color Neon Glow matching mockup */}
+            <div className="absolute -inset-4 md:-inset-8 bg-gradient-to-tr from-cyan-500/20 via-purple-500/20 to-orange-500/20 rounded-[3rem] blur-3xl opacity-75 pointer-events-none"></div>
+            
+            {/* Dark Theme Mockup Card Wrapper */}
+            <div className="relative w-full max-w-lg rounded-3xl overflow-hidden border border-gray-800/80 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.4)] bg-[#0d0f14] transition-all duration-300 hover:scale-[1.02] group">
+              <div className="absolute top-3 right-4 z-20 flex items-center gap-2 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[11px] font-mono text-gray-300 shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-green-400 animate-ping"></span>
+                <span>Gemini 3.5 Flash Active</span>
+              </div>
+              <img 
+                src="/images/kaktus-agent-dark.jpg" 
+                alt="Kaktus Autonomous Hardware Agent UI" 
+                className="w-full h-auto object-contain block select-none"
+                loading="lazy"
+              />
             </div>
           </FadeIn>
         </div>
