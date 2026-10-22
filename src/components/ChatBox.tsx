@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { requestAgent, toGeminiImagePart, AgentRequestError, type AgentErrorCode, type AgentMessage } from '@/lib/agent/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { buildHardwareStudioSystemPrompt } from '@/lib/agent/system-prompt';
 import { extractTutorialResponse, extractOptions, extractNextSteps, extractProjectPlanResponse, recoverPersistedProjectPlans } from '@/lib/agent/protocol';
 import type { AgentOptionsBlock, AgentNextStepsBlock, AgentPlan, PlanBuildAction, ProjectPlan, ResearchSource } from '@/lib/agent/protocol';
@@ -213,9 +215,9 @@ function isLargeHardwareTask(value: string): boolean {
 }
 
 function getAgentOutputTokenBudget(request: string, workflowOverride: WorkflowOverride | undefined, hasImages: boolean): number {
-  if (workflowOverride || isLargeHardwareTask(request) || hasImages) return 16_384;
-  if (isCanvasMutationRequest(request)) return 8_192;
-  return 4_096;
+  if (workflowOverride || isLargeHardwareTask(request) || hasImages) return 12_288;
+  if (isCanvasMutationRequest(request)) return 6_144;
+  return 3_072;
 }
 
 function shouldUseGroundedResearch(request: string, workflowOverride?: WorkflowOverride): boolean {
@@ -1648,8 +1650,9 @@ RULES:
                     {msg.role === 'user' ? (
                       displayText
                     ) : (
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkGfm]}
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkMath]}
+                        rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: 'ignore' }]]}
                         components={{
 
                           code: ({node, inline, className, children, ...props}: any) => {
