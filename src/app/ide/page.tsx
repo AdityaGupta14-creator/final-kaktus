@@ -731,10 +731,10 @@ export default function Home() {
                 }`}
                 title={
                   role === 'TEST'
-                    ? `TEST Account (500k Allowance): ${(totalTokens).toLocaleString()} / ${tokenLimit.toLocaleString()} tokens used today. Gemini provider rate limits & safety controls apply.`
+                    ? `TEST Account (500k Allowance): ${Math.min(100, Math.max(0, (totalTokens / (tokenLimit || 1)) * 100)).toFixed(1)}% used (${(totalTokens).toLocaleString()} / ${tokenLimit.toLocaleString()} tokens). Gemini provider rate limits & safety controls apply.`
                     : totalTokens >= tokenLimit
-                      ? 'Daily token limit exceeded. Click to upgrade plan.'
-                      : `${(totalTokens).toLocaleString()} / ${tokenLimit.toLocaleString()} tokens used today`
+                      ? 'Daily token limit exceeded (100% used). Click to upgrade plan.'
+                      : `${Math.min(100, Math.max(0, (totalTokens / (tokenLimit || 1)) * 100)).toFixed(1)}% used today (${(totalTokens).toLocaleString()} / ${tokenLimit.toLocaleString()} tokens)`
                 }
               >
                 <div className="flex flex-col items-end w-32">
@@ -759,7 +759,7 @@ export default function Home() {
                           ? 'text-neutral-300'
                           : 'text-neutral-400'
                     }`}>
-                      {`${(totalTokens / 1000).toFixed(1)}k / ${tokenLimit / 1000}k`}
+                      {`${Math.min(100, Math.max(0, (totalTokens / (tokenLimit || 1)) * 100)).toFixed(1)}%`}
                     </span>
                   </div>
                   <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">

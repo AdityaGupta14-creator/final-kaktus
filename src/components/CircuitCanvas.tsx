@@ -218,8 +218,8 @@ function BreadboardGraphic({
 
 function CodePreviewModal({ code, language, onClose }: { code: string; language: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 md:p-12">
-      <div className="bg-[#090909] border border-neutral-800 w-full h-full max-w-6xl max-h-full rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div data-canvas-overlay="true" onWheel={event => event.stopPropagation()} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 md:p-12">
+      <div className="bg-[#090909] border border-neutral-800 w-full h-full max-w-6xl max-h-full rounded-xl shadow-2xl flex flex-col overflow-hidden" style={{ overscrollBehavior: 'contain' }}>
         <div className="h-10 bg-[#141414] border-b border-neutral-800 flex items-center justify-between px-4 shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-[#cccccc] text-[11px] font-mono tracking-wider uppercase">{language === 'cpp' ? 'main.cpp' : 'code.ino'}</span>
@@ -988,6 +988,19 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
     if (!el) return;
     
     const handleNativeWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // When the mouse is over any card, panel, overlay, textarea, pre, or scrollable area,
+      // allow the card/code to scroll naturally and DO NOT zoom or move the canvas panel.
+      const isInsideCardOrEditor = target.closest(
+        '[data-canvas-overlay], .pointer-events-auto, textarea, pre, code, .overflow-y-auto, .overflow-auto, .overflow-x-auto, [role="dialog"]'
+      );
+
+      if (isInsideCardOrEditor) {
+        return;
+      }
+
       if (e.ctrlKey || e.metaKey || true) {
         // We always want to prevent default scroll when inside canvas
         // so the user can zoom without scrolling the whole page
@@ -1543,6 +1556,9 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
           dragListener={false}
           dragMomentum={false}
           dragConstraints={containerRef}
+          data-canvas-overlay="true"
+          onWheel={event => event.stopPropagation()}
+          style={{ overscrollBehavior: 'contain' }}
           className="absolute right-3 top-3 z-30 w-[min(360px,calc(100%-24px))] overflow-hidden rounded-xl border border-neutral-800 bg-[#090909]/95 shadow-2xl backdrop-blur-md"
         >
           <div className="border-b border-gray-800 px-3 py-2.5">
@@ -1565,7 +1581,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
             </div>
             <p className="mt-1 text-[10px] leading-relaxed text-gray-500">Each wire uses one isolated five-hole strip. Select a row to highlight both exact device pins.</p>
           </div>
-          <div className="max-h-[34vh] space-y-1 overflow-y-auto p-2">
+          <div className="max-h-[34vh] space-y-1 overflow-y-auto p-2" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
             {wirePaths.map(wire => (
               <button
                 key={wire.id}
@@ -1614,6 +1630,8 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
           dragListener={false}
           dragMomentum={false}
           dragConstraints={containerRef}
+          data-canvas-overlay="true"
+          onWheel={event => event.stopPropagation()}
           className={`absolute ${dockPosition === 'bottom-right' ? 'bottom-10 right-6 items-end' : 'top-4 left-4 items-start'} z-30 flex flex-col gap-2 max-h-[calc(100vh-32px)] pointer-events-none`}
         >
           {/* We wrap children in a pointer-events-auto div to allow interaction while keeping the wrapper strictly for layout */}
@@ -1624,6 +1642,9 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 initial={{ opacity: 0, y: 10, x: 20 }}
                 animate={{ opacity: 1, y: 0, x: 0 }}
                 exit={{ opacity: 0, y: 10, x: 20 }}
+                data-canvas-overlay="true"
+                onWheel={event => event.stopPropagation()}
+                style={{ overscrollBehavior: 'contain' }}
                 className="bg-[#0a0a0a]/95 backdrop-blur-md border border-neutral-800 rounded-xl p-3 w-[260px] shadow-2xl mb-2 pointer-events-auto"
               >
                 <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
@@ -1635,7 +1656,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                   </button>
                 </div>
                 
-                <div className="max-h-[200px] overflow-y-auto space-y-1.5 pr-1">
+                <div className="max-h-[200px] overflow-y-auto space-y-1.5 pr-1" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
                   {selectedWireId ? (
                     (() => {
                       const w = wirePaths.find(w => w.id === selectedWireId);
@@ -1725,6 +1746,9 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                data-canvas-overlay="true"
+                onWheel={event => event.stopPropagation()}
+                style={{ overscrollBehavior: 'contain' }}
                 className="bg-[#111]/95 backdrop-blur-md border border-gray-700 rounded-xl p-4 w-[300px] max-h-[50vh] overflow-y-auto shadow-2xl pointer-events-auto"
               >
                 <h3 className="text-xs font-bold text-neutral-300 uppercase tracking-wider mb-3">All Steps</h3>
@@ -1866,6 +1890,9 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 dragListener={false}
                 dragMomentum={false}
                 dragConstraints={containerRef}
+                data-canvas-overlay="true"
+                onWheel={event => event.stopPropagation()}
+                style={{ overscrollBehavior: 'contain' }}
                 className="bg-[#0a0a0a]/95 backdrop-blur-sm border border-neutral-800 rounded-xl px-3 py-2.5 max-w-[340px] shadow-lg space-y-2 pointer-events-auto"
               >
                 {/* Phase badge + instruction */}
@@ -1909,7 +1936,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                   }
 
                   return (
-                    <div className="max-h-[300px] overflow-y-auto pr-1">
+                    <div className="max-h-[300px] overflow-y-auto pr-1" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
                       {parts.length > 0 && (
                         <p className="text-[11px] text-gray-500 leading-relaxed border-l-2 border-gray-700 pl-2 whitespace-pre-wrap">
                           {parts}
@@ -1938,7 +1965,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                               </button>
                             </div>
                           </div>
-                          <pre className="text-[10px] font-mono text-gray-300 max-h-[160px] overflow-y-auto overflow-x-auto whitespace-pre-wrap p-1 bg-black/40 rounded">
+                          <pre className="text-[10px] font-mono text-gray-300 max-h-[160px] overflow-y-auto overflow-x-auto whitespace-pre-wrap p-1 bg-black/40 rounded" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
                             <code dangerouslySetInnerHTML={{ __html: highlightCode(extractedCode) }} />
                           </pre>
                         </div>
@@ -1975,10 +2002,13 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 initial={{ opacity: 0, y: 10, height: 0 }}
                 animate={{ opacity: 1, y: 0, height: 'auto' }}
                 exit={{ opacity: 0, y: 10, height: 0 }}
+                data-canvas-overlay="true"
+                onWheel={event => event.stopPropagation()}
+                style={{ overscrollBehavior: 'contain' }}
                 className="bg-[#090909]/95 backdrop-blur-md border border-neutral-800 rounded-xl max-w-[380px] shadow-2xl overflow-hidden"
               >
                 {/* Chat Messages */}
-                <div ref={canvasChatRef} className="max-h-[200px] overflow-y-auto p-2 space-y-2">
+                <div ref={canvasChatRef} className="max-h-[200px] overflow-y-auto p-2 space-y-2" style={{ overscrollBehavior: 'contain' }} onWheel={event => event.stopPropagation()}>
                   {canvasChatMessages.length === 0 && (
                     <p className="text-[10px] text-gray-600 text-center py-3">
                       Ask anything about this circuit, or request changes...
@@ -2043,6 +2073,9 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            data-canvas-overlay="true"
+            onWheel={event => event.stopPropagation()}
+            style={{ overscrollBehavior: 'contain' }}
             className="absolute inset-0 z-[200] bg-[#090909] flex flex-col"
           >
             {/* Title Bar */}
@@ -2147,8 +2180,9 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                     setCodeSaveStatus('Unsaved code edits. Save to update this circuit step.');
                   }}
                   onScroll={syncCodePreviewScroll}
+                  onWheel={event => event.stopPropagation()}
                   className="absolute inset-0 z-10 h-full w-full resize-none overflow-auto whitespace-pre border-0 bg-transparent px-4 py-2 pr-8 font-mono text-[12px] leading-[20px] text-transparent caret-white outline-none selection:bg-white/20"
-                  style={{ tabSize: 2 }}
+                  style={{ tabSize: 2, overscrollBehavior: 'contain' }}
                 />
               </div>
             </div>
@@ -2171,8 +2205,8 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
 
       {/* Expanded Verification Modal */}
       {expandedVerifyText && (
-        <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-[#111] border border-gray-700 rounded-xl w-full max-w-3xl flex flex-col shadow-2xl overflow-hidden max-h-[85vh]">
+        <div data-canvas-overlay="true" onWheel={event => event.stopPropagation()} className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-[#111] border border-gray-700 rounded-xl w-full max-w-3xl flex flex-col shadow-2xl overflow-hidden max-h-[85vh]" style={{ overscrollBehavior: 'contain' }}>
             <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-[#1a1a1a]">
               <h3 className="text-white font-bold flex items-center gap-2"><CheckCircle2 className="text-neutral-300" /> Verification Details</h3>
               <button onClick={() => setExpandedVerifyText(null)} className="text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-gray-800"><X size={20}/></button>
