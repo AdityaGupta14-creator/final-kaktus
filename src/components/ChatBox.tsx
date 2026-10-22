@@ -844,7 +844,7 @@ function NextModuleCard({
   const needsCustomName = selected?.id === 'custom';
 
   return (
-    <section className="w-full overflow-hidden rounded-t-xl border border-neutral-700 border-b-0 bg-[#0b0b0b]" aria-label="Choose the next module">
+    <section className="-mx-2 -mt-2 mb-2 w-auto overflow-hidden rounded-t-3xl border-b border-neutral-800 bg-[#0b0b0b]" aria-label="Choose the next module">
       <header className="border-b border-neutral-800 bg-[#101010] px-3 py-2.5">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Module handoff</p>
         <h3 className="mt-1 text-xs font-semibold text-neutral-100">Final step reached: {moduleName}</h3>
@@ -2110,16 +2110,16 @@ RULES:
             ))}
           </div>
         )}
-        {nextModuleTutorial && (
-          <NextModuleCard
-            key={`${latestTutorialMessageIndex}-${nextModuleName}-${nextModuleChoices.map(choice => choice.id).join('-')}`}
-            moduleName={nextModuleName}
-            options={nextModuleChoices}
-            disabled={isProcessing || isPreparingImages || isQuotaReached || apiKeys.length === 0 || !model || !onUpdateCircuit}
-            onSubmit={handleNextModuleSubmit}
-          />
-        )}
-        <div className={`bg-[#212121] border ${isQuotaReached ? 'border-red-500/60 bg-red-950/20 shadow-[0_0_20px_rgba(239,68,68,0.25)]' : nextModuleTutorial ? 'border-gray-700' : 'border-gray-700/50'} ${messages.length === 0 ? 'rounded-3xl shadow-xl' : nextModuleTutorial ? 'rounded-b-xl rounded-t-none border-t-0' : 'rounded-3xl'} p-2 flex flex-col focus-within:border-gray-500/50 transition-all`}>
+        <div className={`bg-[#212121] border ${isQuotaReached ? 'border-red-500/60 bg-red-950/20 shadow-[0_0_20px_rgba(239,68,68,0.25)]' : 'border-gray-700/50'} rounded-3xl p-2 flex flex-col focus-within:border-gray-500/50 transition-all`}>
+          {nextModuleTutorial && (
+            <NextModuleCard
+              key={`${latestTutorialMessageIndex}-${nextModuleName}-${nextModuleChoices.map(choice => choice.id).join('-')}`}
+              moduleName={nextModuleName}
+              options={nextModuleChoices}
+              disabled={isProcessing || isPreparingImages || isQuotaReached || apiKeys.length === 0 || !model || !onUpdateCircuit}
+              onSubmit={handleNextModuleSubmit}
+            />
+          )}
           <input
             ref={imageInputRef}
             type="file"
