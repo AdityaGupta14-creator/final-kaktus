@@ -359,36 +359,36 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: 0.18 }}
       aria-label="USB board and firmware tools"
-      className="absolute bottom-0 right-0 z-50 overflow-hidden border-t border-[#29303a] bg-[#0d1117] text-white shadow-2xl"
+      className="absolute bottom-0 right-0 z-50 overflow-hidden border-t border-neutral-800 bg-[#090909] text-white shadow-2xl"
       style={{ left, height: stage === 'monitoring' ? '58vh' : 'min(420px, 58vh)' }}
     >
-      <header className="flex h-10 items-center justify-between border-b border-[#29303a] bg-[#151b23] px-4">
+      <header className="flex h-10 items-center justify-between border-b border-neutral-800 bg-[#151515] px-4">
         <div className="flex min-w-0 items-center gap-2.5">
-          {currentPort ? <Cpu size={15} className="shrink-0 text-emerald-300" /> : <Usb size={15} className="shrink-0 text-slate-200" />}
-          <span className="shrink-0 text-xs font-semibold text-slate-100">Hardware console</span>
-          <span className="hidden h-4 w-px bg-slate-700 sm:block" />
-          <span className="truncate text-[11px] text-slate-400">
+          {currentPort ? <Cpu size={15} className="shrink-0 text-white" /> : <Usb size={15} className="shrink-0 text-neutral-300" />}
+          <span className="shrink-0 text-xs font-semibold text-neutral-100">Hardware console</span>
+          <span className="hidden h-4 w-px bg-neutral-700 sm:block" />
+          <span className="truncate text-[11px] text-neutral-400">
             {currentPort ? `${deviceLabel} · ${currentPort.port}` : serviceReady ? ports.length ? 'Select a detected serial port' : 'No board detected' : 'Local USB service unavailable'}
           </span>
-          <span className={'rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ' + (currentPort && serviceReady ? 'border-emerald-800 bg-emerald-950/50 text-emerald-300' : 'border-slate-700 bg-slate-900 text-slate-400')}>
+          <span className={'rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ' + (currentPort && serviceReady ? 'border-neutral-600 bg-neutral-800 text-white' : 'border-neutral-800 bg-neutral-900 text-neutral-400')}>
             {stage === 'compiling' ? 'Building' : stage === 'uploading' ? 'Uploading' : stage === 'monitoring' ? 'Monitoring' : stage === 'error' ? 'Error' : currentPort && serviceReady ? 'Connected' : serviceReady ? 'Service ready' : 'Offline'}
           </span>
         </div>
-        <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Close board panel">
+        <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-white" aria-label="Close board panel">
           <X size={15} />
         </button>
       </header>
 
       <div className="flex h-[calc(100%-40px)] min-h-0">
-        <aside className="flex w-[300px] shrink-0 flex-col gap-3 overflow-y-auto border-r border-[#29303a] bg-[#10151c] p-3">
+        <aside className="flex w-[300px] shrink-0 flex-col gap-3 overflow-y-auto border-r border-neutral-800 bg-[#111111] p-3">
           <div>
-            <label htmlFor="hardware-port" className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">USB serial port</label>
+            <label htmlFor="hardware-port" className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-neutral-400">USB serial port</label>
             <div className="flex gap-1.5">
               <select
                 id="hardware-port"
                 value={selectedPort}
                 onChange={(event) => handlePortChange(event.target.value)}
-                className="min-w-0 flex-1 rounded-md border border-slate-700 bg-[#0b0f14] px-2 py-2 text-xs text-slate-100 outline-none focus:border-slate-400"
+                className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-[#0b0b0b] px-2 py-2 text-xs text-neutral-100 outline-none focus:border-neutral-300"
               >
                 <option value="">Select detected port</option>
                 {ports.map((port) => {
@@ -403,7 +403,7 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
                 disabled={stage === 'detecting'}
                 title="Scan USB ports"
                 aria-label="Scan USB ports"
-                className="rounded-md border border-slate-700 bg-[#171e27] p-2 text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
+                className="rounded-md border border-neutral-700 bg-[#202020] p-2 text-neutral-300 hover:border-neutral-500 hover:text-white disabled:opacity-50"
               >
                 <RefreshCw size={14} className={stage === 'detecting' ? 'animate-spin' : ''} />
               </button>
@@ -411,26 +411,26 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
           </div>
 
           <div>
-            <label htmlFor="hardware-board" className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Board target</label>
+            <label htmlFor="hardware-board" className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-neutral-400">Board target</label>
             <select
               id="hardware-board"
               value={selectedBoard}
               onChange={(event) => handleBoardChange(event.target.value)}
-              className="w-full rounded-md border border-slate-700 bg-[#0b0f14] px-2 py-2 text-xs text-slate-100 outline-none focus:border-slate-400"
+              className="w-full rounded-md border border-neutral-700 bg-[#0b0b0b] px-2 py-2 text-xs text-neutral-100 outline-none focus:border-neutral-300"
             >
               <option value="">Choose the exact board</option>
               {BOARD_OPTIONS.map((board) => <option key={board.fqbn} value={board.fqbn}>{board.name} - {board.family}</option>)}
             </select>
-            {selectedBoard.startsWith('STMicroelectronics:') && <p className="mt-1.5 text-[10px] leading-4 text-amber-200">Blue Pill needs a USB-to-UART adapter and an STM32 serial bootloader; the board itself has no USB serial interface.</p>}
+            {selectedBoard.startsWith('STMicroelectronics:') && <p className="mt-1.5 text-[10px] leading-4 text-neutral-300">Blue Pill needs a USB-to-UART adapter and an STM32 serial bootloader; the board itself has no USB serial interface.</p>}
           </div>
 
           <div>
-            <label htmlFor="hardware-baud" className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Serial monitor baud</label>
+            <label htmlFor="hardware-baud" className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-neutral-400">Serial monitor baud</label>
             <select
               id="hardware-baud"
               value={baudRate}
               onChange={(event) => setBaudRate(Number(event.target.value))}
-              className="w-full rounded-md border border-slate-700 bg-[#0b0f14] px-2 py-2 text-xs text-slate-100 outline-none focus:border-slate-400"
+              className="w-full rounded-md border border-neutral-700 bg-[#0b0b0b] px-2 py-2 text-xs text-neutral-100 outline-none focus:border-neutral-300"
             >
               {[baudFromSketch, 9600, 19200, 38400, 57600, 115200, 230400].filter((value, index, all) => all.indexOf(value) === index).map((value) => (
                 <option key={value} value={value}>{value} baud{value === baudFromSketch ? ' (from sketch)' : ''}</option>
@@ -443,7 +443,7 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
               type="button"
               onClick={() => void handleCompileAndFlash()}
               disabled={!canFlash}
-              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-semibold text-black hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {stage === 'uploading' ? <Loader2 size={14} className="animate-spin" /> : stage === 'success' ? <Check size={14} /> : <Upload size={14} />}
               {stage === 'uploading' ? 'Compiling and uploading' : stage === 'success' ? 'Flash again' : 'Compile and flash'}
@@ -453,7 +453,7 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
               onClick={() => void handleCompile()}
               disabled={!serviceReady || !hasFirmware || !currentBoard || busy}
               title="Compile without uploading"
-              className="rounded-md border border-slate-700 bg-[#171e27] px-3 py-2 text-xs font-medium text-slate-200 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-md border border-neutral-700 bg-[#202020] px-3 py-2 text-xs font-medium text-neutral-200 hover:border-neutral-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Build
             </button>
@@ -463,44 +463,44 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
             type="button"
             onClick={() => stage === 'monitoring' ? stopSerialMonitor() : void startSerialMonitor()}
             disabled={!serviceReady || !currentPort || busy}
-            className="flex items-center justify-center gap-2 rounded-md border border-slate-700 bg-[#171e27] px-3 py-2 text-xs font-medium text-slate-200 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center justify-center gap-2 rounded-md border border-neutral-700 bg-[#202020] px-3 py-2 text-xs font-medium text-neutral-200 hover:border-neutral-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {stage === 'monitoring' ? <Square size={13} /> : <Terminal size={13} />}
             {stage === 'monitoring' ? 'Stop serial monitor' : 'Open serial monitor'}
           </button>
 
-          <div className="mt-auto border-t border-slate-800 pt-2 text-[10px] leading-4 text-slate-400">
+          <div className="mt-auto border-t border-neutral-800 pt-2 text-[10px] leading-4 text-neutral-400">
             {statusText}
-            {currentPort && <div className="mt-1 font-mono text-slate-500">USB ID: {currentPort.vid_pid || 'Not reported'} · S/N: {currentPort.serial_number || 'Not reported by device'}</div>}
+            {currentPort && <div className="mt-1 font-mono text-neutral-500">USB ID: {currentPort.vid_pid || 'Not reported'} · S/N: {currentPort.serial_number || 'Not reported by device'}</div>}
           </div>
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0a0e13]">
-          {busy && <div className="h-0.5 w-full overflow-hidden bg-slate-800"><motion.div className="h-full w-1/3 bg-slate-200" animate={{ x: ['-100%', '300%'] }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }} /></div>}
+          {busy && <div className="h-0.5 w-full overflow-hidden bg-neutral-800"><motion.div className="h-full w-1/3 bg-neutral-100" animate={{ x: ['-100%', '300%'] }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }} /></div>}
           {serviceError && !serviceReady && (
-            <div className="m-3 rounded-md border border-amber-900/70 bg-amber-950/30 p-3 text-xs text-amber-100">
+            <div className="m-3 rounded-md border border-neutral-700 bg-neutral-900/70 p-3 text-xs text-neutral-200">
               <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={14} /> Local USB service not ready</div>
-              <p className="mt-1 text-amber-100/80">{serviceError}</p>
-              <p className="mt-2 text-amber-100/70">When using the Vercel site, start this computer&apos;s bridge in the project folder with <code className="rounded bg-black/30 px-1">npm run hardware:bridge</code>. The local app starts it automatically. Allow the browser&apos;s local-network prompt when it appears.</p>
+              <p className="mt-1 text-neutral-300">{serviceError}</p>
+              <p className="mt-2 text-neutral-400">When using the Vercel site, start this computer&apos;s bridge in the project folder with <code className="rounded bg-black px-1 text-neutral-200">npm run hardware:bridge</code>. The local app starts it automatically. Allow the browser&apos;s local-network prompt when it appears.</p>
             </div>
           )}
           {errorText && (
-            <div className="m-3 flex min-h-0 flex-col rounded-md border border-red-900/70 bg-red-950/20 p-3 text-xs text-red-200">
+            <div className="m-3 flex min-h-0 flex-col rounded-md border border-neutral-700 bg-neutral-900/50 p-3 text-xs text-neutral-200">
               <div className="mb-2 flex items-center gap-2 font-semibold"><AlertTriangle size={14} /> {stage === 'error' ? 'Operation failed' : 'Serial write failed'}</div>
-              <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-5">{errorText}</pre>
+              <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-neutral-300">{errorText}</pre>
             </div>
           )}
       {stage === 'success' && !errorText && (
-        <div className="flex items-center gap-2 border-b border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200">
+        <div className="flex items-center gap-2 border-b border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-100">
           <CheckCircle2 size={15} /> Firmware upload completed on {currentPort?.port}.
         </div>
       )}
       {compileOutput && !errorText && stage !== 'monitoring' && (
-            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-3 font-mono text-[11px] leading-5 text-slate-300">{compileOutput}</pre>
+            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-3 font-mono text-[11px] leading-5 text-neutral-300">{compileOutput}</pre>
           )}
           {stage === 'monitoring' && !errorText && (
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex h-9 items-center justify-between border-b border-slate-800 px-3 text-[11px] text-slate-400">
+              <div className="flex h-9 items-center justify-between border-b border-neutral-800 px-3 text-[11px] text-neutral-400">
                 <span className="flex items-center gap-2"><MonitorSpeaker size={13} /> {currentPort?.port} · {baudRate} baud</span>
                 <div className="flex items-center gap-3">
                   <label className="flex items-center gap-1.5"><input type="checkbox" checked={autoScroll} onChange={(event) => setAutoScroll(event.target.checked)} /> Auto-scroll</label>
@@ -508,48 +508,48 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
                   <span>{serialLines.length} lines</span>
                 </div>
               </div>
-              <div ref={serialContainerRef} className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-[11px] leading-5 text-slate-300">
-                {serialLines.length ? serialLines.map((line, index) => <div key={index} className="whitespace-pre-wrap">{line}</div>) : <p className="text-slate-600">Connected. Waiting for serial data.</p>}
+              <div ref={serialContainerRef} className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-[11px] leading-5 text-neutral-300">
+                {serialLines.length ? serialLines.map((line, index) => <div key={index} className="whitespace-pre-wrap">{line}</div>) : <p className="text-neutral-600">Connected. Waiting for serial data.</p>}
               </div>
-              <form onSubmit={(event) => { event.preventDefault(); void handleSendSerialCommand(); }} className="flex h-10 items-center gap-2 border-t border-slate-800 bg-[#10151c] px-3">
-                <span className="font-mono text-slate-500">&gt;</span>
-                <input value={serialInput} onChange={(event) => setSerialInput(event.target.value)} placeholder="Send text to the board" className="min-w-0 flex-1 bg-transparent font-mono text-xs text-white outline-none placeholder:text-slate-600" />
-                <button type="submit" disabled={!serialInput.trim() || isSending} className="flex items-center gap-1.5 rounded bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-950 disabled:opacity-40">{isSending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Send</button>
+              <form onSubmit={(event) => { event.preventDefault(); void handleSendSerialCommand(); }} className="flex h-10 items-center gap-2 border-t border-neutral-800 bg-[#111111] px-3">
+                <span className="font-mono text-neutral-500">&gt;</span>
+                <input value={serialInput} onChange={(event) => setSerialInput(event.target.value)} placeholder="Send text to the board" className="min-w-0 flex-1 bg-transparent font-mono text-xs text-white outline-none placeholder:text-neutral-600" />
+                <button type="submit" disabled={!serialInput.trim() || isSending} className="flex items-center gap-1.5 rounded bg-white px-2.5 py-1.5 text-[11px] font-medium text-black hover:bg-neutral-200 disabled:opacity-40">{isSending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Send</button>
               </form>
             </div>
           )}
           {!errorText && !compileOutput && stage !== 'monitoring' && (
             <div className="flex flex-1 flex-col items-center justify-center p-5 text-center">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-slate-800 bg-[#111821]">
-                {currentPort ? <Cpu size={21} className="text-slate-200" /> : <Usb size={21} className="text-slate-400" />}
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-800 bg-[#141414]">
+                {currentPort ? <Cpu size={21} className="text-white" /> : <Usb size={21} className="text-neutral-400" />}
               </div>
               {stage === 'success' ? (
                 <>
-                  <CheckCircle2 size={19} className="mb-2 text-emerald-400" />
-                  <h2 className="text-sm font-semibold text-slate-100">Upload complete</h2>
-                  <p className="mt-1 max-w-lg text-xs text-slate-400">Firmware was uploaded to {currentBoard?.name} on {currentPort?.port}. Open the serial monitor to confirm the board&apos;s output.</p>
+                  <CheckCircle2 size={19} className="mb-2 text-white" />
+                  <h2 className="text-sm font-semibold text-neutral-100">Upload complete</h2>
+                  <p className="mt-1 max-w-lg text-xs text-neutral-400">Firmware was uploaded to {currentBoard?.name} on {currentPort?.port}. Open the serial monitor to confirm the board&apos;s output.</p>
                 </>
               ) : currentPort ? (
                 <>
-                  <h2 className="text-sm font-semibold text-slate-100">{deviceLabel} connected</h2>
-                  <p className="mt-1 max-w-lg font-mono text-xs text-slate-400">{currentPort.port} · {currentBoard ? currentBoard.chip + ' · ' + currentBoard.fqbn : 'Choose the exact board target in the left panel.'}</p>
-                  <p className="mt-1 max-w-lg text-[11px] text-slate-500">{currentPort.description || currentPort.product || 'USB serial device'}{currentPort.vid_pid ? ' · USB ID ' + currentPort.vid_pid : ''}</p>
-                  {currentPort.serial_number && <p className="mt-1 font-mono text-[10px] text-slate-500">S/N {currentPort.serial_number}</p>}
-                  {!hasFirmware && <p className="mt-3 text-[11px] text-slate-400">Serial Monitor is ready. Open Code Preview on a circuit step to enable Build and Flash.</p>}
+                  <h2 className="text-sm font-semibold text-neutral-100">{deviceLabel} connected</h2>
+                  <p className="mt-1 max-w-lg font-mono text-xs text-neutral-400">{currentPort.port} · {currentBoard ? currentBoard.chip + ' · ' + currentBoard.fqbn : 'Choose the exact board target in the left panel.'}</p>
+                  <p className="mt-1 max-w-lg text-[11px] text-neutral-500">{currentPort.description || currentPort.product || 'USB serial device'}{currentPort.vid_pid ? ' · USB ID ' + currentPort.vid_pid : ''}</p>
+                  {currentPort.serial_number && <p className="mt-1 font-mono text-[10px] text-neutral-500">S/N {currentPort.serial_number}</p>}
+                  {!hasFirmware && <p className="mt-3 text-[11px] text-neutral-400">Serial Monitor is ready. Open Code Preview on a circuit step to enable Build and Flash.</p>}
                 </>
               ) : (
                 <>
-                  <h2 className="text-sm font-semibold text-slate-100">Connect a microcontroller over USB</h2>
-                  <p className="mt-1 max-w-lg text-xs text-slate-400">Connect a data-capable cable. The local bridge scans serial ports and fills in the board identity when its USB descriptor is known.</p>
+                  <h2 className="text-sm font-semibold text-neutral-100">Connect a microcontroller over USB</h2>
+                  <p className="mt-1 max-w-lg text-xs text-neutral-400">Connect a data-capable cable. The local bridge scans serial ports and fills in the board identity when its USB descriptor is known.</p>
                 </>
               )}
-              <div className="mt-4 flex flex-wrap justify-center gap-1.5 text-[10px] text-slate-400">
-                <span className="rounded border border-slate-800 px-2 py-1">Arduino Uno / Nano / Mega</span>
-                <span className="rounded border border-slate-800 px-2 py-1">ESP32 / S3 / C3</span>
-                <span className="rounded border border-slate-800 px-2 py-1">RP2040 Pico</span>
-                <span className="rounded border border-slate-800 px-2 py-1">STM32 Blue Pill with UART bootloader</span>
+              <div className="mt-4 flex flex-wrap justify-center gap-1.5 text-[10px] text-neutral-400">
+                <span className="rounded border border-neutral-800 px-2 py-1">Arduino Uno / Nano / Mega</span>
+                <span className="rounded border border-neutral-800 px-2 py-1">ESP32 / S3 / C3</span>
+                <span className="rounded border border-neutral-800 px-2 py-1">RP2040 Pico</span>
+                <span className="rounded border border-neutral-800 px-2 py-1">STM32 Blue Pill with UART bootloader</span>
               </div>
-              {!currentPort && serviceReady && ports.length > 0 && <p className="mt-3 text-xs text-amber-200">Choose a serial port from the left panel. Some boards do not report a USB serial number.</p>}
+              {!currentPort && serviceReady && ports.length > 0 && <p className="mt-3 text-xs text-neutral-300">Choose a serial port from the left panel. Some boards do not report a USB serial number.</p>}
             </div>
           )}
         </main>
