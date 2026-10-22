@@ -51,6 +51,7 @@ interface SerialPortInfo {
 
 interface FlashPanelProps {
   code: string;
+  left?: number;
   onClose: () => void;
 }
 
@@ -72,7 +73,7 @@ function parseSerialEvents(buffer: string): { events: string[]; remainder: strin
   return { events, remainder };
 }
 
-export function FlashPanel({ code, onClose }: FlashPanelProps) {
+export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
   const [stage, setStage] = useState<FlashStage>('detecting');
   const [ports, setPorts] = useState<SerialPortInfo[]>([]);
   const [selectedPort, setSelectedPort] = useState('');
@@ -197,6 +198,11 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
   };
 
   const handleCompile = useCallback(async () => {
+    if (!code.trim()) {
+      setErrorText('Open Code Preview on a circuit step to build or flash its firmware.');
+      setStage('error');
+      return;
+    }
     if (!currentBoard) {
       setErrorText('Select a supported board target before compiling.');
       setStage('error');
@@ -225,6 +231,11 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
   }, [code, currentBoard]);
 
   const handleCompileAndFlash = useCallback(async () => {
+    if (!code.trim()) {
+      setErrorText('Open Code Preview on a circuit step to build or flash its firmware.');
+      setStage('error');
+      return;
+    }
     if (!currentPort || !currentBoard) {
       setErrorText('Connect a USB serial board, select its port, and choose the correct board target.');
       setStage('error');
@@ -337,7 +348,9 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
   }, [currentPort, isSending, serialInput, stage]);
 
   const busy = stage === 'compiling' || stage === 'uploading' || stage === 'detecting';
-  const canFlash = serviceReady && Boolean(currentPort && currentBoard) && !busy;
+  const hasFirmware = Boolean(code.trim());
+  const canFlash = serviceReady && hasFirmware && Boolean(currentPort && currentBoard) && !busy;
+  const deviceLabel = currentBoard?.name || currentPort?.board || currentPort?.product || 'USB serial device';
 
   return (
     <motion.section
@@ -346,19 +359,19 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: 0.18 }}
       aria-label="USB board and firmware tools"
-      className="absolute bottom-0 left-0 right-0 z-50 overflow-hidden border-t border-[#29303a] bg-[#0d1117] text-white shadow-2xl"
-      style={{ height: stage === 'monitoring' ? '58vh' : 'min(360px, 52vh)' }}
+      className="absolute bottom-0 right-0 z-50 overflow-hidden border-t border-[#29303a] bg-[#0d1117] text-white shadow-2xl"
+      style={{ left, height: stage === 'monitoring' ? '58vh' : 'min(420px, 58vh)' }}
     >
       <header className="flex h-10 items-center justify-between border-b border-[#29303a] bg-[#151b23] px-4">
         <div className="flex min-w-0 items-center gap-2.5">
-          <Usb size={15} className="shrink-0 text-slate-200" />
-          <span className="shrink-0 text-xs font-semibold text-slate-100">Board connection</span>
+          {currentPort ? <Cpu size={15} className="shrink-0 text-emerald-300" /> : <Usb size={15} className="shrink-0 text-slate-200" />}
+          <span className="shrink-0 text-xs font-semibold text-slate-100">Hardware console</span>
           <span className="hidden h-4 w-px bg-slate-700 sm:block" />
           <span className="truncate text-[11px] text-slate-400">
-            {serviceReady ? currentPort ? (currentBoard?.name || currentPort.board || 'USB serial device') + ' / ' + currentPort.port : 'No board selected' : 'Local USB service unavailable'}
+            {currentPort ? `${deviceLabel} · ${currentPort.port}` : serviceReady ? ports.length ? 'Select a detected serial port' : 'No board detected' : 'Local USB service unavailable'}
           </span>
-          <span className={'rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ' + (serviceReady ? 'border-emerald-800 bg-emerald-950/50 text-emerald-300' : 'border-slate-700 bg-slate-900 text-slate-400')}>
-            {stage === 'compiling' ? 'Building' : stage === 'uploading' ? 'Uploading' : stage === 'monitoring' ? 'Monitoring' : stage === 'error' ? 'Error' : serviceReady ? 'Ready' : 'Offline'}
+          <span className={'rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ' + (currentPort && serviceReady ? 'border-emerald-800 bg-emerald-950/50 text-emerald-300' : 'border-slate-700 bg-slate-900 text-slate-400')}>
+            {stage === 'compiling' ? 'Building' : stage === 'uploading' ? 'Uploading' : stage === 'monitoring' ? 'Monitoring' : stage === 'error' ? 'Error' : currentPort && serviceReady ? 'Connected' : serviceReady ? 'Service ready' : 'Offline'}
           </span>
         </div>
         <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Close board panel">
@@ -438,7 +451,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
             <button
               type="button"
               onClick={() => void handleCompile()}
-              disabled={!serviceReady || !currentBoard || busy}
+              disabled={!serviceReady || !hasFirmware || !currentBoard || busy}
               title="Compile without uploading"
               className="rounded-md border border-slate-700 bg-[#171e27] px-3 py-2 text-xs font-medium text-slate-200 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -518,9 +531,11 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
                 </>
               ) : currentPort ? (
                 <>
-                  <h2 className="text-sm font-semibold text-slate-100">{currentBoard?.name || currentPort.board || 'USB serial device detected'}</h2>
-                  <p className="mt-1 max-w-lg text-xs text-slate-400">{currentPort.description || currentPort.product || currentPort.port} · {currentBoard ? currentBoard.chip + ' · ' + currentBoard.fqbn : 'Choose the board model before building or flashing.'}</p>
-                  {currentPort.serial_number && <p className="mt-1 font-mono text-[10px] text-slate-500">USB serial number: {currentPort.serial_number}</p>}
+                  <h2 className="text-sm font-semibold text-slate-100">{deviceLabel} connected</h2>
+                  <p className="mt-1 max-w-lg font-mono text-xs text-slate-400">{currentPort.port} · {currentBoard ? currentBoard.chip + ' · ' + currentBoard.fqbn : 'Choose the exact board target in the left panel.'}</p>
+                  <p className="mt-1 max-w-lg text-[11px] text-slate-500">{currentPort.description || currentPort.product || 'USB serial device'}{currentPort.vid_pid ? ' · USB ID ' + currentPort.vid_pid : ''}</p>
+                  {currentPort.serial_number && <p className="mt-1 font-mono text-[10px] text-slate-500">S/N {currentPort.serial_number}</p>}
+                  {!hasFirmware && <p className="mt-3 text-[11px] text-slate-400">Serial Monitor is ready. Open Code Preview on a circuit step to enable Build and Flash.</p>}
                 </>
               ) : (
                 <>
@@ -534,7 +549,7 @@ export function FlashPanel({ code, onClose }: FlashPanelProps) {
                 <span className="rounded border border-slate-800 px-2 py-1">RP2040 Pico</span>
                 <span className="rounded border border-slate-800 px-2 py-1">STM32 Blue Pill with UART bootloader</span>
               </div>
-              {!currentPort && serviceReady && ports.length > 0 && <p className="mt-3 text-xs text-amber-200">Choose a port from the list. The USB serial number may be omitted by some boards.</p>}
+              {!currentPort && serviceReady && ports.length > 0 && <p className="mt-3 text-xs text-amber-200">Choose a serial port from the left panel. Some boards do not report a USB serial number.</p>}
             </div>
           )}
         </main>

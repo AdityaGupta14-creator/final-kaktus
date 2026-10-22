@@ -10,7 +10,6 @@ import { ModelSelector } from '@/components/ModelSelector';
 import type { TerminalRef } from '@/components/Terminal';
 import type { TutorialData } from '@/components/CircuitCanvas';
 import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
-import { HardwareInterfaceModal } from '@/components/HardwareInterfaceModal';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { extractProjectPlanResponse } from '@/lib/agent/protocol';
 import type { PlanBuildAction, ProjectPlan, ResearchSource } from '@/lib/agent/protocol';
@@ -105,6 +104,7 @@ function mergeWorkspaceTabIntoPrevious(state: WorkspaceState, sourceTabId: strin
 
 const Terminal = dynamic(() => import('@/components/Terminal').then((mod) => mod.Terminal), { ssr: false });
 const CircuitCanvas = dynamic(() => import('@/components/CircuitCanvas').then((mod) => mod.CircuitCanvas), { ssr: false });
+const FlashPanel = dynamic(() => import('@/components/FlashPanel').then((mod) => mod.FlashPanel), { ssr: false });
 
 export default function Home() {
   const router = useRouter();
@@ -345,7 +345,7 @@ export default function Home() {
   
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isFlashOpen, setIsFlashOpen] = useState(false);
-  const [generatedCode, setGeneratedCode] = useState('// Blink LED\nvoid setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}');
+  const [generatedCode, setGeneratedCode] = useState('');
   const terminalRef = useRef<TerminalRef>(null);
 
   const [sidebarWidth, setSidebarWidth] = useState(340);
@@ -679,15 +679,23 @@ export default function Home() {
             </button>
 
             <button 
-              onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+              onClick={() => {
+                const open = !isTerminalOpen;
+                setIsTerminalOpen(open);
+                if (open) setIsFlashOpen(false);
+              }}
               className={`px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors ${isTerminalOpen ? 'bg-[#333333] text-white' : ''}`}
             >
               Terminal
             </button>
             <button 
-              onClick={() => setIsFlashOpen(!isFlashOpen)}
+              onClick={() => {
+                const open = !isFlashOpen;
+                setIsFlashOpen(open);
+                if (open) setIsTerminalOpen(false);
+              }}
               className={`px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors ${isFlashOpen ? 'bg-[#333333] text-white' : ''} gap-1.5`}
-              title="Hardware Interface (Coming Soon)"
+              title="Connect a microcontroller and open the hardware console"
             >
               <Usb size={13} />
               Connect
@@ -968,6 +976,7 @@ export default function Home() {
     onUpdateCircuit={handleCircuitUpdate}
     onCompileRequest={(code) => {
       setGeneratedCode(code);
+      setIsTerminalOpen(false);
       setIsFlashOpen(true);
     }}
   />
@@ -975,11 +984,17 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Hardware Interface Connect - Coming Soon Modal */}
-        <HardwareInterfaceModal 
-          isOpen={isFlashOpen}
-          onClose={() => setIsFlashOpen(false)}
-        />
+        {/* Hardware terminal drawer: scan the USB bridge and show board/port controls. */}
+        <AnimatePresence>
+          {isFlashOpen && (
+            <FlashPanel
+              key="hardware-console"
+              code={generatedCode}
+              left={sidebarWidth}
+              onClose={() => setIsFlashOpen(false)}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Right/Bottom: Sliding Terminal Drawer */}
         <AnimatePresence>
