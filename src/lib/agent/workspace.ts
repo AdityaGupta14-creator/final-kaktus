@@ -6,11 +6,14 @@ const EXPLICIT_TAB_REQUEST = /\b(?:new|separate|own)\s+(?:workspace\s+)?(?:tab|m
 const EDIT_VERB = /\b(?:add|insert|include|remove|delete|edit|update|modify|change|fix|correct|replace|move|connect|wire|attach|extend|revise|append|adjust|test|testing|validate|verify|debug|check|jod(?:o|na)?|lagao|lagana|hatao|hatana|badlo|badalna|sudhar(?:o|na)?|theek|sahi|जोड़|लगाओ|हटाओ|बदलो|सुधार|ठीक|जाँच|जांच)\b/i;
 const EDIT_TARGET = /\b(?:step|test|testing|verification|validation|wire|wiring|component|part|pin|circuit|connection|firmware|code|sketch|sensor|motor|module|board|tab|diagram|design|led|resistors?|capacitors?|diodes?|transistors?|mosfets?|servos?|batter(?:y|ies)|drivers?|switch(?:es)?|relays?|breadboards?|arduino|esp32|l298n|controller|gpio)\b|स्टेप|टेस्ट|वायर|कंपोनेंट|सर्किट/i;
 const CODE_REQUEST = /\b(?:write|generate|create|update|change|fix|rewrite|implement|program)\b.{0,80}\b(?:code|firmware|sketch|program)\b|\b(?:code|firmware|sketch)\b.{0,60}\b(?:write|generate|create|update|change|fix|rewrite|implement|program|likh(?:o|na)?|bana(?:o|na)?|de|do)\b|(?:कोड|फर्मवेयर|स्केच).{0,40}(?:लिख|बना|दे|दो)/i;
+const LOCALIZED_BUILD_INTENT = /\b(?:bana(?:o|na|ne)?|bna(?:o|na)?|banake|bnaake|tayyar|taiyaar)\b|(?:बना|बनाओ|बनाकर|तैयार\s+कर)/i;
+const HARDWARE_BUILD_TARGET = /\b(?:circuits?|curcuit|diagram|leds?|arduino|esp32|microcontroller|mcu|robot|robotic|wrist|arm|motor|servo|sensor|breadboard|pcb|pca9685|l298n|mechanism|module|project|electronics?)\b|सर्किट|रोबोट|मोटर|सेंसर|मॉड्यूल/i;
 const DIRECT_TEST_REQUEST = /\b(?:test|testing|validate|validation|verify|verification|debug|troubleshoot|check)\b.{0,45}\b(?:this|it|current|the|my)\b|\b(?:test|testing|check|verify|validate|debug)\s*(?:kar|karo|kare|karke|do|please)\b|\b(?:isko|isse|ise)\s*(?:test|check|verify|validate|debug)\b/i;
 
 export function isCanvasMutationRequest(request: string): boolean {
   if (PROJECT_RESET_REQUEST.test(request)) return true;
   return /\b(?:build|make|design|wire|create|construct|assemble|implement|prototype|draw|diagram)\b/i.test(request)
+    || (LOCALIZED_BUILD_INTENT.test(request) && HARDWARE_BUILD_TARGET.test(request))
     || CODE_REQUEST.test(request)
     || DIRECT_TEST_REQUEST.test(request)
     || (EDIT_VERB.test(request) && EDIT_TARGET.test(request));
@@ -339,14 +342,12 @@ export function routeExplicitStepEdit(
   }
 
   if (EXPLICIT_TAB_REQUEST.test(request)) {
-    if (tutorial.action === 'NEW_PROJECT') {
-      return {
-        ...tutorial,
-        action: 'NEW_TAB',
-        target_tab: tutorial.target_tab || tutorial.project_name || activeTabName,
-      };
-    }
-    return tutorial;
+    const requestedTabName = /\b(?:tab|module)\s+named\s+(.+?)\s+for\s+(?:the\s+)?existing\s+project\b/i.exec(request)?.[1]?.trim();
+    return {
+      ...tutorial,
+      action: tutorial.action === 'MERGE_TAB' && !requestedTabName ? 'MERGE_TAB' : 'NEW_TAB',
+      target_tab: requestedTabName || tutorial.target_tab || tutorial.project_name || activeTabName || 'New Module',
+    };
   }
 
   if (CODE_REQUEST.test(request) || (EDIT_VERB.test(request) && EDIT_TARGET.test(request))) {

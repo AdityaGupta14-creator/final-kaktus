@@ -23,6 +23,7 @@ import { hardwareFetch } from '@/lib/hardware-api';
 interface ParsedTutorial {
   action?: 'NEW_PROJECT' | 'UPDATE_CURRENT' | 'NEW_TAB' | 'MERGE_TAB';
   target_tab?: string;
+  targetTabName?: string;
   projectName?: string;
   description?: string;
   blueprint_svg?: string;
@@ -52,6 +53,15 @@ interface WorkAction {
   added?: string;
   removed?: string;
   text: string;
+}
+
+interface NextModuleChoice {
+  id: string;
+  label: string;
+  description: string;
+  prompt?: string;
+  phaseIndex?: number;
+  recommended?: boolean;
 }
 
 interface Message {
@@ -718,43 +728,172 @@ export function ImplementationPlanCard({ plan, sources, approved, canApprove, on
   );
 }
 
-function findNextEligiblePhase(plan: ProjectPlan, completedIndices: number[]): number {
+function findEligiblePhaseIndices(plan: ProjectPlan, completedIndices: number[]): number[] {
   const completed = new Set(completedIndices);
   const completedNames = new Set(completedIndices.map(index => plan.subsystems[index]?.name.toLowerCase()).filter(Boolean));
-  return plan.subsystems.findIndex((phase, index) => !completed.has(index) && phase.dependencies.every(dependency => {
+  return plan.subsystems.map((phase, index) => !completed.has(index) && phase.dependencies.every(dependency => {
     const dependencyIndex = plan.subsystems.findIndex(item => item.name.toLowerCase() === dependency.toLowerCase());
     return dependencyIndex < 0 || completedNames.has(dependency.toLowerCase());
-  }));
+  }) ? index : -1).filter(index => index >= 0);
 }
 
-function PhaseContinueButton({ plan, phaseIndex, completedIndices, onContinue }: { plan: ProjectPlan; phaseIndex: number; completedIndices: number[]; onContinue: (plan: ProjectPlan, index: number, completed: number[]) => void }) {
-  const completed = Array.from(new Set([...completedIndices, phaseIndex]));
-  const nextIndex = findNextEligiblePhase(plan, completed);
-  const next = plan.subsystems[nextIndex];
-  if (!next) return null;
-  
+function getPlannedModuleChoices(plan: ProjectPlan, completedIndices: number[]): NextModuleChoice[] {
+  const eligibleIndices = findEligiblePhaseIndices(plan, completedIndices);
+  const choices = eligibleIndices.map((phaseIndex, optionIndex) => {
+    const phase = plan.subsystems[phaseIndex];
+    return {
+      id: `phase-${phaseIndex}`,
+      label: phase.name,
+      description: phase.purpose,
+      phaseIndex,
+      recommended: optionIndex === 0,
+    };
+  });
+  return choices.length ? [...choices, {
+    id: 'custom',
+    label: 'Another module',
+    description: 'Choose this to name a different module yourself.',
+  }] : [];
+}
+
+function getSuggestedModuleChoices(
+  tutorialData: ParsedTutorial,
+  circuitData: any,
+  allTabs: ChatBoxProps['allTabs'],
+): NextModuleChoice[] {
+  const steps = Array.isArray(circuitData?.steps) ? circuitData.steps : [];
+  const components = [
+    ...steps.flatMap((step: any) => Array.isArray(step.add_components) ? step.add_components : []),
+    ...(allTabs || []).flatMap(tab => tab.components),
+  ];
+  const moduleText = [
+    ...(tutorialData.phases || []),
+    ...steps.map((step: any) => `${step.phase || ''} ${step.instruction || ''}`),
+    ...(allTabs || []).flatMap(tab => [tab.name, ...(tab.stepOutline || [])]),
+  ].join(' ').toLowerCase();
+  const projectText = `${tutorialData.projectName || ''} ${tutorialData.description || ''} ${components.map((component: any) => `${component.type || ''} ${component.label || ''}`).join(' ')}`.toLowerCase().replace(/[_-]+/g, ' ');
+  const projectName = circuitData?.project_name || tutorialData.projectName || 'the current project';
+  const choices: NextModuleChoice[] = [];
+  const hasFirmware = tutorialData.codeSteps > 0
+    || steps.some((step: any) => typeof step.code === 'string' && step.code.trim())
+    || (allTabs || []).some(tab => /firmware|control\s+code|sketch/i.test(`${tab.name} ${(tab.stepOutline || []).join(' ')}`));
+  const hasController = /\b(?:arduino|esp32|esp8266|raspberry\s*pi|pico|microcontroller|mcu|stm32)\b/.test(projectText);
+
+  if (hasController && !hasFirmware && !/firmware|control\s+code/.test(moduleText)) {
+    choices.push({
+      id: 'suggest-firmware',
+      label: 'Firmware and control',
+      description: 'Add editable controller code that matches the circuit and pin assignments.',
+      prompt: `Create a new module tab named Firmware and Control for the existing project ${projectName}. Add complete editable firmware matched to the existing components and pin assignments, plus the necessary compile and functional checks. Preserve the existing modules.`,
+      recommended: true,
+    });
+  }
+
+  if (!/test|testing|verification|validation|acceptance/.test(moduleText)) {
+    choices.push({
+      id: 'suggest-testing',
+      label: 'Testing and verification',
+      description: 'Add measurable checks for the completed circuit and its behavior.',
+      prompt: `Create a new module tab named Testing and Verification for the existing project ${projectName}. Add safe, ordered, measurable checks for the current design and state the expected result for each. Preserve the existing modules.`,
+      recommended: choices.length === 0,
+    });
+  }
+
+  if (/\b(?:robot|robotic|wrist|arm|motor|servo|actuator|mechanism|drone|chassis)\b/.test(projectText)
+    && !/mechanical|fabrication|enclosure/.test(moduleText)) {
+    choices.push({
+      id: 'suggest-mechanical',
+      label: 'Mechanical assembly',
+      description: 'Add the physical structure and interfaces needed to mount and move the hardware.',
+      prompt: `Create a new module tab named Mechanical Assembly for the existing project ${projectName}. Define the physical structure, part interfaces, and required dimensions as assumptions where they are unknown. Preserve existing modules.`,
+      recommended: choices.length === 0,
+    });
+  }
+
+  if (!choices.length) {
+    choices.push({
+      id: 'suggest-integration',
+      label: 'Integration and acceptance',
+      description: 'Add a final module that checks the complete project against its intended behavior.',
+      prompt: `Create a new module tab named Integration and Acceptance for the existing project ${projectName}. Add an ordered integration checklist and measurable acceptance checks. Preserve existing modules.`,
+      recommended: true,
+    });
+  }
+
+  return [...choices, {
+    id: 'custom',
+    label: 'Another module',
+    description: 'Choose this to name a different module yourself.',
+  }];
+}
+
+function NextModuleCard({
+  moduleName,
+  options,
+  disabled,
+  onSubmit,
+}: {
+  moduleName: string;
+  options: NextModuleChoice[];
+  disabled: boolean;
+  onSubmit: (choice: NextModuleChoice, customName: string) => void;
+}) {
+  const [selectedId, setSelectedId] = useState(options[0]?.id || '');
+  const [customName, setCustomName] = useState('');
+  const selected = options.find(option => option.id === selectedId);
+  const needsCustomName = selected?.id === 'custom';
+
   return (
-    <div className="mb-3 mt-4 w-full max-w-[95%]">
-      <div className="flex w-full items-center gap-2 border-b border-gray-800 pb-2 text-left text-xs font-medium text-emerald-400">
-        <CheckCircle2 size={14} />
-        <span>Phase Completed. Next Step Pending:</span>
+    <section className="mb-3 mt-4 w-full max-w-[95%] overflow-hidden rounded-xl border border-neutral-700 bg-[#0b0b0b]" aria-label="Choose the next module">
+      <header className="border-b border-neutral-800 bg-[#101010] px-3 py-2.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Module handoff</p>
+        <h3 className="mt-1 text-xs font-semibold text-neutral-100">Final step reached: {moduleName}</h3>
+        <p className="mt-1 text-[10px] leading-relaxed text-neutral-500">Select what to build next, then submit to continue in the workspace.</p>
+      </header>
+      <div className="space-y-1.5 p-2.5" role="radiogroup" aria-label="Next module options">
+        {options.map((option, index) => (
+          <label
+            key={option.id}
+            className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors ${selectedId === option.id ? 'border-neutral-500 bg-white/[0.07]' : 'border-neutral-800 bg-white/[0.025] hover:border-neutral-700 hover:bg-white/[0.05]'}`}
+          >
+            <input
+              type="radio"
+              name={`next-module-choice-${moduleName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+              value={option.id}
+              checked={selectedId === option.id}
+              onChange={() => setSelectedId(option.id)}
+              className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-white"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2 text-[11px] font-medium text-neutral-200">
+                {option.label}
+                {option.recommended && index === 0 && <span className="rounded border border-neutral-700 px-1 py-0.5 text-[8px] uppercase tracking-wide text-neutral-400">Recommended</span>}
+              </span>
+              <span className="mt-0.5 block text-[10px] leading-relaxed text-neutral-500">{option.description}</span>
+            </span>
+          </label>
+        ))}
+        {needsCustomName && (
+          <input
+            value={customName}
+            onChange={event => setCustomName(event.target.value)}
+            placeholder="Name the next module"
+            aria-label="Name the next module"
+            className="w-full rounded-md border border-neutral-700 bg-[#111] px-2.5 py-2 text-[11px] text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-neutral-500"
+          />
+        )}
       </div>
-      <div className="py-3">
-        <div className="flex items-start gap-2 text-[12px] mb-3">
-          <CircleDot size={14} className="text-blue-500 mt-0.5 shrink-0" />
-          <div className="flex-1 text-gray-200">
-            <span className="font-semibold text-gray-100">{next.name}</span>
-            <p className="text-gray-400 mt-0.5 text-[11px] leading-relaxed">{next.purpose}</p>
-          </div>
-        </div>
-        <button 
-          onClick={() => onContinue(plan, nextIndex, completed)}
-          className="ml-5 flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md transition-colors text-xs font-medium shadow-md shadow-blue-900/20"
+      <footer className="flex items-center justify-end border-t border-neutral-800 px-2.5 py-2">
+        <button
+          type="button"
+          onClick={() => selected && onSubmit(selected, customName.trim())}
+          disabled={disabled || !selected || (needsCustomName && !customName.trim())}
+          className="inline-flex items-center gap-2 rounded-md border border-neutral-600 bg-neutral-200 px-3 py-1.5 text-[10px] font-semibold text-neutral-950 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-800 disabled:text-neutral-500"
         >
-          Proceed to Next Step <ArrowRight size={12} />
+          Submit <Send size={11} />
         </button>
-      </div>
-    </div>
+      </footer>
+    </section>
   );
 }
 
@@ -908,6 +1047,8 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const handledPlanActionRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const reachedFinalStep = Boolean((totalSteps || 0) > 0 && (currentStep || 0) >= (totalSteps || 0) - 1);
+  const activeWorkspaceTabName = allTabs?.find(tab => tab.isActive)?.name;
 
   const startNewChat = () => {
     if (isProcessing) return;
@@ -934,6 +1075,10 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isProcessing]);
+
+  useEffect(() => {
+    if (reachedFinalStep) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [reachedFinalStep]);
 
   const cancelGeneration = () => {
     if (abortControllerRef.current) {
@@ -1292,6 +1437,7 @@ RULES:
         tutorialData = {
             action: parsed.action,
             target_tab: parsed.target_tab,
+            targetTabName: parsed.target_tab || activeTabName || parsed.project_name || 'Current module',
             projectName: parsed.project_name,
             description: parsed.description,
             blueprint_svg: parsed.blueprint_svg,
@@ -1476,6 +1622,14 @@ RULES:
     void handleSendRef.current(instruction, { ...pendingPlanAction, completedPhaseIndices: pendingPlanAction.completedPhaseIndices || [] });
     onPlanActionConsumed();
   }, [pendingPlanAction, isProcessing, onPlanActionConsumed]);
+
+  const latestTutorialMessageIndex = messages.reduce((latestIndex, message, index) => {
+    if (message.role !== 'assistant' || !message.tutorialData) return latestIndex;
+    const targetName = message.tutorialData.targetTabName || message.tutorialData.target_tab;
+    if (targetName && activeWorkspaceTabName
+      && targetName.trim().toLowerCase() !== activeWorkspaceTabName.trim().toLowerCase()) return latestIndex;
+    return index;
+  }, -1);
 
   return (
     <div className="flex flex-col h-full bg-[#111] text-gray-200 text-sm font-sans relative">
@@ -1759,9 +1913,46 @@ RULES:
               </div>
             </div>
 
-            {msg.phasePlan && msg.tutorialData && typeof msg.phaseIndex === 'number' && (
-              <PhaseContinueButton plan={msg.phasePlan} phaseIndex={msg.phaseIndex} completedIndices={msg.phaseCompletedIndices || []} onContinue={(plan, phaseIndex, completedPhaseIndices) => handleSend(`Continue the approved project. Build subsystem ${phaseIndex + 1}: ${plan.subsystems[phaseIndex].name}.`, { plan, phaseIndex, completedPhaseIndices, targetTabId: msg.phaseTargetTabId || 'main', startApproach: msg.phaseStartApproach })} />
-            )}
+            {idx === latestTutorialMessageIndex && reachedFinalStep && msg.tutorialData && !isProcessing && !pendingModelWarning && (() => {
+              const plannedChoices = msg.phasePlan
+                ? getPlannedModuleChoices(msg.phasePlan, msg.phaseCompletedIndices || [])
+                : [];
+              const options = plannedChoices.length
+                ? plannedChoices
+                : getSuggestedModuleChoices(msg.tutorialData, circuitData, allTabs);
+              const moduleName = msg.tutorialData.targetTabName || msg.tutorialData.target_tab || activeWorkspaceTabName || 'Current module';
+
+              return <NextModuleCard
+                key={`${idx}-${moduleName}`}
+                moduleName={moduleName}
+                options={options}
+                disabled={isProcessing || isPreparingImages || isQuotaReached || apiKeys.length === 0 || !model || !onUpdateCircuit}
+                onSubmit={(choice, customName) => {
+                  if (choice.phaseIndex != null && msg.phasePlan) {
+                    const completedPhaseIndices = Array.from(new Set([
+                      ...(msg.phaseCompletedIndices || []),
+                      choice.phaseIndex,
+                    ]));
+                    void handleSend(
+                      `Continue the approved project. Build subsystem ${choice.phaseIndex + 1}: ${msg.phasePlan.subsystems[choice.phaseIndex].name}.`,
+                      {
+                        plan: msg.phasePlan,
+                        phaseIndex: choice.phaseIndex,
+                        completedPhaseIndices,
+                        targetTabId: msg.phaseTargetTabId || targetWorkspaceTabId || activeTabId,
+                        startApproach: msg.phaseStartApproach,
+                      },
+                    );
+                    return;
+                  }
+
+                  const request = choice.id === 'custom'
+                    ? `Create a new module tab named ${customName} for the existing project ${circuitData?.project_name || msg.tutorialData?.projectName || 'this project'}. Build this module only, include its complete relevant steps and checks, and preserve the existing modules.`
+                    : choice.prompt || `Create a new module tab named ${choice.label} for the existing project ${circuitData?.project_name || msg.tutorialData?.projectName || 'this project'}. Build this module only, include its complete relevant steps and checks, and preserve the existing modules.`;
+                  void handleSend(request);
+                }}
+              />;
+            })()}
 
             {msg.role === 'assistant' && msg.errorCode === 'APP_QUOTA_EXCEEDED' && (
               <div 
