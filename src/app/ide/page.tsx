@@ -647,10 +647,10 @@ export default function Home() {
   return (
     <div className="min-h-screen h-screen bg-[#0a0a0a] text-gray-100 flex flex-col font-sans overflow-hidden dark-ui">
       {plan !== 'free' && planExpiresAt && new Date(planExpiresAt.getTime() - 3 * 24 * 60 * 60 * 1000) < new Date() && (
-        <div className="bg-orange-500/10 text-orange-400 border-b border-orange-500/20 px-4 py-1.5 text-[12px] flex items-center justify-center gap-2 flex-shrink-0">
+        <div className="bg-neutral-950 text-neutral-300 border-b border-neutral-800 px-4 py-1.5 text-[12px] flex items-center justify-center gap-2 flex-shrink-0">
           <AlertTriangle size={14} />
           Your {plan.toUpperCase()} plan is ending soon. Renew to continue benefits.
-          <button onClick={() => setIsUpgradeModalOpen(true)} className="underline font-medium hover:text-orange-300 ml-2 cursor-pointer bg-transparent border-none p-0 text-[12px]">Renew now</button>
+          <button onClick={() => setIsUpgradeModalOpen(true)} className="underline font-medium hover:text-white ml-2 cursor-pointer bg-transparent border-none p-0 text-[12px]">Renew now</button>
         </div>
       )}
       {/* Top Navbar */}
@@ -725,13 +725,9 @@ export default function Home() {
               <div 
                 onClick={() => { if (role !== 'TEST' && totalTokens >= tokenLimit) setIsUpgradeModalOpen(true); }}
                 className={`flex items-center gap-3 mr-2 px-3 py-1.5 rounded-md border transition-all ${
-                  role === 'TEST'
-                    ? 'bg-purple-950/40 border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
-                    : totalTokens >= tokenLimit
-                      ? 'bg-red-950/50 border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.35)] cursor-pointer'
-                      : totalTokens / tokenLimit >= 0.8
-                        ? 'bg-amber-950/30 border-amber-500/40'
-                        : 'bg-[#1a1a1a] border-[#333]'
+                  totalTokens >= tokenLimit
+                    ? 'bg-[#101010] border-neutral-500 cursor-pointer'
+                    : 'bg-[#101010] border-neutral-800'
                 }`}
                 title={
                   role === 'TEST'
@@ -744,13 +740,11 @@ export default function Home() {
                 <div className="flex flex-col items-end w-32">
                   <div className="flex justify-between w-full mb-1">
                     <span className={`text-[9px] font-semibold uppercase tracking-wider ${
-                      role === 'TEST'
-                        ? 'text-purple-300 font-bold'
-                        : totalTokens >= tokenLimit
-                          ? 'text-red-400 font-bold'
-                          : totalTokens / tokenLimit >= 0.8
-                            ? 'text-amber-400'
-                            : 'text-gray-400'
+                      role === 'TEST' || totalTokens >= tokenLimit
+                        ? 'text-neutral-200 font-bold'
+                        : totalTokens / tokenLimit >= 0.8
+                          ? 'text-neutral-300'
+                          : 'text-gray-400'
                     }`}>
                       {role === 'TEST'
                         ? 'TEST (500K)'
@@ -759,28 +753,18 @@ export default function Home() {
                           : (plan === 'free' ? 'Free Plan' : `${plan.toUpperCase()}`)}
                     </span>
                     <span className={`text-[9px] font-medium ${
-                      role === 'TEST'
-                        ? 'text-purple-300'
-                        : totalTokens >= tokenLimit
-                          ? 'text-red-400 font-bold'
-                          : totalTokens / tokenLimit >= 0.8
-                            ? 'text-amber-400'
-                            : 'text-blue-400'
+                      role === 'TEST' || totalTokens >= tokenLimit
+                        ? 'text-neutral-200 font-bold'
+                        : totalTokens / tokenLimit >= 0.8
+                          ? 'text-neutral-300'
+                          : 'text-neutral-400'
                     }`}>
                       {`${(totalTokens / 1000).toFixed(1)}k / ${tokenLimit / 1000}k`}
                     </span>
                   </div>
                   <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
                     <div 
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        role === 'TEST'
-                          ? 'bg-gradient-to-r from-purple-500 to-indigo-400'
-                          : totalTokens >= tokenLimit
-                            ? 'bg-gradient-to-r from-red-600 to-red-500'
-                            : totalTokens / tokenLimit >= 0.8
-                              ? 'bg-gradient-to-r from-amber-500 to-amber-400'
-                              : 'bg-gradient-to-r from-blue-600 to-blue-400'
-                      }`} 
+                      className="h-full rounded-full bg-neutral-300 transition-all duration-500"
                       style={{ width: `${Math.min(100, (totalTokens / tokenLimit) * 100)}%` }}
                     />
                   </div>
@@ -1050,15 +1034,15 @@ export default function Home() {
         {/* Floating Corner Notification Widget */}
         <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2 pointer-events-auto select-none">
           {totalTokens >= tokenLimit ? (
-            <div className="bg-[#18181b]/95 border border-red-500/60 shadow-[0_10px_35px_rgba(239,68,68,0.35)] rounded-2xl p-3.5 max-w-sm backdrop-blur-md text-white animate-in fade-in slide-in-from-bottom-3 duration-300">
+            <div className="bg-[#0b0b0b]/95 border border-neutral-700 shadow-2xl rounded-2xl p-3.5 max-w-sm backdrop-blur-md text-white animate-in fade-in slide-in-from-bottom-3 duration-300">
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center flex-shrink-0 text-red-400">
+                <div className="w-8 h-8 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center flex-shrink-0 text-neutral-300">
                   <AlertCircle size={18} className="animate-pulse" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-xs tracking-wide text-red-300 uppercase">Quota Exceeded</span>
-                    <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-red-950/90 text-red-300 border border-red-800/60">
+                    <span className="font-bold text-xs tracking-wide text-neutral-200 uppercase">Quota Exceeded</span>
+                    <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-neutral-900 text-neutral-300 border border-neutral-700">
                       Resets in {resetCountdown} (12:00 AM)
                     </span>
                   </div>
@@ -1071,9 +1055,9 @@ export default function Home() {
                         setIsQuotaModalDismissed(false);
                         setIsUpgradeModalOpen(true);
                       }}
-                      className="w-full bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-md flex items-center justify-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
+                      className="w-full bg-neutral-200 hover:bg-white text-black font-semibold text-xs py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors active:scale-95 cursor-pointer"
                     >
-                      <Zap size={13} className="fill-white" />
+                      <Zap size={13} className="fill-neutral-700" />
                       Upgrade Plan (₹39 - ₹169)
                     </button>
                   </div>
@@ -1081,10 +1065,10 @@ export default function Home() {
               </div>
             </div>
           ) : plan !== 'free' && planExpiresAt ? (
-            <div className="bg-[#18181b]/90 border border-amber-500/40 shadow-lg rounded-2xl px-3.5 py-2 backdrop-blur-md text-white flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+            <div className="bg-[#0b0b0b]/95 border border-neutral-800 shadow-lg rounded-2xl px-3.5 py-2 backdrop-blur-md text-white flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-neutral-400" />
               <div className="text-[11px]">
-                <span className="font-bold text-amber-300 uppercase tracking-wider">{plan} Pack</span>
+                <span className="font-bold text-neutral-100 uppercase tracking-wider">{plan} Pack</span>
                 <span className="text-gray-400 mx-1.5">•</span>
                 <span className="text-gray-300 font-mono">
                   {(() => {
@@ -1101,7 +1085,7 @@ export default function Home() {
                   setIsQuotaModalDismissed(false);
                   setIsUpgradeModalOpen(true);
                 }}
-                className="text-[10px] font-bold uppercase tracking-wider text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 hover:text-white underline cursor-pointer"
               >
                 Upgrade
               </button>

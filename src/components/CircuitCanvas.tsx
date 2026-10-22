@@ -119,15 +119,15 @@ const getComponentStats = (type: string) => {
 function highlightCode(code: string) {
   const escapedCode = code.replace(/[&<>]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[character] || character);
   return escapedCode
-    .replace(/(\/\/[^\n]*)/g, '<span style="color:#6A9955">$1</span>')
-    .replace(/(\b(int|void|const|char|bool|float|double|long|unsigned)\b)/g, '<span style="color:#569CD6">$1</span>')
-    .replace(/(\b(if|else|for|while|return|switch|case|break|continue)\b)/g, '<span style="color:#C586C0">$1</span>')
-    .replace(/(\b(OUTPUT|INPUT|HIGH|LOW|true|false)\b)/g, '<span style="color:#4FC1FF">$1</span>')
-    .replace(/(\b(digitalWrite|digitalRead|analogWrite|analogRead|pinMode|delay|Serial|begin|print|println)\b)/g, '<span style="color:#DCDCAA">$1</span>')
-    .replace(/(\b(setup|loop)\b)/g, '<span style="color:#DCDCAA">$1</span>')
-    .replace(/(#include\s+(?:&lt;[^&]+&gt;|"[^"]+"))/g, '<span style="color:#C586C0">$1</span>')
-    .replace(/("[^"]*")/g, '<span style="color:#CE9178">$1</span>')
-    .replace(/(\b\d+\b)/g, '<span style="color:#B5CEA8">$1</span>');
+    .replace(/(\/\/[^\n]*)/g, '<span style="color:#737373">$1</span>')
+    .replace(/(\b(int|void|const|char|bool|float|double|long|unsigned)\b)/g, '<span style="color:#bdbdbd">$1</span>')
+    .replace(/(\b(if|else|for|while|return|switch|case|break|continue)\b)/g, '<span style="color:#e5e5e5">$1</span>')
+    .replace(/(\b(OUTPUT|INPUT|HIGH|LOW|true|false)\b)/g, '<span style="color:#a3a3a3">$1</span>')
+    .replace(/(\b(digitalWrite|digitalRead|analogWrite|analogRead|pinMode|delay|Serial|begin|print|println)\b)/g, '<span style="color:#d4d4d4">$1</span>')
+    .replace(/(\b(setup|loop)\b)/g, '<span style="color:#d4d4d4">$1</span>')
+    .replace(/(#include\s+(?:&lt;[^&]+&gt;|"[^"]+"))/g, '<span style="color:#a3a3a3">$1</span>')
+    .replace(/("[^"]*")/g, '<span style="color:#a3a3a3">$1</span>')
+    .replace(/(\b\d+\b)/g, '<span style="color:#c4c4c4">$1</span>');
 }
 
 function BreadboardGraphic({
@@ -219,8 +219,8 @@ function BreadboardGraphic({
 function CodePreviewModal({ code, language, onClose }: { code: string; language: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 md:p-12">
-      <div className="bg-[#1e1e1e] border border-gray-700 w-full h-full max-w-6xl max-h-full rounded-xl shadow-2xl flex flex-col overflow-hidden">
-        <div className="h-10 bg-[#252526] border-b border-[#3c3c3c] flex items-center justify-between px-4 shrink-0">
+      <div className="bg-[#090909] border border-neutral-800 w-full h-full max-w-6xl max-h-full rounded-xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="h-10 bg-[#141414] border-b border-neutral-800 flex items-center justify-between px-4 shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-[#cccccc] text-[11px] font-mono tracking-wider uppercase">{language === 'cpp' ? 'main.cpp' : 'code.ino'}</span>
           </div>
@@ -234,7 +234,7 @@ function CodePreviewModal({ code, language, onClose }: { code: string; language:
              </button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto p-6 bg-[#1e1e1e]">
+        <div className="flex-1 overflow-auto p-6 bg-[#090909]">
           <pre 
             className="text-[13px] leading-relaxed font-mono text-[#d4d4d4] whitespace-pre-wrap"
             dangerouslySetInnerHTML={{ __html: highlightCode(code) }}
@@ -1543,7 +1543,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
           dragListener={false}
           dragMomentum={false}
           dragConstraints={containerRef}
-          className="absolute right-3 top-3 z-30 w-[min(360px,calc(100%-24px))] overflow-hidden rounded-xl border border-gray-700/90 bg-[#101418]/95 shadow-2xl backdrop-blur-md"
+          className="absolute right-3 top-3 z-30 w-[min(360px,calc(100%-24px))] overflow-hidden rounded-xl border border-neutral-800 bg-[#090909]/95 shadow-2xl backdrop-blur-md"
         >
           <div className="border-b border-gray-800 px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
@@ -1572,7 +1572,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 type="button"
                 aria-pressed={selectedWireId === wire.id}
                 onClick={() => { setSelectedWireId(wire.id); setSelectedComponentId(null); }}
-                className={`flex w-full items-center gap-2 rounded-lg border px-2 py-2 text-left transition-colors ${selectedWireId === wire.id ? 'border-blue-500/50 bg-blue-500/10' : 'border-transparent bg-white/[0.025] hover:border-gray-700 hover:bg-white/[0.06]'}`}
+                className={`flex w-full items-center gap-2 rounded-lg border px-2 py-2 text-left transition-colors ${selectedWireId === wire.id ? 'border-neutral-600 bg-white/[0.07]' : 'border-transparent bg-white/[0.025] hover:border-neutral-700 hover:bg-white/[0.05]'}`}
               >
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: wire.color }} />
                 <span className="min-w-0 flex-1">
@@ -1624,10 +1624,10 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 initial={{ opacity: 0, y: 10, x: 20 }}
                 animate={{ opacity: 1, y: 0, x: 0 }}
                 exit={{ opacity: 0, y: 10, x: 20 }}
-                className="bg-[#111]/95 backdrop-blur-md border border-blue-500/30 rounded-xl p-3 w-[260px] shadow-2xl mb-2 pointer-events-auto"
+                className="bg-[#0a0a0a]/95 backdrop-blur-md border border-neutral-800 rounded-xl p-3 w-[260px] shadow-2xl mb-2 pointer-events-auto"
               >
                 <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
-                  <h3 className="text-xs font-bold text-blue-400 flex items-center gap-1.5">
+                  <h3 className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
                     <Search size={14} /> Inspect: {selectedWireId ? 'Wire Connection' : selectedComponentId}
                   </h3>
                   <button onClick={() => { setSelectedComponentId(null); setSelectedWireId(null); }} className="text-gray-500 hover:text-white">
@@ -1657,8 +1657,8 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                             </div>
                           </div>
                           
-                          <div className="bg-[#1a1a2e]/60 rounded-lg p-2.5 border border-blue-900/30">
-                            <h4 className="text-[9px] uppercase tracking-wider text-blue-400 font-bold mb-1.5">Estimated Telemetry</h4>
+                          <div className="bg-[#141414]/80 rounded-lg p-2.5 border border-neutral-800">
+                            <h4 className="text-[9px] uppercase tracking-wider text-neutral-400 font-bold mb-1.5">Estimated Telemetry</h4>
                             <div className="grid grid-cols-2 gap-2">
                               {Object.entries(getWireStats(w.color, w.fromPin, w.labelText)).map(([k, v]) => (
                                 <div key={k} className="flex flex-col">
@@ -1677,8 +1677,8 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                         const compDef = data?.steps.flatMap(s => s.add_components || []).find(c => c.id === selectedComponentId);
                         if (!compDef) return null;
                         return (
-                          <div className="bg-[#1a1a2e]/60 rounded-lg p-2.5 border border-blue-900/30">
-                            <h4 className="text-[9px] uppercase tracking-wider text-blue-400 font-bold mb-1.5">Component Specs</h4>
+                          <div className="bg-[#141414]/80 rounded-lg p-2.5 border border-neutral-800">
+                            <h4 className="text-[9px] uppercase tracking-wider text-neutral-400 font-bold mb-1.5">Component Specs</h4>
                             <div className="grid grid-cols-2 gap-2">
                               {Object.entries(getComponentStats(compDef.type)).map(([k, v]) => (
                                 <div key={k} className="flex flex-col">
@@ -1727,7 +1727,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                 className="bg-[#111]/95 backdrop-blur-md border border-gray-700 rounded-xl p-4 w-[300px] max-h-[50vh] overflow-y-auto shadow-2xl pointer-events-auto"
               >
-                <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-3">All Steps</h3>
+                <h3 className="text-xs font-bold text-neutral-300 uppercase tracking-wider mb-3">All Steps</h3>
                 <div className="space-y-1.5">
                   {data.steps.map((step, i) => {
                     const isComp = step.add_components && step.add_components.length > 0;
@@ -1739,12 +1739,12 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                         key={i}
                         onClick={() => setCurrentStepIndex(i)}
                         className={`w-full text-left flex items-start gap-2 p-2 rounded-lg text-xs transition-all ${
-                          isCurrent ? 'bg-blue-600/20 border border-blue-500/50 text-white' :
+                          isCurrent ? 'bg-white/[0.07] border border-neutral-600 text-white' :
                           isDone ? 'text-gray-400 hover:bg-gray-800/50' : 'text-gray-600 hover:bg-gray-800/30'
                         }`}
                       >
                         <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5" style={{
-                          background: isDone ? '#22c55e' : isCurrent ? '#3b82f6' : '#333',
+                          background: isDone ? '#525252' : isCurrent ? '#737373' : '#262626',
                           color: 'white'
                         }}>
                           {isDone ? '✓' : i + 1}
@@ -1752,13 +1752,13 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-0.5">
                             {step.phase && <span className="text-[8px] font-bold uppercase text-gray-500 bg-gray-800 px-1 rounded">{step.phase}</span>}
-                            {step.code && <span className="text-[8px] text-green-500">{'</>'}</span>}
+                            {step.code && <span className="text-[8px] text-neutral-400">{'</>'}</span>}
                           </div>
                           <span className="block truncate">{step.instruction || `Step ${i+1}`}</span>
                           <span className="text-[10px] text-gray-500 mt-0.5 flex gap-2">
-                            {isComp && <span>🔧 {step.add_components?.length || 0} part{(step.add_components?.length || 0) > 1 ? 's' : ''}</span>}
-                            {isWire && <span>🔌 {step.add_wiring?.length || 0} wire{(step.add_wiring?.length || 0) > 1 ? 's' : ''}</span>}
-                            {step.code && <span>💻 code</span>}
+                            {isComp && <span>{step.add_components?.length || 0} part{(step.add_components?.length || 0) > 1 ? 's' : ''}</span>}
+                            {isWire && <span>{step.add_wiring?.length || 0} wire{(step.add_wiring?.length || 0) > 1 ? 's' : ''}</span>}
+                            {step.code && <span>code</span>}
                           </span>
                         </div>
                       </button>
@@ -1809,7 +1809,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
               disabled={currentStepIndex === data.steps.length - 1}
               title="Next step"
               aria-label="Next step"
-              className="p-1.5 bg-white rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-black"
+              className="p-1.5 bg-neutral-800 text-neutral-200 rounded-lg hover:bg-neutral-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight size={14} />
             </button>
@@ -1843,12 +1843,12 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-300 ${
                     isBoardConnected
-                      ? 'bg-black text-white shadow-[0_0_15px_rgba(255,255,255,0.3)] hover:shadow-[0_0_20px_rgba(255,255,255,0.5)] border border-gray-700'
+                      ? 'bg-[#111] text-white hover:bg-[#1a1a1a] border border-neutral-700'
                       : 'bg-gray-800 text-gray-500 hover:bg-gray-700 border border-gray-800'
                   }`}
                   title={isBoardConnected ? 'Use Kaktus to compile and flash this step to the detected board' : 'Connect your Arduino by USB, then use Kaktus Flash to Board'}
                 >
-                  <Zap size={12} className={isBoardConnected ? 'text-yellow-400' : ''} /> Flash in Kaktus
+                  <Zap size={12} className={isBoardConnected ? 'text-neutral-200' : ''} /> Flash in Kaktus
                 </button>
               );
             })()}
@@ -1866,7 +1866,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 dragListener={false}
                 dragMomentum={false}
                 dragConstraints={containerRef}
-                className="bg-[#111]/95 backdrop-blur-sm border border-gray-800 rounded-xl px-3 py-2.5 max-w-[340px] shadow-lg space-y-2 pointer-events-auto"
+                className="bg-[#0a0a0a]/95 backdrop-blur-sm border border-neutral-800 rounded-xl px-3 py-2.5 max-w-[340px] shadow-lg space-y-2 pointer-events-auto"
               >
                 {/* Phase badge + instruction */}
                 <div className="flex items-start gap-2">
@@ -1923,7 +1923,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={() => openCodePreview(extractedCode!, extractedLang, currentStepIndex)}
-                                className="flex items-center gap-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 px-2 py-1 rounded text-[9px] font-medium transition-colors border border-blue-500/30"
+                                className="flex items-center gap-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-2 py-1 rounded text-[9px] font-medium transition-colors border border-neutral-700"
                                 title="Preview code in editor"
                               >
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -1956,7 +1956,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                       {step.verify.length > 150 && (
                         <button
                           onClick={() => setExpandedVerifyText(step.verify!)}
-                          className="mt-1 text-blue-400 hover:text-blue-300 text-[9px] flex items-center gap-1 font-medium bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-800/30"
+                          className="mt-1 text-neutral-300 hover:text-white text-[9px] flex items-center gap-1 font-medium bg-neutral-800 px-1.5 py-0.5 rounded border border-neutral-700"
                         >
                           <Maximize size={10} /> Full Screen
                         </button>
@@ -1975,7 +1975,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 initial={{ opacity: 0, y: 10, height: 0 }}
                 animate={{ opacity: 1, y: 0, height: 'auto' }}
                 exit={{ opacity: 0, y: 10, height: 0 }}
-                className="bg-[#0d1117]/95 backdrop-blur-md border border-blue-500/30 rounded-xl max-w-[380px] shadow-2xl overflow-hidden"
+                className="bg-[#090909]/95 backdrop-blur-md border border-neutral-800 rounded-xl max-w-[380px] shadow-2xl overflow-hidden"
               >
                 {/* Chat Messages */}
                 <div ref={canvasChatRef} className="max-h-[200px] overflow-y-auto p-2 space-y-2">
@@ -1986,8 +1986,8 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                   )}
                   {canvasChatMessages.map((msg, i) => (
                     <div key={i} className={`text-[11px] leading-relaxed px-2 py-1.5 rounded-lg ${
-                      msg.role === 'user' 
-                        ? 'bg-blue-600/20 text-blue-300 ml-6' 
+                      msg.role === 'user'
+                        ? 'bg-white/[0.07] text-neutral-200 ml-6'
                         : 'bg-gray-800/50 text-gray-300 mr-4'
                     }`}>
                       {msg.text}
@@ -2012,7 +2012,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                   <button
                     onClick={handleCanvasChat}
                     disabled={!canvasChatInput.trim() || canvasChatLoading || !apiKeys || apiKeys.length === 0}
-                    className="p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    className="p-1.5 rounded-lg bg-neutral-200 hover:bg-white text-black disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     <Send size={10} />
                   </button>
@@ -2026,8 +2026,8 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
             onClick={() => setCanvasChatOpen(!canvasChatOpen)}
             className={`self-end p-2 rounded-full transition-all shadow-lg ${
               canvasChatOpen 
-                ? 'bg-blue-600 text-white ring-2 ring-blue-400/30' 
-                : 'bg-[#1a1a2e]/90 text-gray-400 hover:text-blue-400 hover:bg-[#1a1a2e] border border-gray-700/50'
+                ? 'bg-neutral-200 text-black ring-2 ring-white/20'
+                : 'bg-[#111]/90 text-gray-400 hover:text-white hover:bg-[#181818] border border-neutral-800'
             }`}
             title="Canvas AI Chat"
           >
@@ -2043,15 +2043,15 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[200] bg-[#1e1e1e] flex flex-col"
+            className="absolute inset-0 z-[200] bg-[#090909] flex flex-col"
           >
             {/* Title Bar */}
-            <div className="flex items-center justify-between h-9 bg-[#252526] border-b border-[#3c3c3c] px-3 shrink-0">
+            <div className="flex items-center justify-between h-9 bg-[#141414] border-b border-neutral-800 px-3 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-[#f14c4c] cursor-pointer" onClick={closeCodePreview}></div>
-                  <div className="w-3 h-3 rounded-full bg-[#e2b93d]"></div>
-                  <div className="w-3 h-3 rounded-full bg-[#23d18b]"></div>
+                  <button type="button" title="Close editor" aria-label="Close editor" className="w-3 h-3 rounded-full bg-neutral-500 hover:bg-neutral-300" onClick={closeCodePreview} />
+                  <span className="w-3 h-3 rounded-full bg-neutral-700" />
+                  <span className="w-3 h-3 rounded-full bg-neutral-800" />
                 </div>
                 <span className="text-[11px] text-gray-400 font-medium ml-2">
                   {data?.project_name || 'sketch'}.{previewCode.language === 'python' ? 'py' : previewCode.language === 'cpp' ? 'ino' : previewCode.language}
@@ -2060,7 +2060,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => navigator.clipboard.writeText(previewCode.code)}
-                  className="flex items-center gap-1.5 text-[10px] text-gray-400 hover:text-white bg-[#333] hover:bg-[#444] px-2.5 py-1 rounded transition-colors"
+                  className="flex items-center gap-1.5 text-[10px] text-gray-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1 rounded transition-colors"
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                   Copy All
@@ -2070,13 +2070,13 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                     setPreviewCode(current => current ? { ...current, code: '' } : current);
                     setCodeSaveStatus('Code cleared in preview; save to remove it from this step.');
                   }}
-                  className="text-[10px] text-gray-400 hover:text-red-300 bg-[#333] hover:bg-[#443] px-2.5 py-1 rounded transition-colors"
+                  className="text-[10px] text-gray-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1 rounded transition-colors"
                 >
                   Clear
                 </button>
                 <button
                   onClick={savePreviewCodeToCircuit}
-                  className="text-[10px] text-white bg-[#0e639c] hover:bg-[#1177bb] px-2.5 py-1 rounded transition-colors"
+                  className="text-[10px] font-medium text-black bg-neutral-200 hover:bg-white px-2.5 py-1 rounded transition-colors"
                 >
                   Save to step {previewCode.stepIndex + 1}
                 </button>
@@ -2084,7 +2084,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                   <button
                     onClick={flashPreviewCodeInApp}
                     disabled={!previewCode.code.trim()}
-                    className="text-[10px] font-semibold text-[#111] bg-[#23d18b] hover:bg-[#42e6a2] disabled:opacity-40 disabled:cursor-not-allowed px-2.5 py-1 rounded transition-colors"
+                    className="text-[10px] font-semibold text-black bg-white hover:bg-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed px-2.5 py-1 rounded transition-colors"
                     title="Compile and flash using Kaktus in-app controls"
                   >
                     Flash in Kaktus
@@ -2092,7 +2092,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 )}
                 <button
                   onClick={closeCodePreview}
-                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-[#444] transition-colors"
+                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-neutral-800 transition-colors"
                 >
                   <X size={14} />
                 </button>
@@ -2100,30 +2100,30 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
             </div>
 
             {/* Breadcrumb Bar */}
-            <div className="flex items-center h-6 bg-[#252526] border-b border-[#3c3c3c] px-3 text-[10px] text-gray-500 gap-1 shrink-0">
+            <div className="flex items-center h-6 bg-[#101010] border-b border-neutral-800 px-3 text-[10px] text-gray-500 gap-1 shrink-0">
               <span className="text-gray-400">{data?.project_name || 'Project'}</span>
               <span>›</span>
               <span className="text-gray-400">src</span>
               <span>›</span>
-              <span className="text-blue-400">
+              <span className="text-neutral-300">
                 {data?.project_name?.replace(/\s+/g, '_').toLowerCase() || 'sketch'}.{previewCode.language === 'python' ? 'py' : previewCode.language === 'cpp' ? 'ino' : previewCode.language}
               </span>
             </div>
 
-            {isArduinoCodePreview && <div className="shrink-0 border-b border-[#3c3c3c] bg-[#1b1b1b] px-4 py-2 text-[10px] leading-relaxed text-gray-400">
+            {isArduinoCodePreview && <div className="shrink-0 border-b border-neutral-800 bg-[#111] px-4 py-2 text-[10px] leading-relaxed text-gray-400">
               <p className="text-gray-300">
-                Test target: <span className="text-blue-300">{data?.project_name || 'Current module'}</span>
+                Test target: <span className="text-neutral-200">{data?.project_name || 'Current module'}</span>
                 {' · '}Step {previewCode.stepIndex + 1}/{data?.steps.length || 1}
                 {data?.steps[previewCode.stepIndex]?.phase ? ` · ${data.steps[previewCode.stepIndex].phase}` : ''}
                 {data?.steps[previewCode.stepIndex]?.instruction ? ` — ${data.steps[previewCode.stepIndex].instruction}` : ''}
               </p>
               <p>Save edits to this step, then use Flash in Kaktus → choose the board and USB port → Flash → Serial Monitor. Compile success alone does not confirm a physical hardware test.</p>
-              <p className="mt-0.5 text-emerald-300">{codeSaveStatus}</p>
+              <p className="mt-0.5 text-neutral-300">{codeSaveStatus}</p>
             </div>}
 
             {/* Code Editor Area */}
-            <div className="flex flex-1 min-h-0 overflow-hidden bg-[#1e1e1e] font-mono text-[12px] leading-[20px]">
-              <div className="relative w-[58px] shrink-0 overflow-hidden border-r border-[#3c3c3c] bg-[#1e1e1e] text-right text-[11px] text-gray-600 select-none">
+            <div className="flex flex-1 min-h-0 overflow-hidden bg-[#090909] font-mono text-[12px] leading-[20px]">
+              <div className="relative w-[58px] shrink-0 overflow-hidden border-r border-neutral-800 bg-[#0d0d0d] text-right text-[11px] text-gray-600 select-none">
                 <div ref={previewLineNumberRef} className="absolute top-0 left-0 w-full px-3 py-2">
                   {previewCode.code.split('\n').map((_, index) => <div key={index} className="h-[20px]">{index + 1}</div>)}
                 </div>
@@ -2132,7 +2132,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 <pre
                   ref={previewCodeLayerRef}
                   aria-hidden="true"
-                  className="pointer-events-none absolute top-0 left-0 m-0 min-h-full min-w-max whitespace-pre px-4 py-2 pr-8 font-mono text-[12px] leading-[20px] text-[#d4d4d4]"
+                  className="pointer-events-none absolute top-0 left-0 m-0 min-h-full min-w-max whitespace-pre px-4 py-2 pr-8 font-mono text-[12px] leading-[20px] text-neutral-300"
                   dangerouslySetInnerHTML={{ __html: highlightCode(previewCode.code) }}
                 />
                 <textarea
@@ -2147,14 +2147,14 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                     setCodeSaveStatus('Unsaved code edits. Save to update this circuit step.');
                   }}
                   onScroll={syncCodePreviewScroll}
-                  className="absolute inset-0 z-10 h-full w-full resize-none overflow-auto whitespace-pre border-0 bg-transparent px-4 py-2 pr-8 font-mono text-[12px] leading-[20px] text-transparent caret-white outline-none selection:bg-blue-500/40"
+                  className="absolute inset-0 z-10 h-full w-full resize-none overflow-auto whitespace-pre border-0 bg-transparent px-4 py-2 pr-8 font-mono text-[12px] leading-[20px] text-transparent caret-white outline-none selection:bg-white/20"
                   style={{ tabSize: 2 }}
                 />
               </div>
             </div>
 
             {/* Status Bar */}
-            <div className="flex items-center justify-between h-6 bg-[#007acc] px-3 text-[10px] text-white/90 shrink-0">
+            <div className="flex items-center justify-between h-6 bg-[#141414] border-t border-neutral-800 px-3 text-[10px] text-gray-400 shrink-0">
               <div className="flex items-center gap-3">
                 <span>{previewCode.language.toUpperCase()}</span>
                 <span>{previewCode.code.split('\n').length} lines</span>
@@ -2174,7 +2174,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
         <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
           <div className="bg-[#111] border border-gray-700 rounded-xl w-full max-w-3xl flex flex-col shadow-2xl overflow-hidden max-h-[85vh]">
             <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-[#1a1a1a]">
-              <h3 className="text-white font-bold flex items-center gap-2"><CheckCircle2 className="text-green-500" /> Verification Details</h3>
+              <h3 className="text-white font-bold flex items-center gap-2"><CheckCircle2 className="text-neutral-300" /> Verification Details</h3>
               <button onClick={() => setExpandedVerifyText(null)} className="text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-gray-800"><X size={20}/></button>
             </div>
             <div className="p-6 overflow-y-auto text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">
