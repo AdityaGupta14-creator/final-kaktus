@@ -186,10 +186,6 @@ export default function LandingPage() {
       <section className="w-full py-28 px-6 md:px-12 bg-white border-t border-gray-100 overflow-hidden">
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-20 items-center">
           <FadeIn>
-            <div className="w-12 h-12 rounded-xl bg-gray-100 border border-gray-200/80 flex items-center justify-center mb-8">
-              <Cpu className="w-6 h-6 text-gray-900" />
-            </div>
-
             <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-[#111] mb-6">
               Hardware Copilot.
             </h2>
@@ -235,8 +231,8 @@ export default function LandingPage() {
           </FadeIn>
 
           <FadeIn delay={0.2} className="relative flex items-center justify-center">
-            {/* Ambient Background Glow */}
-            <div className="absolute -inset-4 md:-inset-8 bg-gradient-to-tr from-cyan-500/10 via-purple-500/10 to-orange-500/10 rounded-[3rem] blur-3xl opacity-60 pointer-events-none"></div>
+            {/* Ambient Background Glow matching Logo colors (Green, Yellow, Orange - No Purple) */}
+            <div className="absolute -inset-4 md:-inset-8 bg-gradient-to-tr from-green-500/15 via-yellow-500/15 to-orange-500/15 rounded-[3rem] blur-3xl opacity-70 pointer-events-none"></div>
             
             {/* Dark Theme Mockup Card Wrapper */}
             <div className="relative w-full max-w-lg rounded-2xl overflow-hidden border border-gray-800/80 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.35)] bg-[#0d0f14] transition-all duration-300 hover:scale-[1.01] group">
