@@ -570,6 +570,25 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
     };
   }, [data, currentStepIndex, allTabs]);
 
+  const selectedComponentConnections = useMemo(() => {
+    if (!selectedComponentId) return [];
+
+    return accumulatedState.wiring.flatMap((wire: any, index) => {
+      const [fromComp = '', fromPin = ''] = String(wire.from || '').split(':', 2);
+      const [toComp = '', toPin = ''] = String(wire.to || '').split(':', 2);
+      const isSource = fromComp === selectedComponentId;
+      const isTarget = toComp === selectedComponentId;
+      if (!isSource && !isTarget) return [];
+
+      return [{
+        id: wire.id || `${wire.from}->${wire.to}-${index}`,
+        myPin: isSource ? fromPin : toPin,
+        otherComp: isSource ? toComp : fromComp,
+        otherPin: isSource ? toPin : fromPin,
+      }];
+    });
+  }, [accumulatedState.wiring, selectedComponentId]);
+
   const breadboardPlan = useMemo(() => {
     const components = new Map<string, any>();
     const wires = new Map<string, any>();
@@ -1293,12 +1312,13 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 animate={{ opacity: isCompDimmed ? 0.3 : 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.5 }}
                 transition={{ type: 'spring', bounce: 0.3 }}
-                className="absolute cursor-move pointer-events-auto"
+                className="absolute z-20 cursor-move pointer-events-auto"
                 style={{ 
                   left: comp.x, 
                   top: comp.y, 
                   transformOrigin: 'center center',
                   scale: scaleVal,
+                  zIndex: selectedComponentId === comp.id ? 30 : 20,
                 }}
               >
                 {useWokwiElement ? (
@@ -1737,7 +1757,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                   ) : (
                     <div className="flex flex-col gap-3">
                       {(() => {
-                        const compDef = data?.steps.flatMap(s => s.add_components || []).find(c => c.id === selectedComponentId);
+                        const compDef = accumulatedState.components.find((component: any) => component.id === selectedComponentId);
                         if (!compDef) return null;
                         return (
                           <div className="bg-[#141414]/80 rounded-lg p-2.5 border border-neutral-800">
@@ -1756,21 +1776,16 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                       
                       <div className="space-y-1.5">
                         <h4 className="text-[9px] uppercase tracking-wider text-gray-400 font-bold px-1">Connections</h4>
-                        {wirePaths.filter(w => w.fromComp === selectedComponentId || w.toComp === selectedComponentId).length === 0 ? (
+                        {selectedComponentConnections.length === 0 ? (
                           <div className="text-[10px] text-gray-500 italic py-2 text-center">No wires connected in this step</div>
                         ) : (
-                          wirePaths.filter(w => w.fromComp === selectedComponentId || w.toComp === selectedComponentId).map(w => {
-                            const isSource = w.fromComp === selectedComponentId;
-                            const myPin = isSource ? w.fromPin : w.labelText;
-                            const otherComp = isSource ? w.toComp : w.fromComp;
-                            const otherPin = isSource ? w.labelText : w.fromPin;
-                            
+                          selectedComponentConnections.map(connection => {
                             return (
-                              <div key={w.id} className="text-[10px] flex items-center justify-between bg-gray-900/50 px-2 py-1.5 rounded">
-                                <span className="font-mono text-gray-300 font-bold">{myPin}</span>
+                              <div key={connection.id} className="text-[10px] flex items-center justify-between bg-gray-900/50 px-2 py-1.5 rounded">
+                                <span className="font-mono text-gray-300 font-bold">{connection.myPin}</span>
                                 <div className="flex-1 border-b border-dashed border-gray-700 mx-2"></div>
-                                <span className="text-gray-400 truncate max-w-[100px]" title={`${otherComp}:${otherPin}`}>
-                                  {otherComp}:<span className="font-mono text-gray-300">{otherPin}</span>
+                                <span className="text-gray-400 truncate max-w-[100px]" title={`${connection.otherComp}:${connection.otherPin}`}>
+                                  {connection.otherComp}:<span className="font-mono text-gray-300">{connection.otherPin}</span>
                                 </span>
                               </div>
                             );
