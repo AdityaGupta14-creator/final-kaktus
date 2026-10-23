@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChatBox, ImplementationPlanCard } from '@/components/ChatBox';
 import { ModelSelector } from '@/components/ModelSelector';
-import type { TerminalRef } from '@/components/Terminal';
+import type { TerminalCommandResult, TerminalConnectionStatus, TerminalRef } from '@/components/Terminal';
 import type { TutorialData } from '@/components/CircuitCanvas';
 import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
 import { UpgradeModal } from '@/components/UpgradeModal';
@@ -344,6 +344,7 @@ export default function Home() {
   }, [sessionId]);
   
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [terminalStatus, setTerminalStatus] = useState<TerminalConnectionStatus>('connecting');
   const [isFlashOpen, setIsFlashOpen] = useState(false);
   const [generatedCode, setGeneratedCode] = useState('');
   const terminalRef = useRef<TerminalRef>(null);
@@ -409,11 +410,14 @@ export default function Home() {
     }, []);
   
 
-  const handleExecuteCommand = (cmd: string) => {
-    if (!isTerminalOpen) setIsTerminalOpen(true);
-    if (terminalRef.current) {
-      terminalRef.current.sendCommand(cmd);
+  const handleExecuteCommand = async (cmd: string): Promise<TerminalCommandResult> => {
+    setIsTerminalOpen(true);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const terminal = terminalRef.current;
+      if (terminal) return terminal.runCommand(cmd);
+      await new Promise(resolve => window.setTimeout(resolve, 50));
     }
+    throw new Error('The terminal could not open. Close and reopen it, then retry the task.');
   };
 
   const handleCircuitUpdate = useCallback((data: TutorialData, requestedTabId?: string) => {
@@ -793,19 +797,56 @@ export default function Home() {
                 </Link>
               )}
 
-              <Link href="/profile" className="flex items-center gap-2 group cursor-pointer hover:bg-[#333333] p-1.5 rounded-md transition-colors" title="My Account (User Profile)">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-[11px] font-bold shadow-sm">
-                  {(user.displayName || user.email || "U")[0].toUpperCase()}
+              <details className="group relative">
+                <summary className="flex items-center gap-2 cursor-pointer hover:bg-[#292929] p-1.5 rounded-md transition-colors list-none [&::-webkit-details-marker]:hidden" title="Account and plan">
+                  <div className="w-6 h-6 rounded-full bg-[#292929] border border-neutral-600 flex items-center justify-center text-neutral-100 text-[11px] font-semibold">
+                    {(user.displayName || user.email || "U")[0].toUpperCase()}
+                  </div>
+                  <div className="flex flex-col text-left hidden md:block">
+                    <span className="text-[11px] text-gray-200 group-hover:text-white transition-colors font-medium max-w-[120px] truncate block leading-tight">
+                      {user.displayName || user.email?.split('@')[0] || "User"}
+                    </span>
+                    <span className="text-[9px] text-gray-400 uppercase tracking-wider block leading-tight">
+                      {plan === 'free' ? 'Free Plan' : `${plan} Plan`}
+                    </span>
+                  </div>
+                </summary>
+                <div className="absolute right-0 top-[calc(100%+8px)] z-[100] w-64 rounded-lg border border-neutral-700 bg-[#171717] p-3 shadow-2xl">
+                  <div className="border-b border-neutral-800 pb-3">
+                    <p className="truncate text-xs font-medium text-neutral-100">{user.displayName || user.email?.split('@')[0] || 'User'}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-neutral-500">{user.email}</p>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 py-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-neutral-500">Current plan</p>
+                      <p className="mt-1 text-xs font-semibold capitalize text-neutral-200">{plan} Pack</p>
+                    </div>
+                    {plan !== 'free' && planExpiresAt ? (
+                      <span className="rounded border border-neutral-700 bg-[#202020] px-2 py-1 font-mono text-[10px] text-neutral-300">
+                        {(() => {
+                          const ms = Math.max(0, planExpiresAt.getTime() - Date.now());
+                          const d = Math.floor(ms / (24 * 3600 * 1000));
+                          const h = Math.floor((ms % (24 * 3600 * 1000)) / (3600 * 1000));
+                          const m = Math.floor((ms % (3600 * 1000)) / 60000);
+                          return d > 0 ? `${d}d ${h}h left` : h > 0 ? `${h}h ${m}m left` : `${m}m left`;
+                        })()}
+                      </span>
+                    ) : <span className="text-[10px] text-neutral-500">No expiry</span>}
+                  </div>
+                  <div className="flex gap-2 border-t border-neutral-800 pt-3">
+                    <Link href="/profile" className="flex-1 rounded border border-neutral-700 px-2 py-1.5 text-center text-[11px] text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white">
+                      My profile
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => { setIsQuotaModalDismissed(false); setIsUpgradeModalOpen(true); }}
+                      className="flex-1 rounded bg-neutral-200 px-2 py-1.5 text-[11px] font-medium text-black transition-colors hover:bg-white"
+                    >
+                      Upgrade plan
+                    </button>
+                  </div>
                 </div>
-                <div className="flex flex-col text-left hidden md:block">
-                  <span className="text-[11px] text-gray-200 group-hover:text-white transition-colors font-medium max-w-[120px] truncate block leading-tight">
-                    {user.displayName || user.email?.split('@')[0] || "User"}
-                  </span>
-                  <span className="text-[9px] text-gray-400 group-hover:text-blue-300 uppercase tracking-wider block leading-tight">
-                    My Account
-                  </span>
-                </div>
-              </Link>
+              </details>
 
               <button 
                 onClick={() => { router.push('/'); setTimeout(() => signOut(auth), 100); }}
@@ -1010,7 +1051,10 @@ export default function Home() {
                   <TerminalSquare size={14} className="text-gray-400" />
                   <span className="font-medium text-gray-200">Terminal</span>
                   <span className="h-3 w-px bg-gray-700" />
-                  <span className="flex items-center gap-1.5 truncate text-gray-500">Local PowerShell</span>
+                  <span className={`h-1.5 w-1.5 rounded-full ${terminalStatus === 'connected' ? 'bg-emerald-500' : terminalStatus === 'connecting' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`} />
+                  <span className="flex items-center gap-1.5 truncate text-gray-400">
+                    {terminalStatus === 'connected' ? 'Local PowerShell' : terminalStatus === 'connecting' ? 'Connecting...' : terminalStatus === 'unavailable' ? 'Local terminal unavailable' : 'Reconnecting...'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
@@ -1028,7 +1072,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
-                 <Terminal ref={terminalRef} />
+                 <Terminal ref={terminalRef} onStatusChange={setTerminalStatus} />
               </div>
             </motion.div>
           )}
@@ -1045,9 +1089,9 @@ export default function Home() {
         />
 
 
-        {/* Floating Corner Notification Widget */}
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2 pointer-events-auto select-none">
-          {totalTokens >= tokenLimit ? (
+        {/* Quota notification */}
+        {totalTokens >= tokenLimit && (
+          <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2 pointer-events-auto select-none">
             <div className="bg-[#0b0b0b]/95 border border-neutral-700 shadow-2xl rounded-2xl p-3.5 max-w-sm backdrop-blur-md text-white animate-in fade-in slide-in-from-bottom-3 duration-300">
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center flex-shrink-0 text-neutral-300">
@@ -1078,34 +1122,8 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          ) : plan !== 'free' && planExpiresAt ? (
-            <div className="bg-[#0b0b0b]/95 border border-neutral-800 shadow-lg rounded-2xl px-3.5 py-2 backdrop-blur-md text-white flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-neutral-400" />
-              <div className="text-[11px]">
-                <span className="font-bold text-neutral-100 uppercase tracking-wider">{plan} Pack</span>
-                <span className="text-gray-400 mx-1.5">•</span>
-                <span className="text-gray-300 font-mono">
-                  {(() => {
-                    const ms = Math.max(0, new Date(planExpiresAt).getTime() - Date.now());
-                    const d = Math.floor(ms / (24 * 3600 * 1000));
-                    const h = Math.floor((ms % (24 * 3600 * 1000)) / (3600 * 1000));
-                    const m = Math.floor((ms % (3600 * 1000)) / 60000);
-                    return d > 0 ? `${d}d ${h}h left` : (h > 0 ? `${h}h ${m}m left` : `${m}m left`);
-                  })()}
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  setIsQuotaModalDismissed(false);
-                  setIsUpgradeModalOpen(true);
-                }}
-                className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 hover:text-white underline cursor-pointer"
-              >
-                Upgrade
-              </button>
-            </div>
-          ) : null}
-        </div>
+          </div>
+        )}
 
       </main>
     </div>

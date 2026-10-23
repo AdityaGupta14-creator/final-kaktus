@@ -23,11 +23,107 @@ app.prepare().then(async () => {
     console.log('> Next.js ready on http://localhost:3000');
   });
 
-  // Start Terminal WebSocket server on port 3001
-  const wss = new WebSocketServer({ port: 3001 });
+  // Keep shell access on loopback and accept connections only from the local IDE.
+  const wss = new WebSocketServer({
+    host: '127.0.0.1',
+    port: 3001,
+    maxPayload: 16 * 1024,
+    verifyClient: ({ origin }, done) => {
+      try {
+        const parsedOrigin = new URL(origin);
+        const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
+        const allowed = parsedOrigin.protocol === 'http:'
+          && localHosts.has(parsedOrigin.hostname.toLowerCase())
+          && parsedOrigin.port === '3000';
+        done(allowed, allowed ? undefined : 403, allowed ? undefined : 'Local IDE origin required.');
+      } catch {
+        done(false, 403, 'Local IDE origin required.');
+      }
+    },
+  });
+
+  const sendTerminalMessage = (ws, message) => {
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
+  };
+
+  const runTerminalCommand = (ws, activeCommands, { id, command }) => {
+    if (typeof id !== 'string' || !id || typeof command !== 'string' || !command.trim()) return;
+    if (command.length > 8000) {
+      sendTerminalMessage(ws, { type: 'exec-error', id, message: 'Command exceeds the 8,000-character limit.' });
+      return;
+    }
+    if (activeCommands.size > 0) {
+      sendTerminalMessage(ws, { type: 'exec-error', id, message: 'Another automated terminal command is still running.' });
+      return;
+    }
+
+    const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
+    const args = os.platform() === 'win32'
+      ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command]
+      : ['-lc', command];
+    let child;
+    let timedOut = false;
+    let finished = false;
+    let outputBytes = 0;
+    let outputTruncated = false;
+    const outputLimitBytes = 128 * 1024;
+    const finish = (exitCode) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      activeCommands.delete(id);
+      sendTerminalMessage(ws, { type: 'exec-complete', id, exitCode: timedOut ? 124 : (Number.isInteger(exitCode) ? exitCode : 1) });
+    };
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      if (!child || child.killed) return;
+      if (os.platform() === 'win32' && child.pid) {
+        const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+        killer.on('error', () => child.kill());
+      } else {
+        child.kill('SIGTERM');
+      }
+    }, 120_000);
+    timeout.unref?.();
+
+    try {
+      child = spawn(shell, args, {
+        cwd: process.cwd(),
+        env: { ...process.env, TERM: 'xterm-256color' },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+      activeCommands.set(id, child);
+
+      const forwardOutput = (chunk) => {
+        const data = chunk.toString();
+        const remaining = Math.max(0, outputLimitBytes - outputBytes);
+        const bounded = Buffer.from(data).subarray(0, remaining).toString();
+        outputBytes += Buffer.byteLength(bounded);
+        if (bounded) sendTerminalMessage(ws, { type: 'exec-output', id, data: bounded });
+        if (!outputTruncated && Buffer.byteLength(data) > remaining) {
+          outputTruncated = true;
+          sendTerminalMessage(ws, { type: 'exec-output', id, data: '\n[Output truncated after 128 KB.]\n' });
+        }
+      };
+
+      child.stdout.on('data', forwardOutput);
+      child.stderr.on('data', forwardOutput);
+      child.on('error', (error) => {
+        sendTerminalMessage(ws, { type: 'exec-output', id, data: `${error.message}\n` });
+        finish(1);
+      });
+      child.on('close', (exitCode) => finish(exitCode));
+      child.stdin.end();
+    } catch (error) {
+      sendTerminalMessage(ws, { type: 'exec-error', id, message: error instanceof Error ? error.message : String(error) });
+      finish(1);
+    }
+  };
 
   wss.on('connection', (ws) => {
     console.log('Terminal WebSocket connected on port 3001');
+    const activeCommands = new Map();
     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
     try {
@@ -53,6 +149,10 @@ app.prepare().then(async () => {
         const data = message.toString();
         try {
           const payload = JSON.parse(data);
+          if (payload?.type === 'exec') {
+            runTerminalCommand(ws, activeCommands, payload);
+            return;
+          }
           if (payload?.type === 'resize' && Number.isFinite(payload.cols) && Number.isFinite(payload.rows)) {
             terminalProcess.resize(Math.max(2, Math.floor(payload.cols)), Math.max(1, Math.floor(payload.rows)));
             return;
@@ -65,6 +165,10 @@ app.prepare().then(async () => {
 
       ws.on('close', () => {
         terminalProcess.kill();
+        for (const child of activeCommands.values()) {
+          if (child && !child.killed) child.kill();
+        }
+        activeCommands.clear();
       });
     } catch (err) {
       console.error("Failed to spawn shell process:", err);
@@ -72,7 +176,7 @@ app.prepare().then(async () => {
     }
   });
 
-  console.log('> Terminal WS ready on ws://localhost:3001');
+  console.log('> Terminal WS ready on ws://127.0.0.1:3001');
 
   // The local bridge enumerates USB devices and invokes Arduino CLI. Bind it to
   // loopback only: a network-accessible unauthenticated flash service is unsafe.
