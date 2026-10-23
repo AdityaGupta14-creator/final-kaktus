@@ -32,6 +32,21 @@ interface PendingCommand extends TerminalCommandResult {
   sent: boolean;
 }
 
+type LoopbackWebSocketConstructor = typeof WebSocket & {
+  new (url: string, options: { targetAddressSpace: 'loopback' }): WebSocket;
+};
+
+function connectToLoopbackTerminal(url: string, remoteSecurePage: boolean): WebSocket {
+  if (remoteSecurePage) {
+    try {
+      return new (WebSocket as LoopbackWebSocketConstructor)(url, { targetAddressSpace: 'loopback' });
+    } catch {
+      // Older browsers do not recognize the Local Network Access WebSocket option.
+    }
+  }
+  return new WebSocket(url);
+}
+
 export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange }, ref) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -137,8 +152,9 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
 
     const hostname = window.location.hostname.toLowerCase();
     const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
-    if (!isLocalHost || window.location.protocol !== 'http:') {
-      const reason = 'The local terminal is available when the app is opened at http://localhost:3000.';
+    const isRemoteSecurePage = !isLocalHost && window.isSecureContext;
+    if (!isLocalHost && !isRemoteSecurePage) {
+      const reason = 'Open the secure Kaktus site or http://localhost:3000 to connect to this computer’s terminal.';
       availabilityRef.current = 'unavailable';
       statusCallbackRef.current?.('unavailable');
       term.write(`\r\n${reason}\r\n`);
@@ -153,8 +169,12 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
     let disposed = false;
     let reconnectTimer: number | undefined;
     let hasConnected = false;
+    let hasReportedUnavailable = false;
     availabilityRef.current = 'available';
     const wsUrl = 'ws://127.0.0.1:3001';
+    const connectionHint = isLocalHost
+      ? 'Restart the local app with npm run dev.'
+      : 'Run npm run hardware:bridge in the project folder and allow the browser’s local-network prompt.';
     const failPendingCommands = (message: string) => {
       for (const pending of pendingCommandsRef.current.values()) {
         window.clearTimeout(pending.timeout);
@@ -165,11 +185,24 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
     const connect = () => {
       if (disposed) return;
       statusCallbackRef.current?.(hasConnected ? 'disconnected' : 'connecting');
-      const ws = new WebSocket(wsUrl);
+      let ws: WebSocket;
+      try {
+        ws = connectToLoopbackTerminal(wsUrl, isRemoteSecurePage);
+      } catch (error) {
+        statusCallbackRef.current?.(hasConnected ? 'disconnected' : 'unavailable');
+        if (!hasConnected && !hasReportedUnavailable) {
+          term.writeln(`\r\nLocal terminal service unavailable. ${connectionHint}`);
+          hasReportedUnavailable = true;
+        }
+        reconnectTimer = window.setTimeout(connect, 2500);
+        return;
+      }
       wsRef.current = ws;
 
       ws.onopen = () => {
         hasConnected = true;
+        hasReportedUnavailable = false;
+        availabilityRef.current = 'available';
         statusCallbackRef.current?.('connected');
         term.write('\r\n*** Connected to local terminal ***\r\n\r\n');
         sendResize();
@@ -235,7 +268,7 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
       };
 
       ws.onerror = () => {
-        statusCallbackRef.current?.('disconnected');
+        statusCallbackRef.current?.(hasConnected ? 'disconnected' : 'unavailable');
       };
       ws.onclose = () => {
         if (wsRef.current === ws) wsRef.current = null;
@@ -243,9 +276,16 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
         handleWindowResize = undefined;
         failPendingCommands('Terminal connection closed before the command completed. Reconnect and retry.');
         if (disposed) return;
-        statusCallbackRef.current?.('disconnected');
-        term.write('\r\n*** Terminal connection lost. Reconnecting... ***\r\n');
-        reconnectTimer = window.setTimeout(connect, 1500);
+        statusCallbackRef.current?.(hasConnected ? 'disconnected' : 'unavailable');
+        if (hasConnected) {
+          availabilityRef.current = 'available';
+          term.write('\r\n*** Terminal connection lost. Reconnecting... ***\r\n');
+        } else if (!hasReportedUnavailable) {
+          availabilityRef.current = 'unavailable';
+          term.writeln(`\r\nLocal terminal service unavailable. ${connectionHint}`);
+          hasReportedUnavailable = true;
+        }
+        reconnectTimer = window.setTimeout(connect, 2500);
       };
     };
     connect();
