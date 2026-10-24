@@ -249,19 +249,80 @@ export default function LandingPage() {
 
       <section className="w-full py-32 px-6 md:px-12 bg-gray-50/50">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
-          <FadeIn className="bg-white rounded-3xl p-12 h-96 flex items-center justify-center border border-gray-100 shadow-sm order-2 md:order-1">
-             {/* Minimal graphic representing simulation */}
-             <div className="flex flex-col gap-4 w-full max-w-xs">
-               <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden">
-                 <div className="h-full bg-green-400 w-3/4 animate-pulse"></div>
-               </div>
-               <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden">
-                 <div className="h-full bg-blue-400 w-1/2 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-               </div>
-               <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden">
-                 <div className="h-full bg-yellow-400 w-5/6 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-               </div>
-             </div>
+          <FadeIn className="relative flex items-center justify-center order-2 md:order-1">
+            {/* Ambient Background Glow matching Logo colors (Green, Yellow, Orange) */}
+            <div className="absolute -inset-4 md:-inset-8 bg-gradient-to-tr from-emerald-500/20 via-yellow-500/15 to-orange-500/15 rounded-[3rem] blur-3xl opacity-75 pointer-events-none"></div>
+
+            {/* Kaktus IDE Canvas Window Wrapper */}
+            <div className="relative w-full max-w-lg rounded-2xl md:rounded-3xl overflow-hidden border border-neutral-800/90 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.45)] bg-[#101216] group transition-all duration-300 hover:scale-[1.01]">
+              {/* IDE Window Title Bar */}
+              <div className="h-10 px-4 bg-[#14161b] border-b border-neutral-800/90 flex items-center justify-between select-none">
+                <div className="flex items-center gap-3">
+                  {/* Window Controls */}
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80 border border-[#e0443e]/40" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80 border border-[#dea123]/40" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80 border border-[#1aab29]/40" />
+                  </div>
+                  {/* Active Tab */}
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#1c1f26] border border-neutral-700/60 text-[11px] font-mono text-neutral-200">
+                    <CircuitBoard className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>circuit-simulation.kaktus</span>
+                  </div>
+                </div>
+
+                {/* Right Status */}
+                <div className="flex items-center gap-2 text-[10px] font-mono text-neutral-400">
+                  <span className="inline-flex items-center gap-1 text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Simulating
+                  </span>
+                  <span className="text-neutral-600 hidden sm:inline">•</span>
+                  <span className="text-neutral-400 hidden sm:inline">ESP32 Core</span>
+                </div>
+              </div>
+
+              {/* Canvas Area with Dot Grid & Blended Circuit */}
+              <div 
+                className="relative w-full aspect-square bg-[#0b0f17] overflow-hidden flex items-center justify-center"
+                style={{
+                  backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.18) 1px, transparent 1px)',
+                  backgroundSize: '20px 20px',
+                }}
+              >
+                {/* Circuit Robotic Arm Illustration softly dissolved into the IDE canvas dot-grid */}
+                <div className="relative w-full h-full">
+                  <img 
+                    src="/images/simulate-reality.jpg" 
+                    alt="Virtual Hardware & Circuit Logic Simulation" 
+                    className="w-full h-full object-cover select-none transition-transform duration-700 ease-out group-hover:scale-105"
+                    style={{
+                      maskImage: 'radial-gradient(ellipse at center, black 65%, rgba(0,0,0,0.8) 78%, transparent 98%)',
+                      WebkitMaskImage: 'radial-gradient(ellipse at center, black 65%, rgba(0,0,0,0.8) 78%, transparent 98%)',
+                    }}
+                    loading="lazy"
+                  />
+                </div>
+
+                {/* Subtle perimeter vignette to blend seamlessly */}
+                <div className="absolute inset-0 bg-radial from-transparent via-transparent to-[#0b0f17]/85 pointer-events-none" />
+
+                {/* IDE Floating Canvas HUD Controls (matching CircuitCanvas.tsx) */}
+                <div className="absolute bottom-3.5 left-3.5 z-20 flex items-center gap-2 bg-[#121418]/90 backdrop-blur-md border border-neutral-800 rounded-lg px-2.5 py-1 text-[11px] font-mono text-neutral-400 shadow-xl select-none">
+                  <span className="text-neutral-500 font-bold">−</span>
+                  <span className="text-neutral-200 font-semibold">100%</span>
+                  <span className="text-neutral-500 font-bold">+</span>
+                  <span className="text-neutral-700">|</span>
+                  <span className="text-neutral-300">Step 6 of 6</span>
+                </div>
+
+                {/* IDE Pin Netlist HUD */}
+                <div className="absolute bottom-3.5 right-3.5 z-20 flex items-center gap-1.5 bg-[#121418]/90 backdrop-blur-md border border-neutral-800 rounded-lg px-2.5 py-1 text-[11px] font-mono text-neutral-400 shadow-xl select-none">
+                  <span className="text-neutral-500">Net:</span>
+                  <span className="text-emerald-400 font-medium">PWM ~GPIO 18</span>
+                </div>
+              </div>
+            </div>
           </FadeIn>
           <FadeIn delay={0.2} className="order-1 md:order-2">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-8">
