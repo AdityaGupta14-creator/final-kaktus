@@ -105,6 +105,7 @@ function mergeWorkspaceTabIntoPrevious(state: WorkspaceState, sourceTabId: strin
 const Terminal = dynamic(() => import('@/components/Terminal').then((mod) => mod.Terminal), { ssr: false });
 const CircuitCanvas = dynamic(() => import('@/components/CircuitCanvas').then((mod) => mod.CircuitCanvas), { ssr: false });
 const FlashPanel = dynamic(() => import('@/components/FlashPanel').then((mod) => mod.FlashPanel), { ssr: false });
+const UsbAutoDetect = dynamic(() => import('@/components/UsbAutoDetect').then((mod) => mod.UsbAutoDetect), { ssr: false });
 
 export default function Home() {
   const router = useRouter();
@@ -1124,6 +1125,15 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* USB Auto-Detect: background polling + notification toast */}
+        <UsbAutoDetect
+          isFlashOpen={isFlashOpen}
+          onDeviceConnected={() => {
+            setIsFlashOpen(true);
+            setIsTerminalOpen(false);
+          }}
+        />
 
       </main>
     </div>

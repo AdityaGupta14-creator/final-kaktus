@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 700" width="100%" height="100%" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Soft dropshadow for competitor pills -->
+    <filter id="pillShadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <!-- Vibrant glow for Kaktus -->
+    <filter id="kaktusGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#16a34a" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <!-- ================= AXES (Airbnb Red / Rose Color) ================= -->
+  <!-- Horizontal Axis Line -->
+  <line x1="140" y1="350" x2="1010" y2="350" stroke="#f43f5e" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Vertical Axis Line -->
+  <line x1="575" y1="90" x2="575" y2="610" stroke="#f43f5e" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- ================= AXIS LABELS ================= -->
+  <!-- TOP: Browser-Native & Cloud -->
+  <g transform="translate(575, 45)" text-anchor="middle">
+    <text font-size="22" font-weight="800" fill="#0f172a" letter-spacing="-0.3">Browser-Native &amp; Cloud</text>
+    <text y="22" font-size="13" font-weight="600" fill="#64748b">Zero Setup · Real-Time Collaboration</text>
+  </g>
+
+  <!-- BOTTOM: Heavy Desktop Legacy -->
+  <g transform="translate(575, 650)" text-anchor="middle">
+    <text font-size="22" font-weight="800" fill="#0f172a" letter-spacing="-0.3">Heavy Desktop Legacy</text>
+    <text y="22" font-size="13" font-weight="600" fill="#64748b">5GB+ Installs · Dongle-Locked · Windows Only</text>
+  </g>
+
+  <!-- LEFT: Siloed & Manual Toolchains -->
+  <g transform="translate(130, 350)" text-anchor="end">
+    <text y="-8" font-size="19" font-weight="800" fill="#0f172a" letter-spacing="-0.3">Siloed &amp; Manual</text>
+    <text y="15" font-size="12.5" font-weight="600" fill="#64748b">Simulation Only or IDE Only</text>
+  </g>
+
+  <!-- RIGHT: Unified End-to-End -->
+  <g transform="translate(1020, 350)" text-anchor="start">
+    <text y="-8" font-size="19" font-weight="800" fill="#0f172a" letter-spacing="-0.3">Unified End-to-End</text>
+    <text y="15" font-size="12.5" font-weight="600" fill="#64748b">Circuit ➔ Firmware ➔ USB Flash</text>
+  </g>
+
+
+  <!-- ================= QUADRANT COMPETITORS ================= -->
+
+  <!-- 1. TOP-LEFT: Tinkercad (Browser, but basic educational toys) -->
+  <g transform="translate(340, 210)" filter="url(#pillShadow)">
+    <rect x="-90" y="-34" width="180" height="68" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <text x="0" y="-7" text-anchor="middle" font-size="15" font-weight="700" fill="#1e293b">Tinkercad</text>
+    <text x="0" y="14" text-anchor="middle" font-size="11.5" font-weight="500" fill="#64748b">Basic Uno / Educational Toys</text>
+  </g>
+
+  <!-- 2. TOP-CENTER/RIGHT: Wokwi (Browser simulation, but no physical verification or native USB flash) -->
+  <g transform="translate(710, 235)" filter="url(#pillShadow)">
+    <rect x="-95" y="-34" width="190" height="68" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <text x="0" y="-7" text-anchor="middle" font-size="15" font-weight="700" fill="#1e293b">Wokwi</text>
+    <text x="0" y="14" text-anchor="middle" font-size="11.5" font-weight="500" fill="#64748b">Sim Only · No Native USB Flash</text>
+  </g>
+
+  <!-- 3. BOTTOM-LEFT: Altium Designer (Legacy heavy desktop EDA, $4,000/seat) -->
+  <g transform="translate(310, 480)" filter="url(#pillShadow)">
+    <rect x="-100" y="-36" width="200" height="72" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <text x="0" y="-8" text-anchor="middle" font-size="15" font-weight="700" fill="#1e293b">Altium Designer</text>
+    <text x="0" y="12" text-anchor="middle" font-size="11.5" font-weight="600" fill="#ef4444">$4,000 License · No Firmware Sync</text>
+  </g>
+
+  <!-- 4. BOTTOM-CENTER: Keil MDK / PlatformIO (Firmware compilers without circuit synchronization) -->
+  <g transform="translate(520, 520)" filter="url(#pillShadow)">
+    <rect x="-95" y="-34" width="190" height="68" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <text x="0" y="-7" text-anchor="middle" font-size="15" font-weight="700" fill="#1e293b">Keil / PlatformIO</text>
+    <text x="0" y="14" text-anchor="middle" font-size="11.5" font-weight="500" fill="#64748b">CLI/IDE Only · No Circuit Rules</text>
+  </g>
+
+  <!-- 5. TOP-RIGHT: KAKTUS (THE MARKET LEADER / YOU) -->
+  <g transform="translate(890, 190)" filter="url(#kaktusGlow)">
+    <rect x="-115" y="-50" width="230" height="100" rx="22" fill="#16a34a" stroke="#15803d" stroke-width="2.5"/>
+    <!-- Kaktus Brand Header -->
+    <text x="0" y="-12" text-anchor="middle" font-size="24" font-weight="800" fill="#ffffff" letter-spacing="-0.3">🌵 Kaktus</text>
+    <text x="0" y="14" text-anchor="middle" font-size="13" font-weight="800" fill="#dcfce7" letter-spacing="1">YOU</text>
+    <text x="0" y="32" text-anchor="middle" font-size="11" font-weight="600" fill="#f0fdf4">Design ➔ Validate ➔ Flash</text>
+  </g>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" fill="none" stroke="#111111" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Microchip Body -->
+  <rect x="16" y="16" width="32" height="32" rx="8" />
+  <!-- Pins Left -->
+  <line x1="8" y1="24" x2="16" y2="24" />
+  <line x1="8" y1="32" x2="16" y2="32" />
+  <line x1="8" y1="40" x2="16" y2="40" />
+  <!-- Pins Right -->
+  <line x1="48" y1="24" x2="56" y2="24" />
+  <line x1="48" y1="32" x2="56" y2="32" />
+  <line x1="48" y1="40" x2="56" y2="40" />
+  <!-- Pins Top -->
+  <line x1="24" y1="8" x2="24" y2="16" />
+  <line x1="32" y1="8" x2="32" y2="16" />
+  <line x1="40" y1="8" x2="40" y2="16" />
+  <!-- Pins Bottom -->
+  <line x1="24" y1="48" x2="24" y2="56" />
+  <line x1="32" y1="48" x2="32" y2="56" />
+  <line x1="40" y1="48" x2="40" y2="56" />
+  <!-- Alert Cross/Exclamation inside chip -->
+  <line x1="27" y1="27" x2="37" y2="37" stroke-width="3.5" />
+  <line x1="37" y1="27" x2="27" y2="37" stroke-width="3.5" />
+</svg>
