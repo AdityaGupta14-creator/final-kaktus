@@ -347,6 +347,7 @@ export default function Home() {
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState<TerminalConnectionStatus>('connecting');
   const [isFlashOpen, setIsFlashOpen] = useState(false);
+  const [connectedDeviceName, setConnectedDeviceName] = useState('');
   const [generatedCode, setGeneratedCode] = useState('');
   const terminalRef = useRef<TerminalRef>(null);
 
@@ -703,16 +704,28 @@ export default function Home() {
               Terminal
             </button>
             <button 
-              onClick={() => {
-                const open = !isFlashOpen;
-                setIsFlashOpen(open);
-                if (open) setIsTerminalOpen(false);
+              onClick={async () => {
+                if (isFlashOpen) {
+                  setIsFlashOpen(false);
+                  return;
+                }
+                // If no device authorized yet, open browser serial picker
+                if (!connectedDeviceName && 'serial' in navigator) {
+                  const { requestSerialDevice } = await import('@/components/UsbAutoDetect');
+                  const device = await requestSerialDevice();
+                  if (device) {
+                    setConnectedDeviceName(device.board?.name || 'USB Device');
+                  }
+                }
+                setIsFlashOpen(true);
+                setIsTerminalOpen(false);
               }}
               className={`px-2.5 sm:px-3 h-full flex items-center hover:bg-[#333333] rounded-md transition-colors cursor-pointer ${isFlashOpen ? 'bg-[#333333] text-white' : ''} gap-1.5`}
               title="Connect a microcontroller and open the hardware console"
             >
               <Usb size={13} />
-              <span className="hidden sm:inline">Connect</span>
+              <span className="hidden sm:inline">{connectedDeviceName || 'Connect'}</span>
+              {connectedDeviceName && <span className="hidden sm:flex h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />}
             </button>
           </nav>
         </div>
@@ -1129,7 +1142,8 @@ export default function Home() {
         {/* USB Auto-Detect: background polling + notification toast */}
         <UsbAutoDetect
           isFlashOpen={isFlashOpen}
-          onDeviceConnected={() => {
+          onDeviceConnected={(device) => {
+            setConnectedDeviceName(device.board?.name || 'USB Device');
             setIsFlashOpen(true);
             setIsTerminalOpen(false);
           }}
