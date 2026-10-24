@@ -117,17 +117,20 @@ const getComponentStats = (type: string) => {
 };
 
 function highlightCode(code: string) {
-  const escapedCode = code.replace(/[&<>]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[character] || character);
-  return escapedCode
-    .replace(/(\/\/[^\n]*)/g, '<span style="color:#737373">$1</span>')
-    .replace(/(\b(int|void|const|char|bool|float|double|long|unsigned)\b)/g, '<span style="color:#bdbdbd">$1</span>')
-    .replace(/(\b(if|else|for|while|return|switch|case|break|continue)\b)/g, '<span style="color:#e5e5e5">$1</span>')
-    .replace(/(\b(OUTPUT|INPUT|HIGH|LOW|true|false)\b)/g, '<span style="color:#a3a3a3">$1</span>')
-    .replace(/(\b(digitalWrite|digitalRead|analogWrite|analogRead|pinMode|delay|Serial|begin|print|println)\b)/g, '<span style="color:#d4d4d4">$1</span>')
-    .replace(/(\b(setup|loop)\b)/g, '<span style="color:#d4d4d4">$1</span>')
-    .replace(/(#include\s+(?:&lt;[^&]+&gt;|"[^"]+"))/g, '<span style="color:#a3a3a3">$1</span>')
-    .replace(/("[^"]*")/g, '<span style="color:#a3a3a3">$1</span>')
-    .replace(/(\b\d+\b)/g, '<span style="color:#c4c4c4">$1</span>');
+  const tokenPattern = /(#\s*include\b[^\n]*|\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b(?:if|else|for|while|return|switch|case|break|continue)\b|\b(?:int|void|const|char|bool|float|double|long|unsigned|static|volatile|byte|size_t)\b|\b(?:OUTPUT|INPUT|INPUT_PULLUP|HIGH|LOW|true|false|NULL)\b|\b(?:digitalWrite|digitalRead|analogWrite|analogRead|pinMode|delay|millis|micros|Serial|begin|print|println|setup|loop)\b|\b\d+(?:\.\d+)?\b)/g;
+  const escapeHtml = (value: string) => value.replace(/[&<>]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[character] || character);
+
+  return code.replace(tokenPattern, token => {
+    const color = token.startsWith('//') || token.startsWith('/*') ? '#6a9955'
+      : token.startsWith('#') ? '#c586c0'
+      : token.startsWith('"') || token.startsWith("'") ? '#ce9178'
+      : /^\d/.test(token) ? '#b5cea8'
+      : /^(if|else|for|while|return|switch|case|break|continue)$/.test(token) ? '#c586c0'
+      : /^(OUTPUT|INPUT|INPUT_PULLUP|HIGH|LOW|true|false|NULL)$/.test(token) ? '#569cd6'
+      : /^(digitalWrite|digitalRead|analogWrite|analogRead|pinMode|delay|millis|micros|Serial|begin|print|println|setup|loop)$/.test(token) ? '#dcdcaa'
+      : '#4ec9b0';
+    return `<span style="color:${color}">${escapeHtml(token)}</span>`;
+  });
 }
 
 function BreadboardGraphic({
@@ -2734,17 +2737,20 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
         {canvasChatOpen ? <X size={15} /> : <MessageCircle size={15} />}
       </button>
 
-      {/* VS Code-like Code Preview Overlay */}
+      {/* Code editor preview */}
       <AnimatePresence>
         {previewCode && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[200] bg-[#090909] flex flex-col"
+            data-canvas-overlay="true"
+            onWheel={event => event.stopPropagation()}
+            style={{ overscrollBehavior: 'contain' }}
+            className="absolute inset-0 z-[200] bg-[#1e1e1e] flex flex-col"
           >
             {/* Title Bar */}
-            <div className="flex items-center justify-between h-9 bg-[#141414] border-b border-neutral-800 px-3 shrink-0">
+            <div className="flex items-center justify-between h-9 bg-[#181818] border-b border-[#2b2b2b] px-3 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <button type="button" title="Close editor" aria-label="Close editor" className="w-3 h-3 rounded-full bg-neutral-500 hover:bg-neutral-300" onClick={closeCodePreview} />
@@ -2798,7 +2804,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
             </div>
 
             {/* Breadcrumb Bar */}
-            <div className="flex items-center h-6 bg-[#101010] border-b border-neutral-800 px-3 text-[10px] text-gray-500 gap-1 shrink-0">
+            <div className="flex items-center h-6 bg-[#181818] border-b border-[#2b2b2b] px-3 text-[10px] text-gray-500 gap-1 shrink-0">
               <span className="text-gray-400">{data?.project_name || 'Project'}</span>
               <span>›</span>
               <span className="text-gray-400">src</span>
@@ -2808,7 +2814,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
               </span>
             </div>
 
-            {isArduinoCodePreview && <div className="shrink-0 border-b border-neutral-800 bg-[#111] px-4 py-2 text-[10px] leading-relaxed text-gray-400">
+            {isArduinoCodePreview && <div className="shrink-0 border-b border-[#2b2b2b] bg-[#1e1e1e] px-4 py-2 text-[10px] leading-relaxed text-gray-400">
               <p className="text-gray-300">
                 Test target: <span className="text-neutral-200">{data?.project_name || 'Current module'}</span>
                 {' · '}Step {previewCode.stepIndex + 1}/{data?.steps.length || 1}
@@ -2820,8 +2826,8 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
             </div>}
 
             {/* Code Editor Area */}
-            <div className="flex flex-1 min-h-0 overflow-hidden bg-[#090909] font-mono text-[12px] leading-[20px]">
-              <div className="relative w-[58px] shrink-0 overflow-hidden border-r border-neutral-800 bg-[#0d0d0d] text-right text-[11px] text-gray-600 select-none">
+            <div className="flex flex-1 min-h-0 overflow-hidden bg-[#1e1e1e] font-mono text-[13px] leading-[20px]">
+              <div className="relative w-[58px] shrink-0 overflow-hidden border-r border-[#333333] bg-[#1e1e1e] text-right text-[11px] text-[#858585] select-none">
                 <div ref={previewLineNumberRef} className="absolute top-0 left-0 w-full px-3 py-2">
                   {previewCode.code.split('\n').map((_, index) => <div key={index} className="h-[20px]">{index + 1}</div>)}
                 </div>
@@ -2830,7 +2836,7 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                 <pre
                   ref={previewCodeLayerRef}
                   aria-hidden="true"
-                  className="pointer-events-none absolute top-0 left-0 m-0 min-h-full min-w-max whitespace-pre px-4 py-2 pr-8 font-mono text-[12px] leading-[20px] text-neutral-300"
+                  className="pointer-events-none absolute top-0 left-0 m-0 min-h-full min-w-max whitespace-pre px-4 py-2 pr-8 font-mono text-[13px] leading-[20px] text-[#d4d4d4]"
                   dangerouslySetInnerHTML={{ __html: highlightCode(previewCode.code) }}
                 />
                 <textarea
@@ -2845,14 +2851,15 @@ export function CircuitCanvas({ data, currentStep: currentStepIndex, onStepChang
                     setCodeSaveStatus('Unsaved code edits. Save to update this circuit step.');
                   }}
                   onScroll={syncCodePreviewScroll}
-                  className="absolute inset-0 z-10 h-full w-full resize-none overflow-auto whitespace-pre border-0 bg-transparent px-4 py-2 pr-8 font-mono text-[12px] leading-[20px] text-transparent caret-white outline-none selection:bg-white/20"
-                  style={{ tabSize: 2 }}
+                  onWheel={event => event.stopPropagation()}
+                  className="absolute inset-0 z-10 h-full w-full resize-none overflow-auto whitespace-pre border-0 bg-transparent px-4 py-2 pr-8 font-mono text-[13px] leading-[20px] text-transparent caret-[#aeafad] outline-none selection:bg-[#264f78]/70"
+                  style={{ tabSize: 2, overscrollBehavior: 'contain' }}
                 />
               </div>
             </div>
 
             {/* Status Bar */}
-            <div className="flex items-center justify-between h-6 bg-[#141414] border-t border-neutral-800 px-3 text-[10px] text-gray-400 shrink-0">
+            <div className="flex items-center justify-between h-6 bg-[#181818] border-t border-[#2b2b2b] px-3 text-[10px] text-neutral-400 shrink-0">
               <div className="flex items-center gap-3">
                 <span>{previewCode.language.toUpperCase()}</span>
                 <span>{previewCode.code.split('\n').length} lines</span>

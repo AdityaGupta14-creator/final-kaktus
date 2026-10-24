@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 620" width="100%" height="100%" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Soft dropshadow for the layers -->
+    <filter id="subtleShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#1e293b" flood-opacity="0.08"/>
+    </filter>
+    <filter id="coreGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#16a34a" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- 1. TAM - OUTER CIRCLE (Radius: 280) -->
+  <g filter="url(#subtleShadow)">
+    <circle cx="310" cy="310" r="285" fill="#f0fdf4" fill-opacity="0.75" stroke="#22c55e" stroke-width="2.5" stroke-dasharray="6 4" stroke-opacity="0.6"/>
+  </g>
+
+  <!-- TAM Label & Numbers at top of outer ring -->
+  <g transform="translate(310, 78)" text-anchor="middle">
+    <text font-size="12" font-weight="700" fill="#15803d" letter-spacing="1.2">TOTAL ADDRESSABLE MARKET (TAM)</text>
+    <text y="30" font-size="28" font-weight="800" fill="#14532d" letter-spacing="-0.5">$21+ Billion</text>
+    <text y="50" font-size="12.5" font-weight="500" fill="#475569">Global Embedded Software &amp; Design Tools</text>
+  </g>
+
+  <!-- 2. SAM - MIDDLE CIRCLE (Radius: 195) -->
+  <g filter="url(#subtleShadow)">
+    <circle cx="310" cy="350" r="200" fill="#fefce8" fill-opacity="0.88" stroke="#ca8a04" stroke-width="2.5" stroke-opacity="0.8"/>
+  </g>
+
+  <!-- SAM Label & Numbers -->
+  <g transform="translate(310, 205)" text-anchor="middle">
+    <text font-size="12" font-weight="700" fill="#a16207" letter-spacing="1.2">SERVICEABLE MARKET (SAM)</text>
+    <text y="28" font-size="26" font-weight="800" fill="#854d0e" letter-spacing="-0.5">$880+ Million</text>
+    <text y="48" font-size="12" font-weight="500" fill="#475569">Connected MCU &amp; IoT Firmware Prototyping</text>
+  </g>
+
+  <!-- 3. SOM - INNER BULLSEYE CIRCLE (Radius: 105) -->
+  <g filter="url(#coreGlow)">
+    <circle cx="310" cy="420" r="110" fill="#16a34a" stroke="#15803d" stroke-width="3"/>
+  </g>
+
+  <!-- SOM Label & Numbers inside core circle -->
+  <g transform="translate(310, 395)" text-anchor="middle">
+    <text font-size="11" font-weight="800" fill="#dcfce7" letter-spacing="1.5">SOM (BEACHHEAD)</text>
+    <text y="30" font-size="26" font-weight="800" fill="#ffffff" letter-spacing="-0.5">$65M</text>
+    <text y="50" font-size="11" font-weight="600" fill="#f0fdf4">150K Paid Seats</text>
+    <text y="66" font-size="10.5" font-weight="500" fill="#dcfce7">(3–5 Year Target)</text>
+  </g>
+</svg>

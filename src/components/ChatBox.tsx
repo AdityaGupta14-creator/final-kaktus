@@ -18,6 +18,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { diffArduinoSource, extractRepairedArduinoSource, inferArduinoBoard, MAX_FIRMWARE_REPAIR_ATTEMPTS, normalizeArduinoSource, runFirmwareRepairLoop, type FirmwareCompileResult, type FirmwareDiffLine } from '@/lib/agent/firmware-validation';
 import { compactConversationContext, messageReferencesPriorImage } from '@/lib/agent/context-compaction';
 import { hardwareFetch } from '@/lib/hardware-api';
+import type { TerminalCommandResult } from '@/components/Terminal';
 
 // --- Interfaces ---
 interface ParsedTutorial {
@@ -71,6 +72,7 @@ interface Message {
   cleanText?: string;
   createdAt?: number;
   commands?: string[];
+  commandResults?: TerminalCommandResult[];
   tutorialData?: ParsedTutorial;
   workActions?: WorkAction[];
   workTimeMs?: number;
@@ -149,7 +151,7 @@ interface ChatBoxProps {
   model: string;
   availableModels?: Array<{ name: string; displayName?: string }>;
   onModelChange?: (model: string) => void;
-  onExecuteCommand: (cmd: string) => void;
+  onExecuteCommand: (cmd: string) => Promise<TerminalCommandResult>;
   onUpdateCircuit?: (data: any, targetTabId?: string) => void;
   onApplyFirmwareRepair?: (repair: FirmwareRepairPatch) => void;
   onStepChange?: (step: number) => void;
@@ -222,6 +224,29 @@ function isLargeHardwareTask(value: string): boolean {
     || (text.length >= 45 && largeBuildSignal && hardwareAreas >= 1)
     || complexMechanismBuild
     || hardwareAreas >= 4;
+}
+
+function hasExplicitTerminalToolRequest(value: string): boolean {
+  const namesTerminal = /\b(?:terminal|shell|command line|powershell|cmd prompt)\b/i.test(value);
+  const mentionsCliTool = /\b(?:npm|pnpm|yarn|git|node|python)\b/i.test(value);
+  const asksToUseTerminal = /\b(?:run|execute|open|use|work|command|debug|troubleshoot|fix|test|build|start)\b/i.test(value);
+  return mentionsCliTool || (namesTerminal && asksToUseTerminal);
+}
+
+function isExplicitTerminalTask(value: string): boolean {
+  return hasExplicitTerminalToolRequest(value)
+    || /\b(?:debug|troubleshoot|run|start|build|compile|test|fix)\b.{0,35}\b(?:app|server|project|repo|repository|software|codebase|frontend|backend|code|tests?|build)\b/i.test(value);
+}
+
+function extractTerminalCommands(value: string): string[] {
+  const commands: string[] = [];
+  const commandTag = /<cmd(?:\s[^>]*)?>([\s\S]*?)<\/cmd>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = commandTag.exec(value)) !== null) {
+    const command = match[1].trim();
+    if (command && !/<\w+[>\s]/.test(command)) commands.push(command);
+  }
+  return commands;
 }
 
 function getAgentOutputTokenBudget(request: string, workflowOverride: WorkflowOverride | undefined, hasImages: boolean): number {
@@ -1125,6 +1150,8 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
     setImageError('');
     const startTime = Date.now();
     const progressLog: WorkAction[] = [];
+    const executedCommands: string[] = [];
+    const executedCommandResults: TerminalCommandResult[] = [];
     const recordProgress = (text: string, type = 'progress') => {
       progressLog.push({ type, text });
       setProcessingActivities([...progressLog]);
@@ -1339,8 +1366,6 @@ RULES:
         recordProgress('Opened the implementation plan in its workspace tab.', 'edit');
       }
 
-      const timeMs = Date.now() - startTime;
-
       // 1. Parse Work Log
       const workActions: WorkAction[] = [];
       const workRegex = /<work>([\s\S]*?)<\/work>/;
@@ -1374,16 +1399,81 @@ RULES:
       if (workActions.length) progressLog.push(...workActions);
 
       // 2. Parse Commands
-      const commands: string[] = [];
-      const cmdRegex = /<cmd[\s>][\s\S]*?<\/cmd>/gi;
-      let cmdMatch;
-      while ((cmdMatch = cmdRegex.exec(replyText)) !== null && (!proposedPlan || workflowOverride)) {
-        const cmd = cmdMatch[0].replace(/<\/?cmd[^>]*>/gi, '').trim();
-        if (cmd && !/<\w+[>\s]/.test(cmd)) {
-          commands.push(cmd);
-          onExecuteCommand(cmd);
+      const commands = executedCommands;
+      const hasHardwareScope = isCanvasBuildRequest && /\b(?:circuit|wiring|breadboard|arduino|esp32|microcontroller|servo|robot|sensor|motor|firmware|sketch)\b/i.test(userMsg);
+      const canRunTerminalCommands = isExplicitTerminalTask(userMsg)
+        && (!hasHardwareScope || hasExplicitTerminalToolRequest(userMsg))
+        && !proposedPlan
+        && !workflowOverride;
+      let terminalReply = replyText;
+      let terminalCommandCount = 0;
+      if (canRunTerminalCommands) {
+        for (let round = 0; round < 3; round += 1) {
+          const roundCommands = extractTerminalCommands(terminalReply);
+          if (!roundCommands.length) break;
+          const availableSlots = 4 - terminalCommandCount;
+          if (availableSlots <= 0) break;
+
+          for (const cmd of roundCommands.slice(0, availableSlots)) {
+            commands.push(cmd);
+            terminalCommandCount += 1;
+            recordProgress(`Running ${cmd.length > 72 ? `${cmd.slice(0, 69)}...` : cmd} in the local terminal...`);
+            let result: TerminalCommandResult;
+            try {
+              result = await onExecuteCommand(cmd);
+            } catch (commandError) {
+              result = {
+                output: commandError instanceof Error ? commandError.message : String(commandError),
+                exitCode: 1,
+              };
+            }
+            executedCommandResults.push(result);
+            recordProgress(`Terminal command finished with exit code ${result.exitCode}.`);
+          }
+
+          setProcessingActivity('Reviewing terminal output and deciding whether a focused repair is needed...');
+          const terminalReport = commands.map((command, index) => {
+            const result = executedCommandResults[index];
+            const output = result.output.slice(-3500) || '(no output)';
+            return `Command ${index + 1}: ${command}\nExit code: ${result.exitCode}\nOutput:\n${output}`;
+          }).join('\n\n');
+          const terminalFollowup = await requestAgent({
+            apiKeys,
+            model: requestModel,
+            systemPrompt,
+            contents: [
+              { role: 'user', parts: [{ text: userMsg }] },
+              { role: 'model', parts: [{ text: terminalReply.slice(0, 16_000) }] },
+              { role: 'user', parts: [{ text: `Local terminal results for the requested task:\n${terminalReport}\n\nInspect the output and exit codes. Do not repeat completed commands unless needed. If another focused command is required to fix or verify the app/repository, emit it in <cmd> tags. Otherwise give a concise result with accurate pass/fail status. Never claim success without a successful exit code.` }] },
+            ],
+            temperature: 0.15,
+            maxOutputTokens: Math.min(maxOutputTokens, 2048),
+            research: false,
+            abortSignal: abortControllerRef.current.signal,
+          });
+          agentReply = { ...terminalFollowup, sources: agentReply.sources };
+          replyText = terminalFollowup.text;
+          terminalReply = replyText;
+          tutorialResponse = extractTutorialResponse(replyText);
+          extractedPlanResponse = extractProjectPlanResponse(replyText);
+
+          const terminalUnavailable = executedCommandResults.some(result => /local terminal (?:is disconnected|service|connection)|terminal connection closed|terminal could not open/i.test(result.output));
+          if (terminalUnavailable) {
+            replyText = terminalReply.replace(/<cmd(?:\s[^>]*)?>[\s\S]*?<\/cmd>/gi, '').trim();
+            replyText += '\n\nI could not reach the local terminal service. Open this app at http://localhost:3000 on this computer and make sure its local server is running.';
+            terminalReply = replyText;
+            break;
+          }
+
+          if (round === 2 && extractTerminalCommands(terminalReply).length) {
+            replyText = terminalReply.replace(/<cmd(?:\s[^>]*)?>[\s\S]*?<\/cmd>/gi, '').trim();
+            replyText += '\n\nI stopped the automatic terminal loop after three run-and-review rounds. The latest command output is shown above; any remaining work still needs review.';
+            terminalReply = replyText;
+          }
         }
       }
+      const commandResults = executedCommandResults.length ? [...executedCommandResults] : undefined;
+      const timeMs = Date.now() - startTime;
 
       // 3. Commit the circuit first; firmware verification can take longer than the response.
       let tutorialData: ParsedTutorial | undefined;
@@ -1515,6 +1605,7 @@ RULES:
         cleanText: proposedPlan ? '' : cleanText,
         createdAt: assistantCreatedAt,
         commands, 
+        commandResults,
         tutorialData,
         workActions: progressLog,
         workTimeMs: timeMs,
@@ -1600,7 +1691,10 @@ RULES:
         progressLog.push({ type: 'progress', text: `Request ended with an error: ${errorMessage}` });
         setMessages(prev => [...prev, {
           role: 'assistant', content: `Error: ${errorMessage}`, cleanText: `Error: ${errorMessage}`, errorCode,
-          createdAt: Date.now(), workActions: progressLog, workTimeMs: Date.now() - startTime,
+          createdAt: Date.now(),
+          commands: executedCommands.length ? executedCommands : undefined,
+          commandResults: executedCommandResults.length ? executedCommandResults : undefined,
+          workActions: progressLog, workTimeMs: Date.now() - startTime,
         }]);
       }
     }
@@ -1987,6 +2081,18 @@ RULES:
                     <code className="font-mono text-[11px] text-green-400 break-all bg-black/30 p-2 rounded">
                       {cmd}
                     </code>
+                    {msg.commandResults?.[i] && (
+                      <div className="rounded-md border border-gray-800 bg-black/40 p-2">
+                        <div className={`mb-1 text-[10px] font-medium ${msg.commandResults[i].exitCode === 0 ? 'text-gray-400' : 'text-red-300'}`}>
+                          Exit code {msg.commandResults[i].exitCode}
+                        </div>
+                        {msg.commandResults[i].output ? (
+                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-gray-300">{msg.commandResults[i].output}</pre>
+                        ) : (
+                          <span className="text-[10px] text-gray-500">Command completed without output.</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

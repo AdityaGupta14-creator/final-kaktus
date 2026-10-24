@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" fill="none" stroke="#111111" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Calendar Body -->
+  <rect x="10" y="14" width="44" height="42" rx="6" />
+  <!-- Calendar Header Line -->
+  <line x1="10" y1="26" x2="54" y2="26" />
+  <!-- Binder Rings -->
+  <line x1="20" y1="8" x2="20" y2="16" stroke-width="3.5" />
+  <line x1="44" y1="8" x2="44" y2="16" stroke-width="3.5" />
+  <!-- Clock / Long Cycle Arc inside Calendar -->
+  <circle cx="32" cy="41" r="9" stroke-dasharray="4 2" />
+  <!-- Clock Hands showing elapsed time -->
+  <polyline points="32 36 32 41 37 41" stroke-width="2.5" />
+</svg>

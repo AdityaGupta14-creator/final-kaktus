@@ -1,9 +1,7 @@
 const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
-const { WebSocketServer } = require('ws');
-const pty = require('node-pty');
-const os = require('os');
+const { startTerminalService } = require('./terminal-service');
 const { spawn } = require('child_process');
 const path = require('path');
 
@@ -23,56 +21,7 @@ app.prepare().then(async () => {
     console.log('> Next.js ready on http://localhost:3000');
   });
 
-  // Start Terminal WebSocket server on port 3001
-  const wss = new WebSocketServer({ port: 3001 });
-
-  wss.on('connection', (ws) => {
-    console.log('Terminal WebSocket connected on port 3001');
-    const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
-
-    try {
-      const terminalProcess = pty.spawn(shell, [], {
-        name: 'xterm-256color',
-        cols: 100,
-        rows: 30,
-        cwd: process.cwd(),
-        env: process.env,
-      });
-
-      terminalProcess.onData((data) => {
-        if (ws.readyState === ws.OPEN) ws.send(data);
-      });
-
-      terminalProcess.onExit(({ exitCode }) => {
-        if (ws.readyState === ws.OPEN) {
-          ws.send(`\r\n[Terminal process exited with code ${exitCode}]\r\n`);
-        }
-      });
-
-      ws.on('message', (message) => {
-        const data = message.toString();
-        try {
-          const payload = JSON.parse(data);
-          if (payload?.type === 'resize' && Number.isFinite(payload.cols) && Number.isFinite(payload.rows)) {
-            terminalProcess.resize(Math.max(2, Math.floor(payload.cols)), Math.max(1, Math.floor(payload.rows)));
-            return;
-          }
-        } catch {
-          // User input is plain terminal data, not a control message.
-        }
-        terminalProcess.write(data);
-      });
-
-      ws.on('close', () => {
-        terminalProcess.kill();
-      });
-    } catch (err) {
-      console.error("Failed to spawn shell process:", err);
-      ws.send(`\r\nError starting terminal: ${err.message}\r\n`);
-    }
-  });
-
-  console.log('> Terminal WS ready on ws://localhost:3001');
+  startTerminalService();
 
   // The local bridge enumerates USB devices and invokes Arduino CLI. Bind it to
   // loopback only: a network-accessible unauthenticated flash service is unsafe.
