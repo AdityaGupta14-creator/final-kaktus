@@ -1,3 +1,5 @@
+import { auth } from '@/lib/firebase';
+
 const hardwareApiBase = (
   process.env.NEXT_PUBLIC_FLASH_API_URL || 'http://127.0.0.1:8000'
 ).replace(/\/+$/, '');
@@ -8,10 +10,17 @@ export function hardwareApiUrl(path: string): string {
   return `${hardwareApiBase}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-export function hardwareFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function hardwareFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const user = auth.currentUser;
+  if (user && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${await user.getIdToken()}`);
+  }
+
   const requestInit: LocalNetworkRequestInit = {
     cache: 'no-store',
     ...init,
+    headers,
     targetAddressSpace: 'local',
   };
 

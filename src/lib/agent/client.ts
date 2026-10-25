@@ -189,7 +189,7 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
       const response = await fetch('/api/agent', {
         signal: request.abortSignal,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await response.json().catch(() => ({}));

@@ -12,11 +12,17 @@ const handle = app.getRequestHandler();
 app.prepare().then(async () => {
   // Start Next.js server on port 3000
   const server = createServer((req, res) => {
+    const host = String(req.headers.host || '').toLowerCase();
+    if (!['localhost:3000', '127.0.0.1:3000', '[::1]:3000'].includes(host)) {
+      res.writeHead(421, { 'Content-Type': 'text/plain; charset=utf-8', 'Connection': 'close' });
+      res.end('This local application is available only through loopback.');
+      return;
+    }
     const parsedUrl = parse(req.url, true);
     handle(req, res, parsedUrl);
   });
   
-  server.listen(3000, (err) => {
+  server.listen(3000, '127.0.0.1', (err) => {
     if (err) throw err;
     console.log('> Next.js ready on http://localhost:3000');
   });

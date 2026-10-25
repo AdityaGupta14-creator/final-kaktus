@@ -59,11 +59,12 @@ export function PricingSection() {
       // 1. Create order session
       const response = await fetch('/api/cashfree/create-order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await user.getIdToken()}`,
+        },
         body: JSON.stringify({
           planId,
-          amount: price,
-          customerId: user.uid,
           customerEmail: user.email,
         }),
       });

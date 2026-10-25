@@ -15,6 +15,10 @@ import re
 import serial.tools.list_ports
 import serial
 import platform
+import hashlib
+import time
+import urllib.request
+import urllib.error
 
 app = FastAPI(title="Hardware Gatekeeper API")
 
@@ -40,15 +44,62 @@ app.add_middleware(
     allow_origins=sorted(ALLOWED_WEB_ORIGINS),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
+_verified_browser_tokens = {}
+_local_auth_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _is_valid_firebase_bearer(request: Request) -> bool:
+    authorization = request.headers.get("authorization", "")
+    match = re.fullmatch(r"Bearer\s+(.+)", authorization, flags=re.IGNORECASE)
+    if not match:
+        return False
+    token = match.group(1).strip()
+    if len(token) > 4096:
+        return False
+
+    now = time.monotonic()
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires_at = _verified_browser_tokens.get(token_hash, 0)
+    if expires_at > now:
+        return True
+
+    verification_request = urllib.request.Request(
+        "http://127.0.0.1:3001/internal/verify-token",
+        data=b"",
+        headers={"Authorization": f"Bearer {token}"},
+        method="POST",
+    )
+    try:
+        with _local_auth_opener.open(verification_request, timeout=3) as response:
+            if response.status != 204:
+                return False
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+    if len(_verified_browser_tokens) > 5000:
+        _verified_browser_tokens.clear()
+    _verified_browser_tokens[token_hash] = now + 300
+    return True
 
 
 @app.middleware("http")
 async def reject_untrusted_browser_origins(request: Request, call_next):
     origin = request.headers.get("origin")
-    if request.url.path.startswith("/flash/") and origin and origin not in ALLOWED_WEB_ORIGINS:
+    host = (request.headers.get("host") or "").lower()
+    if host not in {"127.0.0.1:8000", "localhost:8000"}:
+        return JSONResponse(status_code=421, content={"detail": "This service is available only through loopback."})
+    if request.url.path != "/" and (not origin or origin not in ALLOWED_WEB_ORIGINS):
         return JSONResponse(status_code=403, content={"detail": "This local USB service does not accept requests from this website origin."})
+    if origin and origin not in ALLOWED_WEB_ORIGINS:
+        return JSONResponse(status_code=403, content={"detail": "This local USB service does not accept requests from this website origin."})
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit() and int(content_length) > 1_500_000:
+        return JSONResponse(status_code=413, content={"detail": "Request body is too large."})
+    if request.url.path != "/" and request.method != "OPTIONS" and not await asyncio.to_thread(_is_valid_firebase_bearer, request):
+        return JSONResponse(status_code=401, content={"detail": "Sign in to use the local USB service."})
     return await call_next(request)
 
 _bundled_cli = "arduino-cli.exe" if platform.system() == "Windows" else "arduino-cli"
@@ -173,7 +224,7 @@ class InstallCoreRequest(BaseModel):
 
 
 class SerialWriteRequest(BaseModel):
-    port: str
+    port: str = Field(max_length=120)
     text: str = Field(max_length=4096)
 
 class ComponentInstance(BaseModel):
@@ -208,16 +259,16 @@ def _pin_kind(component_type: str, pin: str):
     return component.get("pins", {}).get(pin)
 
 class CompileRequest(BaseModel):
-    code: str
-    board: str
+    code: str = Field(max_length=1_000_000)
+    board: str = Field(max_length=120)
 
 class FlashRequest(BaseModel):
-    code: str
-    board: str
-    port: str
+    code: str = Field(max_length=1_000_000)
+    board: str = Field(max_length=120)
+    port: str = Field(max_length=120)
 
 class InstallLibRequest(BaseModel):
-    library: str
+    library: str = Field(min_length=1, max_length=100)
 
 COMPONENTS_DB = {
     "esp32": {
@@ -385,6 +436,8 @@ async def install_core(req: InstallCoreRequest = InstallCoreRequest()):
 
 @app.post("/flash/install-library")
 async def install_library(req: InstallLibRequest):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._+-]{0,99}", req.library.strip()):
+        raise HTTPException(status_code=400, detail="Invalid library name.")
     try:
         result = await asyncio.to_thread(_run_cli, ["lib", "install", req.library], 120)
         return {"status": "success", "message": f"Installed {req.library}"}
@@ -393,6 +446,8 @@ async def install_library(req: InstallLibRequest):
 
 @app.post("/flash/compile")
 async def compile_code(req: CompileRequest):
+    if req.board not in BOARD_CATALOG:
+        raise HTTPException(status_code=400, detail="Unsupported board target.")
     if not os.path.exists(ARDUINO_CLI):
         raise HTTPException(status_code=500, detail="arduino-cli not found")
     try:
@@ -448,6 +503,8 @@ async def compile_code(req: CompileRequest):
 
 @app.post("/flash/upload")
 async def upload_to_board(req: FlashRequest):
+    if req.board not in BOARD_CATALOG:
+        raise HTTPException(status_code=400, detail="Unsupported board target.")
     if not os.path.exists(ARDUINO_CLI):
         raise HTTPException(status_code=500, detail="arduino-cli not found")
     if not any(port.device == req.port for port in serial.tools.list_ports.comports()):

@@ -2,6 +2,9 @@ const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
 const os = require('os');
 const { spawn } = require('child_process');
+const { createServer } = require('http');
+const { getApps, initializeApp } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
 
 const DEFAULT_WEB_ORIGINS = new Set([
   'https://final-kaktus.vercel.app',
@@ -24,35 +27,100 @@ function isAllowedTerminalOrigin(origin) {
     const localHost = parsed.protocol === 'http:'
       && (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1')
       && parsed.port === '3000';
-    const trustedVercelPreview = parsed.protocol === 'https:'
-      && /^final-kaktus(?:-[a-z0-9-]+)?\.vercel\.app$/.test(hostname);
-    return localHost || trustedVercelPreview;
+    return localHost;
   } catch {
     return false;
   }
 }
 
+function getFirebaseAuth() {
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  if (!projectId) throw new Error('Firebase project ID is not configured.');
+  const app = getApps().find(existing => existing.name === '[DEFAULT]') || initializeApp({ projectId });
+  return getAuth(app);
+}
+
 function startTerminalService({ port = 3001 } = {}) {
+  const server = createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/internal/verify-token'
+      && req.headers.host === `127.0.0.1:${port}` && !req.headers.origin) {
+      const authorization = String(req.headers.authorization || '');
+      const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+      if (!token || token.length > 4096) {
+        res.writeHead(401, { 'Cache-Control': 'no-store' });
+        res.end();
+        return;
+      }
+      getFirebaseAuth().verifyIdToken(token)
+        .then(() => {
+          res.writeHead(204, { 'Cache-Control': 'no-store' });
+          res.end();
+        })
+        .catch(() => {
+          res.writeHead(401, { 'Cache-Control': 'no-store' });
+          res.end();
+        });
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/healthz' && req.headers.host === `127.0.0.1:${port}`) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  });
   const wss = new WebSocketServer({
-    host: '127.0.0.1',
-    port,
+    noServer: true,
     maxPayload: 16 * 1024,
-    verifyClient: ({ origin }, done) => {
-      const allowed = isAllowedTerminalOrigin(origin);
-      done(allowed, allowed ? undefined : 403, allowed ? undefined : 'Kaktus IDE origin required.');
-    },
+    handleProtocols: protocols => protocols.has('kaktus-terminal.v1') ? 'kaktus-terminal.v1' : false,
   });
   let ownsListener = false;
-  wss.on('listening', () => {
+  server.on('listening', () => {
     ownsListener = true;
-    console.log(`> Local terminal service ready on ws://127.0.0.1:${port}`);
+    console.log(`> Local terminal service ready on 127.0.0.1:${port}`);
   });
-  wss.on('error', error => {
+  server.on('error', error => {
     if (error.code === 'EADDRINUSE') {
       console.log(`> Local terminal service already running on 127.0.0.1:${port}`);
       return;
     }
     console.error(`> Local terminal service failed: ${error.message}`);
+  });
+
+  server.on('upgrade', (request, socket, head) => {
+    const origin = request.headers.origin;
+    const expectedHost = `127.0.0.1:${port}`;
+    const offeredProtocols = String(request.headers['sec-websocket-protocol'] || '')
+      .split(',')
+      .map(value => value.trim());
+    const authProtocol = offeredProtocols.find(value => value.startsWith('kaktus-auth.'));
+    const idToken = authProtocol?.slice('kaktus-auth.'.length);
+    const reject = (status, message) => {
+      if (!socket.destroyed) {
+        socket.write(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\n\r\n`);
+        socket.destroy();
+      }
+    };
+
+    if (request.headers.host !== expectedHost || !isAllowedTerminalOrigin(origin)) {
+      reject(403, 'Forbidden');
+      return;
+    }
+    if (!offeredProtocols.includes('kaktus-terminal.v1') || !idToken || idToken.length > 4096) {
+      reject(401, 'Unauthorized');
+      return;
+    }
+
+    getFirebaseAuth().verifyIdToken(idToken)
+      .then(decoded => {
+        if (!decoded?.uid) throw new Error('Invalid Firebase identity.');
+        wss.handleUpgrade(request, socket, head, ws => {
+          ws.terminalUid = decoded.uid;
+          wss.emit('connection', ws, request);
+        });
+      })
+      .catch(() => reject(401, 'Unauthorized'));
   });
 
   const sendTerminalMessage = (ws, message) => {
@@ -135,7 +203,7 @@ function startTerminalService({ port = 3001 } = {}) {
   };
 
   wss.on('connection', ws => {
-    console.log('> Terminal WebSocket connected');
+    console.log('> Terminal WebSocket connected for an authenticated session');
     const activeCommands = new Map();
     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
@@ -186,11 +254,14 @@ function startTerminalService({ port = 3001 } = {}) {
     }
   });
 
+  server.listen(port, '127.0.0.1');
+
   return {
     close() {
       if (!ownsListener) return;
       for (const client of wss.clients) client.close();
       wss.close();
+      server.close();
     },
   };
 }

@@ -1,5 +1,7 @@
 import { db } from './firebase-admin';
 import { logSecurityEvent } from './security-logger';
+import { decryptApiKey, encryptApiKey, hasApiKeyEncryptionKey } from './api-key-crypto';
+import crypto from 'crypto';
 
 export type KeyHealthStatus = 'healthy' | 'rate_limited' | 'unhealthy' | 'disabled' | 'unknown';
 
@@ -57,6 +59,23 @@ export function classifyProviderError(status: number, message: string): ErrorCla
   return 'SERVER_ERROR';
 }
 
+function readStoredKey(item: any): string {
+  if (typeof item?.encryptedKey === 'string') return decryptApiKey(item.encryptedKey);
+  return typeof item?.key === 'string' ? item.key : '';
+}
+
+function migratePoolEntry(item: any): any {
+  if (typeof item?.key !== 'string') return item;
+  const { key, ...metadata } = item;
+  return { ...metadata, encryptedKey: encryptApiKey(key) };
+}
+
+function requireEncryptionForPoolWrites(): void {
+  if (!hasApiKeyEncryptionKey()) {
+    throw new Error('Set API_KEY_ENCRYPTION_KEY before changing managed API keys.');
+  }
+}
+
 class ApiKeyManager {
   private cache: ManagedApiKey[] | null = null;
   private cacheTimestamp = 0;
@@ -90,14 +109,28 @@ class ApiKeyManager {
       });
     }
 
-    // 2. Fetch from secure Firestore admin/apiPool
+    // 2. Fetch from the server-only Firestore pool. New writes are AES-256-GCM encrypted.
     try {
-      const docSnap = await db.collection('admin').doc('apiPool').get();
+      const poolRef = db.collection('admin').doc('apiPool');
+      const docSnap = await poolRef.get();
       if (docSnap.exists) {
-        const rawList = docSnap.data()?.keys || [];
+        let rawList = docSnap.data()?.keys || [];
+
+        // Migrate legacy plaintext records only after the dedicated encryption key is configured.
+        if (hasApiKeyEncryptionKey() && rawList.some((item: any) => typeof item.key === 'string')) {
+          rawList = await db.runTransaction(async transaction => {
+            const freshSnap = await transaction.get(poolRef);
+            const freshList: any[] = freshSnap.data()?.keys || [];
+            const migrated = freshList.map(migratePoolEntry);
+            transaction.set(poolRef, { keys: migrated }, { merge: true });
+            return migrated;
+          });
+        }
+
         rawList.forEach((item: any, idx: number) => {
-          if (!item.key) return;
-          const keyStr = String(item.key).trim();
+          const storedSecret = readStoredKey(item);
+          if (!storedSecret) return;
+          const keyStr = storedSecret.trim();
           // Avoid duplicate of environment key
           if (loadedKeys.some(k => k.key === keyStr)) return;
 
@@ -121,7 +154,7 @@ class ApiKeyManager {
         });
       }
     } catch (err) {
-      console.warn('[ApiKeyManager] Could not read Firestore pool (using environment key if available):', (err as Error).message);
+      console.error('[ApiKeyManager] Could not read or decrypt the managed key pool. Check its encryption key and Firestore access.');
     }
 
     this.cache = loadedKeys;
@@ -172,32 +205,45 @@ class ApiKeyManager {
    * Adds a new API key to the secure pool
    */
   async addKey(rawKey: string, label: string, actor?: { uid: string; role?: string; email?: string }): Promise<MaskedApiKeyView[]> {
+    requireEncryptionForPoolWrites();
+    if (typeof rawKey !== 'string' || rawKey.length > 512) {
+      throw new Error('Gemini API key must be a valid string up to 512 characters.');
+    }
+    if (typeof label !== 'string' || label.length > 100) {
+      throw new Error('API key label must be 100 characters or fewer.');
+    }
     const trimmed = rawKey.trim();
     if (!trimmed || trimmed.length < 10) {
       throw new Error('Valid Gemini API key required (minimum 10 characters).');
     }
 
+    const id = `key_${crypto.randomUUID()}`;
+    let persistedLabel = label.trim();
+    const encryptedKey = encryptApiKey(trimmed);
     const docRef = db.collection('admin').doc('apiPool');
-    const docSnap = await docRef.get();
-    const currentList: any[] = (docSnap.exists ? docSnap.data()?.keys || [] : []);
-
-    const newKeyRecord = {
-      id: `key_${Date.now()}_${trimmed.slice(-4)}`,
-      provider: 'Gemini',
-      label: label.trim() || `Gemini Key #${currentList.length + 1}`,
-      key: trimmed,
-      status: 'healthy',
-      enabled: true,
-      addedAt: new Date().toISOString(),
-      errorCount: 0,
-      consecutiveFailures: 0,
-    };
-
-    currentList.push(newKeyRecord);
-    await docRef.set({ keys: currentList }, { merge: true });
+    await db.runTransaction(async transaction => {
+      const snap = await transaction.get(docRef);
+      const currentList: any[] = (snap.exists ? snap.data()?.keys || [] : []);
+      if (currentList.some(item => readStoredKey(item).trim() === trimmed)) {
+        throw new Error('This API key is already in the managed pool.');
+      }
+      const encryptedList = currentList.map(migratePoolEntry);
+      persistedLabel ||= `Gemini Key #${currentList.length + 1}`;
+      transaction.set(docRef, { keys: [...encryptedList, {
+        id,
+        provider: 'Gemini',
+        label: persistedLabel,
+        encryptedKey,
+        status: 'healthy',
+        enabled: true,
+        addedAt: new Date().toISOString(),
+        errorCount: 0,
+        consecutiveFailures: 0,
+      }] }, { merge: true });
+    });
 
     this.invalidateCache();
-    logSecurityEvent('API_KEY_ADDED', actor || { uid: 'SYSTEM' }, { id: newKeyRecord.id, label: newKeyRecord.label });
+    logSecurityEvent('API_KEY_ADDED', actor || { uid: 'SYSTEM' }, { id, label: persistedLabel });
 
     return this.listMaskedKeys();
   }
@@ -206,22 +252,22 @@ class ApiKeyManager {
    * Deletes an API key from the pool
    */
   async deleteKey(keyId: string, actor?: { uid: string; role?: string; email?: string }): Promise<MaskedApiKeyView[]> {
+    requireEncryptionForPoolWrites();
     if (keyId === 'env_primary_gemini') {
       throw new Error('Cannot delete environment-configured API key via dashboard.');
     }
 
     const docRef = db.collection('admin').doc('apiPool');
-    const docSnap = await docRef.get();
-    let currentList: any[] = (docSnap.exists ? docSnap.data()?.keys || [] : []);
-
-    currentList = currentList.filter((item, idx) => {
-      const explicitId = item.id;
-      const idWithIdx = `key_${idx}_${item.key?.slice(-4)}`;
-      const idWithoutIdx = `key_${item.key?.slice(-4)}`;
-      return explicitId !== keyId && idWithIdx !== keyId && idWithoutIdx !== keyId && item.key !== keyId;
+    await db.runTransaction(async transaction => {
+      const snap = await transaction.get(docRef);
+      const currentList: any[] = (snap.exists ? snap.data()?.keys || [] : []);
+      const encryptedList = currentList.map(migratePoolEntry);
+      const filtered = encryptedList.filter((item, idx) => {
+        const storedKey = readStoredKey(item);
+        return item.id !== keyId && `key_${idx}_${storedKey.slice(-4)}` !== keyId && `key_${storedKey.slice(-4)}` !== keyId;
+      });
+      transaction.set(docRef, { keys: filtered }, { merge: true });
     });
-
-    await docRef.set({ keys: currentList }, { merge: true });
     this.invalidateCache();
 
     return this.listMaskedKeys();
@@ -231,23 +277,25 @@ class ApiKeyManager {
    * Toggles enable/disable status for an API key
    */
   async toggleKey(keyId: string, enabled: boolean, actor?: { uid: string; role?: string; email?: string }): Promise<MaskedApiKeyView[]> {
+    requireEncryptionForPoolWrites();
     const docRef = db.collection('admin').doc('apiPool');
-    const docSnap = await docRef.get();
-    const currentList: any[] = (docSnap.exists ? docSnap.data()?.keys || [] : []);
-
-    const found = currentList.find((item, idx) => {
-      const explicitId = item.id;
-      const idWithIdx = `key_${idx}_${item.key?.slice(-4)}`;
-      const idWithoutIdx = `key_${item.key?.slice(-4)}`;
-      return explicitId === keyId || idWithIdx === keyId || idWithoutIdx === keyId || item.key === keyId;
+    const found = await db.runTransaction(async transaction => {
+      const snap = await transaction.get(docRef);
+      const currentList: any[] = (snap.exists ? snap.data()?.keys || [] : []);
+      const encryptedList = currentList.map(migratePoolEntry);
+      const selected = encryptedList.find((item, idx) => {
+        const storedKey = readStoredKey(item);
+        return item.id === keyId || `key_${idx}_${storedKey.slice(-4)}` === keyId || `key_${storedKey.slice(-4)}` === keyId;
+      });
+      if (!selected) return false;
+      selected.enabled = enabled;
+      selected.status = enabled ? 'healthy' : 'disabled';
+      transaction.set(docRef, { keys: encryptedList }, { merge: true });
+      return true;
     });
 
     if (found) {
-      found.enabled = enabled;
-      found.status = enabled ? 'healthy' : 'disabled';
-      await docRef.set({ keys: currentList }, { merge: true });
       this.invalidateCache();
-
       logSecurityEvent(enabled ? 'API_KEY_ENABLED' : 'API_KEY_DISABLED', actor || { uid: 'SYSTEM' }, { keyId });
     }
 

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { useRouter, usePathname } from 'next/navigation';
 import { toast } from 'sonner';
@@ -37,26 +37,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(currentUser);
       
       if (currentUser) {
-        const userEmail = (currentUser.email || '').toLowerCase().trim();
-        const isSuperAdmin = userEmail === 'mahesh.gupta8952@gmail.com' || userEmail === 'dixitshubham68359@gmail.com';
-        let resolvedRole = isSuperAdmin ? 'SUPER_ADMIN' : 'USER';
-        setRole(resolvedRole);
-        localStorage.setItem('kaktus_user_role', resolvedRole);
+        setRole('USER');
+        localStorage.setItem('kaktus_user_role', 'USER');
 
         currentUser.getIdTokenResult(true).then(tokenResult => {
           let claimsRole = tokenResult.claims?.role as string | undefined;
           let claimsMode = tokenResult.claims?.testQuotaMode as string | undefined;
-          
-          if (claimsRole) {
-            setRole(claimsRole);
-            localStorage.setItem('kaktus_user_role', claimsRole);
-          } else if (isSuperAdmin) {
-            setRole('SUPER_ADMIN');
-            localStorage.setItem('kaktus_user_role', 'SUPER_ADMIN');
-          }
+
+          setRole(claimsRole || 'USER');
+          localStorage.setItem('kaktus_user_role', claimsRole || 'USER');
           if (claimsMode) {
             setTestQuotaMode(claimsMode);
             localStorage.setItem('kaktus_user_test_quota_mode', claimsMode);
+          } else {
+            setTestQuotaMode(null);
+            localStorage.removeItem('kaktus_user_test_quota_mode');
           }
         }).catch(err => {
           console.error("Token role fetch error", err);
@@ -68,25 +63,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             let p = docData?.plan || 'free';
             let expires: Date | null = null;
 
-            if (docData?.role) {
-              setRole(docData.role);
-              localStorage.setItem('kaktus_user_role', docData.role);
-            }
-            if (docData?.testQuotaMode) {
-              setTestQuotaMode(docData.testQuotaMode);
-              localStorage.setItem('kaktus_user_test_quota_mode', docData.testQuotaMode);
-            }
-            
             if (docData?.planExpiresAt) {
               const expiresAt = docData.planExpiresAt.toDate ? docData.planExpiresAt.toDate() : new Date(docData.planExpiresAt);
               if (new Date() > expiresAt) {
                 p = 'free';
-                // Only update if it wasn't already free to prevent infinite loops
-                if (docData.plan !== 'free') {
-                   import('firebase/firestore').then(({ updateDoc }) => {
-                     updateDoc(doc(db, 'users', currentUser.uid), { plan: 'free' }).catch(console.error);
-                   });
-                }
               } else {
                 expires = expiresAt;
               }
@@ -149,9 +129,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('kaktus_user_plan', 'free');
         localStorage.removeItem('kaktus_user_plan_expires_at');
         toast.info('Your plan validity period has ended. Reverted to Free tier.');
-        import('firebase/firestore').then(({ doc, updateDoc }) => {
-          updateDoc(doc(db, 'users', user.uid), { plan: 'free', planExpiresAt: null }).catch(console.error);
-        });
       }
     }, 2000);
     return () => clearInterval(interval);
@@ -174,14 +151,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Auto-downgrade when period ends
         if (diffSeconds <= 0) {
           clearInterval(interval);
-          import('firebase/firestore').then(async ({ updateDoc, doc }) => {
-            await updateDoc(doc(db, 'users', user.uid), { plan: 'free', planExpiresAt: null }).catch(console.error);
-            setPlan('free');
-            setPlanExpiresAt(null);
-            localStorage.setItem('kaktus_user_plan', 'free');
-            localStorage.removeItem('kaktus_user_plan_expires_at');
-            toast.error('Your subscription period has ended. Returned to Free plan.', { duration: 8000 });
-          });
+          setPlan('free');
+          setPlanExpiresAt(null);
+          localStorage.setItem('kaktus_user_plan', 'free');
+          localStorage.removeItem('kaktus_user_plan_expires_at');
+          toast.error('Your subscription period has ended. Returned to Free plan.', { duration: 8000 });
           return;
         }
 
@@ -203,20 +177,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (lastResetKey !== todayKey) {
         localStorage.setItem(`lastTokenMidnightReset_${user.uid}`, todayKey);
         
-        let maxRuns = 5;
-        if (plan === 'starter') maxRuns = 10;
-        if (plan === 'booster') maxRuns = 20;
-        if (plan === 'pro') maxRuns = 50;
-
-        import('firebase/firestore').then(async ({ updateDoc, doc }) => {
-          await updateDoc(doc(db, 'users', user.uid), { proRuns: maxRuns }).catch(() => {});
-          
-          window.dispatchEvent(new CustomEvent('geminiUsageUpdated', { detail: { resetDate: todayKey } }));
-          
-          toast.success(`Daily Quota Renewed (12:00 AM Reset): Your tokens and runs have been refreshed.`, {
-            duration: 6000,
-            position: 'bottom-right'
-          });
+        window.dispatchEvent(new CustomEvent('geminiUsageUpdated', { detail: { resetDate: todayKey } }));
+        toast.success(`Daily Quota Renewed (12:00 AM Reset): Your tokens and runs have been refreshed.`, {
+          duration: 6000,
+          position: 'bottom-right'
         });
       }
     }, 1000);

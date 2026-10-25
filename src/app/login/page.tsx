@@ -17,9 +17,7 @@ function LoginContent() {
     setError(null);
     try {
       const user = await signInWithGoogle();
-      const userEmail = (user?.email || '').toLowerCase().trim();
-      const isSuperAdmin = userEmail === 'mahesh.gupta8952@gmail.com' || userEmail === 'dixitshubham68359@gmail.com';
-      let role = isSuperAdmin ? 'SUPER_ADMIN' : 'USER';
+      let role = 'USER';
       
       try {
         const tokenResult = await user?.getIdTokenResult(true);
@@ -34,8 +32,18 @@ function LoginContent() {
       if (typeof window !== 'undefined' && window.location.hash === '#pricing') {
         redirectTo = '/#pricing';
       }
+      if (redirectTo && typeof window !== 'undefined') {
+        try {
+          const safeRedirect = new URL(redirectTo, window.location.origin);
+          redirectTo = safeRedirect.origin === window.location.origin
+            ? `${safeRedirect.pathname}${safeRedirect.search}${safeRedirect.hash}`
+            : null;
+        } catch {
+          redirectTo = null;
+        }
+      }
       if (!redirectTo || redirectTo === '/') {
-        if (role === 'ADMIN' || role === 'SUPER_ADMIN' || isSuperAdmin) {
+        if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
           redirectTo = '/admin';
         } else {
           redirectTo = '/ide';

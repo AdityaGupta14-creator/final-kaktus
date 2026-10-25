@@ -8,6 +8,9 @@ import { logSecurityEvent } from '@/lib/server/security-logger';
 export async function POST(req: Request) {
   try {
     const rawBody = await req.text();
+    if (Buffer.byteLength(rawBody, 'utf8') > 256_000) {
+      return NextResponse.json({ error: 'Webhook body is too large.' }, { status: 413 });
+    }
     const signature = req.headers.get('x-webhook-signature');
     const timestamp = req.headers.get('x-webhook-timestamp');
 
@@ -15,10 +18,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing webhook headers' }, { status: 400 });
     }
 
-    const secret = process.env.CASHFREE_SECRET_KEY || '';
+    const secret = process.env.CASHFREE_WEBHOOK_SECRET || process.env.CASHFREE_SECRET_KEY;
+    if (!secret) {
+      console.error('[Webhook] CASHFREE_WEBHOOK_SECRET is not configured.');
+      return NextResponse.json({ error: 'Webhook is not configured.' }, { status: 503 });
+    }
     const generatedSignature = crypto.createHmac('sha256', secret).update(timestamp + rawBody).digest('base64');
-
-    if (generatedSignature !== signature) {
+    const signatureBytes = Buffer.from(signature);
+    const expectedBytes = Buffer.from(generatedSignature);
+    if (signatureBytes.length !== expectedBytes.length || !crypto.timingSafeEqual(signatureBytes, expectedBytes)) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 

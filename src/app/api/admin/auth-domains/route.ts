@@ -2,6 +2,7 @@ export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 import { firebaseAdminApp } from '@/lib/server/firebase-admin';
+import { requireAdmin, handleAuthError } from '@/lib/server/auth';
 
 const REQUIRED_DOMAINS = [
   'localhost',
@@ -13,16 +14,12 @@ const REQUIRED_DOMAINS = [
 
 async function handleAuthorizeDomains(request: Request) {
   try {
-    const url = new URL(request.url);
-    const secret = url.searchParams.get('secret') || request.headers.get('x-admin-secret');
-    const validSecret = process.env.SMS_WEBHOOK_SECRET || 'kaktus-auth-sync-2026';
+    await requireAdmin(request);
 
-    // Allow call if valid secret is provided or if in development
-    if (secret !== validSecret && secret !== 'kaktus-auth-sync-2026') {
-      return NextResponse.json({ error: 'Unauthorized: missing or invalid secret' }, { status: 401 });
+    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    if (!projectId) {
+      return NextResponse.json({ error: 'Firebase project is not configured.' }, { status: 503 });
     }
-
-    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'otpdemo-291bd';
     const cred = firebaseAdminApp?.options?.credential as any;
 
     if (!cred || typeof cred.getAccessToken !== 'function') {
@@ -58,11 +55,10 @@ async function handleAuthorizeDomains(request: Request) {
     );
 
     if (!getConfigRes.ok) {
-      const errText = await getConfigRes.text();
       return NextResponse.json({
         success: false,
         status: getConfigRes.status,
-        error: errText,
+        error: `Firebase rejected the authorized-domain request (HTTP ${getConfigRes.status}).`,
         manualStepNeeded: true,
         consoleUrl: `https://console.firebase.google.com/project/${projectId}/authentication/settings`,
         instructions: 'Please open Firebase Console -> Authentication -> Settings -> Authorized Domains -> Add "final-kaktus.vercel.app"',
@@ -106,11 +102,10 @@ async function handleAuthorizeDomains(request: Request) {
     );
 
     if (!patchRes.ok) {
-      const errText = await patchRes.text();
       return NextResponse.json({
         success: false,
         status: patchRes.status,
-        error: errText,
+        error: `Firebase rejected the authorized-domain update (HTTP ${patchRes.status}).`,
         manualStepNeeded: true,
         consoleUrl: `https://console.firebase.google.com/project/${projectId}/authentication/settings`,
       }, { status: patchRes.status });
@@ -122,11 +117,8 @@ async function handleAuthorizeDomains(request: Request) {
       message: 'Successfully authorized domains in Firebase Authentication!',
       authorizedDomains: patchedConfig.authorizedDomains || updatedDomains,
     });
-  } catch (err: any) {
-    return NextResponse.json({
-      success: false,
-      error: err.message || String(err),
-    }, { status: 500 });
+  } catch (err) {
+    return handleAuthError(err);
   }
 }
 

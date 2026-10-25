@@ -5,6 +5,8 @@ import { extractBearerToken } from '@/lib/server/auth';
 import { verifyUserToken } from '@/lib/server/firebase-admin';
 import { recordApiUsage } from '@/lib/server/usage-meter';
 import { classifyProviderError } from '@/lib/server/api-key-manager';
+import { checkSharedRateLimit, rateLimitExceededResponse } from '@/lib/server/rate-limiter';
+import { checkAndConsumeEntitlement, rollbackEntitlement } from '@/lib/server/usage-meter';
 
 const MAX_BODY_BYTES = 1_500_000;
 const MODEL_PATTERN = /^(?:models\/)?gemini-[a-zA-Z0-9._-]+$/;
@@ -46,14 +48,20 @@ export async function POST(request: Request) {
   const startTime = Date.now();
   let callerUid: string | null = null;
   const token = extractBearerToken(request);
-  if (token) {
-    try {
-      const user = await verifyUserToken(token);
-      if (user) callerUid = user.uid;
-    } catch {
-      // Proceed anonymously if token fails verification
-    }
+  if (!token) {
+    return Response.json({ error: 'Sign in to use the agent.', code: 'AUTH_REQUIRED' }, { status: 401 });
   }
+  try {
+    const user = await verifyUserToken(token);
+    if (!user) return Response.json({ error: 'Your session expired. Sign in again.', code: 'INVALID_TOKEN' }, { status: 401 });
+    callerUid = user.uid;
+  } catch {
+    return Response.json({ error: 'Your session could not be verified. Sign in again.', code: 'INVALID_TOKEN' }, { status: 401 });
+  }
+  if (!callerUid) return Response.json({ error: 'Sign in to use the agent.', code: 'AUTH_REQUIRED' }, { status: 401 });
+
+  const limit = await checkSharedRateLimit(callerUid, 'agent');
+  if (!limit.allowed) return rateLimitExceededResponse(limit);
 
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_BODY_BYTES) {
@@ -62,7 +70,11 @@ export async function POST(request: Request) {
 
   let body: Record<string, unknown>;
   try {
-    const parsed: unknown = await request.json();
+    const rawBody = await request.text();
+    if (Buffer.byteLength(rawBody, 'utf8') > MAX_BODY_BYTES) {
+      return Response.json({ error: 'Request is too large.' }, { status: 413 });
+    }
+    const parsed: unknown = JSON.parse(rawBody);
     if (!isRecord(parsed)) return Response.json({ error: 'Request body must be an object.' }, { status: 400 });
     body = parsed;
   } catch {
@@ -123,6 +135,17 @@ export async function POST(request: Request) {
   }
 
   const rawModel = (typeof body.model === 'string' ? body.model : '').replace(/^models\//, '').toLowerCase();
+  const isProModel = (model: string) => /(^|[-/])pro(?:[-/]|$)/.test(model.toLowerCase())
+    || ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.8-flash']
+      .some(proModel => model.toLowerCase().includes(proModel));
+  const entitlement = await checkAndConsumeEntitlement(callerUid, rawModel);
+  if (!entitlement.allowed) {
+    return Response.json({
+      error: entitlement.reason || 'This model is not available on the current plan.',
+      code: 'APP_QUOTA_EXCEEDED',
+    }, { status: 403 });
+  }
+
   const requestedModel = 'models/' + rawModel;
   let fallbackModel = 'models/gemini-2.0-flash';
   if (rawModel.includes('flash-lite') || rawModel.includes('lite')) {
@@ -140,7 +163,8 @@ export async function POST(request: Request) {
     'models/gemini-2.0-flash',
     'models/gemini-2.0-flash-lite',
   ];
-  const uniqueCandidateModels = Array.from(new Set(candidateModels));
+  const uniqueCandidateModels = Array.from(new Set(candidateModels))
+    .filter(model => isProModel(rawModel) || !isProModel(model));
 
   let lastQuotaError: { message: string; status: number; code: AgentGatewayErrorCode } | null = null;
   let lastAuthError: { message: string; status: number } | null = null;
@@ -262,6 +286,8 @@ export async function POST(request: Request) {
       }
     }
   }
+
+  if (entitlement.decremented) await rollbackEntitlement(callerUid);
 
   // Prioritize returning quota error if all keys were exhausted so UI can trigger plan upgrade
   const finalError = lastQuotaError || lastGeneralError || lastAuthError;

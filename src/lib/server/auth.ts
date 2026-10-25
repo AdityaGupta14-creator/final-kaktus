@@ -13,6 +13,14 @@ export class AuthError extends Error {
   }
 }
 
+function enforceAdminMfaIfConfigured(user: AuthenticatedUser): void {
+  if (process.env.ADMIN_REQUIRE_MFA !== 'true' || !hasAdminRole(user.role)) return;
+  const firebaseClaims = user.claims.firebase as Record<string, unknown> | undefined;
+  if (typeof firebaseClaims?.sign_in_second_factor !== 'string' || !firebaseClaims.sign_in_second_factor) {
+    throw new AuthError('Administrator accounts must sign in with an enrolled MFA factor.', 403, 'ADMIN_MFA_REQUIRED');
+  }
+}
+
 /**
  * Extracts the Bearer token from the incoming Request Authorization header
  */
@@ -29,13 +37,13 @@ export function extractBearerToken(request: Request): string | null {
 /**
  * Ensures the caller is authenticated with a valid Firebase ID token
  */
-export async function requireAuthenticatedUser(request: Request): Promise<AuthenticatedUser> {
+export async function requireAuthenticatedUser(request: Request, checkRevoked = false): Promise<AuthenticatedUser> {
   const token = extractBearerToken(request);
   if (!token) {
     throw new AuthError('Authentication required. Missing Bearer token.', 401, 'MISSING_TOKEN');
   }
 
-  const user = await verifyUserToken(token);
+  const user = await verifyUserToken(token, checkRevoked);
   if (!user) {
     throw new AuthError('Invalid or expired authentication token.', 401, 'INVALID_TOKEN');
   }
@@ -47,7 +55,9 @@ export async function requireAuthenticatedUser(request: Request): Promise<Authen
  * Requires the authenticated user to possess one of the allowed roles
  */
 export async function requireRole(request: Request, allowedRoles: readonly UserRole[]): Promise<AuthenticatedUser> {
-  const user = await requireAuthenticatedUser(request);
+  const shouldCheckRevocation = allowedRoles.some(role => hasAdminRole(role));
+  const user = await requireAuthenticatedUser(request, shouldCheckRevocation);
+  enforceAdminMfaIfConfigured(user);
   if (!allowedRoles.includes(user.role)) {
     throw new AuthError(
       `Forbidden. Role '${user.role}' lacks permission for this action. Required: ${allowedRoles.join(', ')}`,
@@ -62,7 +72,8 @@ export async function requireRole(request: Request, allowedRoles: readonly UserR
  * Requires the user to have either ADMIN or SUPER_ADMIN role
  */
 export async function requireAdmin(request: Request): Promise<AuthenticatedUser> {
-  const user = await requireAuthenticatedUser(request);
+  const user = await requireAuthenticatedUser(request, true);
+  enforceAdminMfaIfConfigured(user);
   if (!hasAdminRole(user.role)) {
     throw new AuthError('Forbidden. Administrative privileges required.', 403, 'ADMIN_REQUIRED');
   }

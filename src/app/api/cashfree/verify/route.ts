@@ -1,43 +1,67 @@
-import { NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 
-export async function POST(req: Request) {
+import { requireAuthenticatedUser, handleAuthError } from '@/lib/server/auth';
+import { db } from '@/lib/server/firebase-admin';
+import { checkSharedRateLimit, rateLimitExceededResponse } from '@/lib/server/rate-limiter';
+
+const ORDER_ID_PATTERN = /^[A-Za-z0-9_-]{1,45}$/;
+
+export async function POST(request: Request) {
   try {
-    const { orderId } = await req.json();
-
-    if (!orderId) {
-      return NextResponse.json({ error: 'Missing orderId' }, { status: 400 });
+    const user = await requireAuthenticatedUser(request);
+    const limit = await checkSharedRateLimit(user.uid, 'cashfree-verify-order', 20, 60);
+    if (!limit.allowed) return rateLimitExceededResponse(limit);
+    const body = await request.json().catch(() => null);
+    const orderId = typeof body?.orderId === 'string' ? body.orderId : '';
+    if (!ORDER_ID_PATTERN.test(orderId)) {
+      return Response.json({ error: 'A valid order ID is required.' }, { status: 400 });
     }
-    
+
+    const paymentSnap = await db.collection('payments').doc(orderId).get();
+    if (!paymentSnap.exists) return Response.json({ error: 'Payment order not found.' }, { status: 404 });
+    const payment = paymentSnap.data();
+    if (payment?.uid !== user.uid) return Response.json({ error: 'Payment order not found.' }, { status: 404 });
+
+    if (payment.status === 'approved') {
+      return Response.json({ status: 'PAID', plan: payment.planId }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    const appId = process.env.CASHFREE_APP_ID;
+    const appSecret = process.env.CASHFREE_SECRET_KEY;
+    if (!appId || !appSecret) {
+      return Response.json({ error: 'Payment verification is not configured.' }, { status: 503 });
+    }
     const isProd = process.env.CASHFREE_ENV === 'PRODUCTION';
-    const endpoint = isProd 
-      ? `https://api.cashfree.com/pg/orders/${orderId}` 
-      : `https://sandbox.cashfree.com/pg/orders/${orderId}`;
-
-    const response = await fetch(endpoint, {
-      method: 'GET',
+    const baseUrl = isProd ? 'https://api.cashfree.com/pg/orders' : 'https://sandbox.cashfree.com/pg/orders';
+    const response = await fetch(`${baseUrl}/${encodeURIComponent(orderId)}`, {
       headers: {
-        'x-client-id': process.env.CASHFREE_APP_ID || '',
-        'x-client-secret': process.env.CASHFREE_SECRET_KEY || '',
+        'x-client-id': appId,
+        'x-client-secret': appSecret,
         'x-api-version': '2023-08-01',
-      }
+      },
+      signal: AbortSignal.timeout(12_000),
     });
-
-    const data = await response.json();
-    
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.error('Cashfree Verify Order Error:', data);
-      throw new Error(data.message || 'Failed to verify Cashfree order');
+      console.error('[Cashfree] Verify order rejected:', response.status);
+      return Response.json({ error: 'Payment provider could not verify this order.' }, { status: 502 });
     }
 
-    // data.order_status will be "PAID" if payment was successful
-    return NextResponse.json({
-      status: data.order_status,
-      amount: data.order_amount,
-      currency: data.order_currency,
-      customer_id: data.customer_details?.customer_id
+    const ownerMatches = data.customer_details?.customer_id === user.uid;
+    const orderMatches = data.order_id === orderId
+      && Number(data.order_amount) === Number(payment.amount)
+      && data.order_currency === payment.currency;
+    if (!ownerMatches || !orderMatches) {
+      console.warn('[Cashfree] Order verification mismatch:', orderId);
+      return Response.json({ error: 'Payment verification details did not match this account.' }, { status: 409 });
+    }
+
+    return Response.json({ status: data.order_status, plan: payment.planId }, {
+      headers: { 'Cache-Control': 'no-store' },
     });
-  } catch (error: any) {
-    console.error("Cashfree Verify API Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    if (error && typeof error === 'object' && 'status' in error) return handleAuthError(error);
+    console.error('[Cashfree] Verify order failed:', error instanceof Error ? error.name : 'Unknown error');
+    return Response.json({ error: 'Could not verify payment. Try again shortly.' }, { status: 500 });
   }
 }

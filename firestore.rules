@@ -19,19 +19,34 @@ service cloud.firestore {
       );
     }
 
+    function hasSafeInitialEntitlements() {
+      return (!request.resource.data.keys().hasAny(['plan']) || request.resource.data.plan == 'free') &&
+        (!request.resource.data.keys().hasAny(['proRuns']) || request.resource.data.proRuns == 0);
+    }
+
+    function hasNoServerControlledUserChanges() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'plan', 'planExpiresAt', 'planUpdatedAt', 'proRuns', 'role', 'admin',
+        'roleUpdatedAt', 'testQuotaMode', 'testQuotaModeUpdatedAt', 'status',
+        'accountStatus', 'subscription', 'isSuspended', 'suspendedAt'
+      ]);
+    }
+
     // ── Users Collection ──
     match /users/{userId} {
       // User can read their own profile, admin can read any
       allow read: if isOwner(userId) || isAdmin();
       
       // User can create initial profile document on login
-      allow create: if isOwner(userId) && 
-        (!request.resource.data.keys().hasAny(['plan', 'proRuns', 'role', 'admin']) ||
-         (request.resource.data.plan == 'free' && request.resource.data.proRuns == 0));
+      allow create: if isOwner(userId) &&
+        !request.resource.data.keys().hasAny([
+          'role', 'admin', 'planExpiresAt', 'planUpdatedAt', 'roleUpdatedAt',
+          'testQuotaMode', 'testQuotaModeUpdatedAt', 'status', 'accountStatus',
+          'subscription', 'isSuspended', 'suspendedAt'
+        ]) && hasSafeInitialEntitlements();
       
       // User can update basic profile data, but CANNOT touch plan, proRuns, role, or admin
-      allow update: if (isOwner(userId) && 
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan', 'proRuns', 'role', 'admin']))
+      allow update: if (isOwner(userId) && hasNoServerControlledUserChanges())
         || isAdmin();
 
       // Deletions reserved for admins
@@ -61,7 +76,14 @@ service cloud.firestore {
       // Authenticated user can submit payment verification with pending status
       allow create: if isAuthenticated() && 
         request.resource.data.uid == request.auth.uid && 
-        request.resource.data.status == 'pending';
+        request.resource.data.status == 'pending' &&
+        request.resource.data.keys().hasOnly([
+          'id', 'uid', 'email', 'planId', 'txnId', 'status', 'createdAt'
+        ]) &&
+        request.resource.data.planId in ['starter', 'booster', 'pro'] &&
+        request.resource.data.txnId is string &&
+        request.resource.data.txnId.size() >= 6 &&
+        request.resource.data.txnId.size() <= 120;
       
       // Approvals, rejections, status modifications forbidden from client (admin server SDK only)
       allow update, delete: if isAdmin();

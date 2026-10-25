@@ -3,6 +3,7 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { auth } from '@/lib/firebase';
 import '@xterm/xterm/css/xterm.css';
 
 export type TerminalConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'unavailable';
@@ -33,18 +34,19 @@ interface PendingCommand extends TerminalCommandResult {
 }
 
 type LoopbackWebSocketConstructor = typeof WebSocket & {
-  new (url: string, options: { targetAddressSpace: 'loopback' }): WebSocket;
+  new (url: string, protocols: string[], options: { targetAddressSpace: 'loopback' }): WebSocket;
 };
 
-function connectToLoopbackTerminal(url: string, remoteSecurePage: boolean): WebSocket {
+function connectToLoopbackTerminal(url: string, idToken: string, remoteSecurePage: boolean): WebSocket {
+  const protocols = ['kaktus-terminal.v1', `kaktus-auth.${idToken}`];
   if (remoteSecurePage) {
     try {
-      return new (WebSocket as LoopbackWebSocketConstructor)(url, { targetAddressSpace: 'loopback' });
+      return new (WebSocket as LoopbackWebSocketConstructor)(url, protocols, { targetAddressSpace: 'loopback' });
     } catch {
       // Older browsers do not recognize the Local Network Access WebSocket option.
     }
   }
-  return new WebSocket(url);
+  return new WebSocket(url, protocols);
 }
 
 export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange }, ref) => {
@@ -182,19 +184,32 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
       }
       pendingCommandsRef.current.clear();
     };
-    const connect = () => {
+    const connect = async () => {
       if (disposed) return;
       statusCallbackRef.current?.(hasConnected ? 'disconnected' : 'connecting');
       let ws: WebSocket;
       try {
-        ws = connectToLoopbackTerminal(wsUrl, isRemoteSecurePage);
+        const currentUser = auth.currentUser;
+        if (!currentUser) {
+          availabilityRef.current = 'unavailable';
+          statusCallbackRef.current?.('unavailable');
+          if (!hasReportedUnavailable) {
+            term.writeln('\r\nSign in to use the local terminal.');
+            hasReportedUnavailable = true;
+          }
+          reconnectTimer = window.setTimeout(() => { void connect(); }, 5000);
+          return;
+        }
+        const idToken = await currentUser.getIdToken();
+        if (disposed) return;
+        ws = connectToLoopbackTerminal(wsUrl, idToken, isRemoteSecurePage);
       } catch (error) {
         statusCallbackRef.current?.(hasConnected ? 'disconnected' : 'unavailable');
         if (!hasConnected && !hasReportedUnavailable) {
           term.writeln(`\r\nLocal terminal service unavailable. ${connectionHint}`);
           hasReportedUnavailable = true;
         }
-        reconnectTimer = window.setTimeout(connect, 2500);
+        reconnectTimer = window.setTimeout(() => { void connect(); }, 5000);
         return;
       }
       wsRef.current = ws;
@@ -285,10 +300,10 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
           term.writeln(`\r\nLocal terminal service unavailable. ${connectionHint}`);
           hasReportedUnavailable = true;
         }
-        reconnectTimer = window.setTimeout(connect, 2500);
+        reconnectTimer = window.setTimeout(() => { void connect(); }, 2500);
       };
     };
-    connect();
+    void connect();
 
     term.onData((data) => {
       const ws = wsRef.current;

@@ -109,12 +109,6 @@ export function getBootstrapSuperAdminEmails(): string[] {
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
 
-  const defaults = ['mahesh.gupta8952@gmail.com', 'dixitshubham68359@gmail.com'];
-  for (const email of defaults) {
-    if (!emails.includes(email)) {
-      emails.push(email);
-    }
-  }
   return emails;
 }
 
@@ -182,9 +176,9 @@ export function resolveUserRole(decoded: DecodedIdToken | Record<string, any> | 
 /**
  * Verifies a client Firebase ID token and resolves user identity and role
  */
-export async function verifyUserToken(token: string): Promise<AuthenticatedUser | null> {
+export async function verifyUserToken(token: string, checkRevoked = false): Promise<AuthenticatedUser | null> {
   try {
-    const decoded = await auth.verifyIdToken(token);
+    const decoded = await auth.verifyIdToken(token, checkRevoked);
     const role = resolveUserRole(decoded);
     let testQuotaMode: TestQuotaMode | undefined;
 
@@ -202,7 +196,7 @@ export async function verifyUserToken(token: string): Promise<AuthenticatedUser 
       claims: decoded as unknown as Record<string, unknown>,
     };
   } catch (error) {
-    console.error('[FirebaseAdmin] Token verification failed:', error);
+    console.warn('[FirebaseAdmin] Token verification failed:', (error as { code?: string })?.code || 'INVALID_TOKEN');
     return null;
   }
 }
@@ -237,6 +231,7 @@ export async function setUserRole(uid: string, role: UserRole, testQuotaMode?: T
   }
 
   await auth.setCustomUserClaims(uid, newClaims);
+  await auth.revokeRefreshTokens(uid);
 
   // Mirror to Firestore user doc for read-only UI display (not used for authorization)
   try {

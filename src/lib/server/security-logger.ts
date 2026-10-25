@@ -39,6 +39,7 @@ export interface SecurityLogEvent {
 }
 
 import { db } from './firebase-admin';
+import crypto from 'crypto';
 
 // We no longer rely on an in-memory log buffer.
 // We use Firestore `audit_logs` collection for durable persistence.
@@ -101,7 +102,7 @@ export async function logSecurityEvent(
 ): Promise<void> {
   const sanitized = sanitizeDetails(details);
   const event: SecurityLogEvent = {
-    id: `sec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    id: `sec_${Date.now()}_${crypto.randomUUID()}`,
     type,
     timestamp: new Date().toISOString(),
     actor,

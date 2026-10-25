@@ -3,10 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { doc, setDoc, updateDoc, serverTimestamp, collection } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
-import { PaymentTransaction, approvePayment } from '@/lib/payments';
 
 export default function VerifyPaymentPage() {
   const router = useRouter();
@@ -26,9 +23,8 @@ export default function VerifyPaymentPage() {
 
     const verifyOrder = async () => {
       const orderId = searchParams.get('order_id');
-      const planId = searchParams.get('plan_id');
 
-      if (!orderId || !planId) {
+      if (!orderId) {
         setStatus('failed');
         setErrorMsg('Invalid payment return data.');
         return;
@@ -37,39 +33,16 @@ export default function VerifyPaymentPage() {
       try {
         const response = await fetch('/api/cashfree/verify', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${await user.getIdToken()}`,
+          },
           body: JSON.stringify({ orderId }),
         });
 
         const data = await response.json();
 
         if (data.status === 'PAID') {
-          // Success! Approve the payment manually here or just save it
-          const pId = doc(collection(db, 'payments')).id;
-          const txn: PaymentTransaction = {
-            id: pId,
-            uid: user.uid,
-            email: user.email,
-            planId: planId,
-            txnId: orderId, // Using Cashfree order ID as our txn ID
-            status: 'approved',
-            createdAt: serverTimestamp()
-          };
-          
-          const durationDays = planId === 'pro' ? 30 : planId === 'booster' ? 14 : 7;
-          const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
-          await setDoc(doc(db, 'payments', pId), txn);
-          await setDoc(doc(db, 'users', user.uid), {
-            plan: planId,
-            planExpiresAt: expiresAt,
-            planUpdatedAt: serverTimestamp(),
-          }, { merge: true });
-          try {
-            await approvePayment(txn);
-          } catch (err) {
-            console.warn('[VerifyPayment] Server approve fallback note:', err);
-          }
-          
           setStatus('success');
           setTimeout(() => {
             router.push('/ide');
@@ -104,7 +77,7 @@ export default function VerifyPaymentPage() {
               <CheckCircle2 className="w-12 h-12 text-green-600" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Successful!</h2>
-            <p className="text-gray-500 mb-6">Your plan has been activated. Redirecting you to the IDE...</p>
+            <p className="text-gray-500 mb-6">Payment confirmed. Your plan is being activated securely. Redirecting you to the IDE...</p>
           </>
         )}
 

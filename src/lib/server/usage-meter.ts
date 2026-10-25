@@ -139,7 +139,13 @@ export interface EntitlementCheckResult {
   decremented: boolean;
 }
 
-const PRO_MODELS = ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-pro'];
+function isProModel(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return /(^|[-/])pro(?:[-/]|$)/.test(normalized)
+    || PRO_MODELS.some(proModel => normalized.includes(proModel));
+}
+
+const PRO_MODELS = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-pro'];
 
 /**
  * Validates user plan and consumes a Pro run atomically if required
@@ -151,7 +157,7 @@ export async function checkAndConsumeEntitlement(
   // If unauthenticated or no UID
   if (!uid) {
     // We should ideally use the model config, but fallback to PRO_MODELS list check
-    const isPro = model.includes('pro') || model.includes('3.7') || model.includes('3.8');
+    const isPro = isProModel(model);
     if (isPro) {
       logSecurityEvent('ENTITLEMENT_DENIED', { uid: 'anonymous' }, { model, reason: 'Pro model requires sign-in' });
       return { allowed: false, reason: 'Sign in to access advanced models.', decremented: false };
@@ -159,8 +165,7 @@ export async function checkAndConsumeEntitlement(
     return { allowed: true, decremented: false };
   }
 
-  const isProModel = model.includes('pro') || model.includes('3.7') || model.includes('3.8');
-  if (!isProModel) {
+  if (!isProModel(model)) {
     // Standard models do not consume Pro runs
     return { allowed: true, decremented: false };
   }

@@ -1,6 +1,7 @@
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env.local') });
 const { startTerminalService } = require('./terminal-service');
 
 const backendDir = path.join(__dirname, 'backend');
