@@ -13,26 +13,46 @@ interface KnownBoard {
   family: string;
 }
 
+interface BrowserSerialPort {
+  getInfo(): { usbVendorId?: number; usbProductId?: number };
+}
+
+interface BrowserSerialApi {
+  getPorts(): Promise<BrowserSerialPort[]>;
+  requestPort(): Promise<BrowserSerialPort>;
+  addEventListener(type: 'connect' | 'disconnect', listener: EventListener): void;
+  removeEventListener(type: 'connect' | 'disconnect', listener: EventListener): void;
+}
+
+function getBrowserSerialApi(): BrowserSerialApi | null {
+  if (typeof navigator === 'undefined' || !('serial' in navigator)) return null;
+  return (navigator as Navigator & { serial: BrowserSerialApi }).serial;
+}
+
 const USB_VID_PID_MAP: Record<string, KnownBoard> = {
-  '0x1A86:0x7523': { name: 'Arduino (CH340)', chip: 'ATmega328P', fqbn: 'arduino:avr:uno', defaultBaud: 9600, family: '8-bit AVR' },
-  '0x0403:0x6001': { name: 'Arduino (FTDI)', chip: 'ATmega328P', fqbn: 'arduino:avr:uno', defaultBaud: 9600, family: '8-bit AVR' },
   '0x2341:0x0043': { name: 'Arduino Uno', chip: 'ATmega328P', fqbn: 'arduino:avr:uno', defaultBaud: 9600, family: '8-bit AVR' },
   '0x2341:0x0001': { name: 'Arduino Uno', chip: 'ATmega328P', fqbn: 'arduino:avr:uno', defaultBaud: 9600, family: '8-bit AVR' },
   '0x2341:0x0010': { name: 'Arduino Mega 2560', chip: 'ATmega2560', fqbn: 'arduino:avr:mega', defaultBaud: 9600, family: '8-bit AVR' },
   '0x2341:0x0042': { name: 'Arduino Mega 2560', chip: 'ATmega2560', fqbn: 'arduino:avr:mega', defaultBaud: 9600, family: '8-bit AVR' },
-  '0x2341:0x0058': { name: 'Arduino Nano', chip: 'ATmega328P', fqbn: 'arduino:avr:nano', defaultBaud: 9600, family: '8-bit AVR' },
+  '0x2341:0x0036': { name: 'Arduino Leonardo', chip: 'ATmega32U4', fqbn: 'arduino:avr:leonardo', defaultBaud: 9600, family: '8-bit AVR' },
   '0x2341:0x8036': { name: 'Arduino Leonardo', chip: 'ATmega32U4', fqbn: 'arduino:avr:leonardo', defaultBaud: 9600, family: '8-bit AVR' },
-  '0x10C4:0xEA60': { name: 'ESP32 (CP2102)', chip: 'ESP32', fqbn: 'esp32:esp32:esp32', defaultBaud: 115200, family: 'Dual-core Wireless MCU' },
-  '0x10C4:0xEA70': { name: 'ESP32 (CP2104)', chip: 'ESP32', fqbn: 'esp32:esp32:esp32', defaultBaud: 115200, family: 'Dual-core Wireless MCU' },
-  '0x303A:0x0002': { name: 'ESP32-S2', chip: 'ESP32-S2', fqbn: 'esp32:esp32:esp32s2', defaultBaud: 115200, family: 'Wireless MCU' },
-  '0x303A:0x1001': { name: 'ESP32-S3', chip: 'ESP32-S3', fqbn: 'esp32:esp32:esp32s3', defaultBaud: 115200, family: 'Wireless MCU' },
-  '0x303A:0x1002': { name: 'ESP32-C3', chip: 'ESP32-C3', fqbn: 'esp32:esp32:esp32c3', defaultBaud: 115200, family: 'RISC-V Wireless MCU' },
-  '0x2E8A:0x0005': { name: 'Raspberry Pi Pico', chip: 'RP2040', fqbn: 'rp2040:rp2040:pico', defaultBaud: 115200, family: 'Cortex-M0+' },
-  '0x2E8A:0x000A': { name: 'Raspberry Pi Pico W', chip: 'RP2040', fqbn: 'rp2040:rp2040:pico', defaultBaud: 115200, family: 'Cortex-M0+' },
-  '0x0483:0x5740': { name: 'STM32 (Virtual COM)', chip: 'STM32', fqbn: 'STMicroelectronics:stm32:GenF1', defaultBaud: 115200, family: 'Cortex-M' },
+  '0x2341:0x0058': { name: 'Arduino Nano Every', chip: 'ATmega4809', fqbn: 'arduino:megaavr:nona4809', defaultBaud: 9600, family: '8-bit AVR' },
 };
 
-function identifyBoard(port: SerialPort): KnownBoard | null {
+const USB_DEVICE_LABELS: Record<string, string> = {
+  '0x1A86:0x7523': 'CH340 USB-to-serial adapter',
+  '0x1A86:0x55D4': 'CH9102 USB-to-serial adapter',
+  '0x0403:0x6001': 'FTDI USB-to-serial adapter',
+  '0x10C4:0xEA60': 'CP210x USB-to-serial adapter',
+  '0x10C4:0xEA70': 'CP210x USB-to-serial adapter',
+  '0x303A:0x0002': 'Espressif USB Serial/JTAG device — select the exact board',
+  '0x303A:0x1001': 'Espressif USB Serial/JTAG device — select the exact board',
+  '0x2E8A:0x000A': 'RP2040 USB device — select the exact board',
+  '0x2E8A:0xF00A': 'RP2040 USB device — select the exact board',
+  '0x0483:0x5740': 'STMicroelectronics virtual COM port',
+};
+
+function identifyBoard(port: BrowserSerialPort): KnownBoard | null {
   const info = port.getInfo();
   if (!info.usbVendorId || !info.usbProductId) return null;
   const vid = '0x' + info.usbVendorId.toString(16).toUpperCase().padStart(4, '0');
@@ -40,16 +60,25 @@ function identifyBoard(port: SerialPort): KnownBoard | null {
   return USB_VID_PID_MAP[`${vid}:${pid}`] || null;
 }
 
-function getVidPid(port: SerialPort): string {
+function getVidPid(port: BrowserSerialPort): string {
   const info = port.getInfo();
   if (!info.usbVendorId || !info.usbProductId) return '';
   return '0x' + info.usbVendorId.toString(16).toUpperCase().padStart(4, '0') + ':0x' + info.usbProductId.toString(16).toUpperCase().padStart(4, '0');
 }
 
+function identifyUsbLabel(port: BrowserSerialPort): string | null {
+  const info = port.getInfo();
+  if (!info.usbVendorId || !info.usbProductId) return null;
+  const vid = '0x' + info.usbVendorId.toString(16).toUpperCase().padStart(4, '0');
+  const pid = '0x' + info.usbProductId.toString(16).toUpperCase().padStart(4, '0');
+  return USB_DEVICE_LABELS[`${vid}:${pid}`] || null;
+}
+
 /* ── Exported types ──────────────────────────────────────────────── */
 export interface WebSerialDevice {
-  port: SerialPort;
+  port: BrowserSerialPort;
   board: KnownBoard | null;
+  usbLabel: string | null;
   vidPid: string;
 }
 
@@ -64,7 +93,7 @@ interface UsbAutoDetectProps {
 export function UsbAutoDetect({ onDeviceConnected, isFlashOpen }: UsbAutoDetectProps) {
   const [toast, setToast] = useState<{ message: string; type: 'connect' | 'disconnect' } | null>(null);
   const [isSupported, setIsSupported] = useState(false);
-  const knownPortsRef = useRef<Set<SerialPort>>(new Set());
+  const knownPortsRef = useRef<Set<BrowserSerialPort>>(new Set());
   const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Show a toast for a few seconds
@@ -75,14 +104,15 @@ export function UsbAutoDetect({ onDeviceConnected, isFlashOpen }: UsbAutoDetectP
   }, []);
 
   useEffect(() => {
-    setIsSupported(typeof navigator !== 'undefined' && 'serial' in navigator);
+    setIsSupported(getBrowserSerialApi() !== null);
   }, []);
 
   // Auto-detect already-authorized ports on mount (no popup needed!)
   useEffect(() => {
-    if (!isSupported) return;
+    const serialApi = getBrowserSerialApi();
+    if (!isSupported || !serialApi) return;
 
-    navigator.serial.getPorts().then(ports => {
+    serialApi.getPorts().then(ports => {
       for (const port of ports) {
         knownPortsRef.current.add(port);
       }
@@ -90,9 +120,10 @@ export function UsbAutoDetect({ onDeviceConnected, isFlashOpen }: UsbAutoDetectP
       if (ports.length > 0 && !isFlashOpen) {
         const port = ports[0];
         const board = identifyBoard(port);
-        const name = board?.name || 'USB Device';
+        const usbLabel = identifyUsbLabel(port);
+        const name = board?.name || usbLabel || 'USB Device';
         showToast(`${name} detected & connected automatically`, 'connect');
-        onDeviceConnected({ port, board, vidPid: getVidPid(port) });
+        onDeviceConnected({ port, board, usbLabel, vidPid: getVidPid(port) });
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,33 +131,36 @@ export function UsbAutoDetect({ onDeviceConnected, isFlashOpen }: UsbAutoDetectP
 
   // Listen for connect/disconnect events (fires automatically for authorized devices)
   useEffect(() => {
-    if (!isSupported) return;
+    const serialApi = getBrowserSerialApi();
+    if (!isSupported || !serialApi) return;
 
     const onConnect = (e: Event) => {
-      const port = (e as any).target as SerialPort;
+      const port = (e as any).target as BrowserSerialPort;
       if (knownPortsRef.current.has(port)) return;
       knownPortsRef.current.add(port);
       const board = identifyBoard(port);
-      const name = board?.name || 'USB Device';
+      const usbLabel = identifyUsbLabel(port);
+      const name = board?.name || usbLabel || 'USB Device';
       showToast(`${name} detected & connected`, 'connect');
       if (!isFlashOpen) {
-        onDeviceConnected({ port, board, vidPid: getVidPid(port) });
+        onDeviceConnected({ port, board, usbLabel, vidPid: getVidPid(port) });
       }
     };
 
     const onDisconnect = (e: Event) => {
-      const port = (e as any).target as SerialPort;
+      const port = (e as any).target as BrowserSerialPort;
       knownPortsRef.current.delete(port);
       const board = identifyBoard(port);
-      const name = board?.name || 'USB Device';
+      const usbLabel = identifyUsbLabel(port);
+      const name = board?.name || usbLabel || 'USB Device';
       showToast(`${name} disconnected`, 'disconnect');
     };
 
-    navigator.serial.addEventListener('connect', onConnect);
-    navigator.serial.addEventListener('disconnect', onDisconnect);
+    serialApi.addEventListener('connect', onConnect);
+    serialApi.addEventListener('disconnect', onDisconnect);
     return () => {
-      navigator.serial.removeEventListener('connect', onConnect);
-      navigator.serial.removeEventListener('disconnect', onDisconnect);
+      serialApi.removeEventListener('connect', onConnect);
+      serialApi.removeEventListener('disconnect', onDisconnect);
     };
   }, [isSupported, isFlashOpen, onDeviceConnected, showToast]);
 
@@ -167,11 +201,12 @@ export function UsbAutoDetect({ onDeviceConnected, isFlashOpen }: UsbAutoDetectP
  * Once the user selects a port, subsequent connections from the same device are fully automatic.
  */
 export async function requestSerialDevice(): Promise<WebSerialDevice | null> {
-  if (!('serial' in navigator)) return null;
+  const serialApi = getBrowserSerialApi();
+  if (!serialApi) return null;
   try {
-    const port = await navigator.serial.requestPort();
+    const port = await serialApi.requestPort();
     const board = identifyBoard(port);
-    return { port, board, vidPid: getVidPid(port) };
+    return { port, board, usbLabel: identifyUsbLabel(port), vidPid: getVidPid(port) };
   } catch {
     return null; // user cancelled
   }

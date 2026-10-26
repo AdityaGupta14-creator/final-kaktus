@@ -708,7 +708,7 @@ export default function Home() {
                   const { requestSerialDevice } = await import('@/components/UsbAutoDetect');
                   const device = await requestSerialDevice();
                   if (device) {
-                    setConnectedDeviceName(device.board?.name || 'USB Device');
+                    setConnectedDeviceName(device.board?.name || device.usbLabel || 'USB Device');
                   }
                 }
                 setIsFlashOpen(true);
@@ -1137,7 +1137,7 @@ export default function Home() {
         <UsbAutoDetect
           isFlashOpen={isFlashOpen}
           onDeviceConnected={(device) => {
-            setConnectedDeviceName(device.board?.name || 'USB Device');
+            setConnectedDeviceName(device.board?.name || device.usbLabel || 'USB Device');
             setIsFlashOpen(true);
             setIsTerminalOpen(false);
           }}

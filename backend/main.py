@@ -118,10 +118,14 @@ BOARD_CATALOG = {
     "arduino:avr:uno": {"name": "Arduino Uno", "chip": "ATmega328P", "default_baud": 9600},
     "arduino:avr:nano": {"name": "Arduino Nano", "chip": "ATmega328P", "default_baud": 9600},
     "arduino:avr:mega": {"name": "Arduino Mega 2560", "chip": "ATmega2560", "default_baud": 9600},
+    "arduino:avr:leonardo": {"name": "Arduino Leonardo", "chip": "ATmega32U4", "default_baud": 9600},
+    "arduino:megaavr:nona4809": {"name": "Arduino Nano Every", "chip": "ATmega4809", "default_baud": 9600},
     "esp32:esp32:esp32": {"name": "ESP32 Dev Module", "chip": "ESP32", "default_baud": 115200},
+    "esp32:esp32:esp32s2": {"name": "ESP32-S2", "chip": "ESP32-S2", "default_baud": 115200},
     "esp32:esp32:esp32s3": {"name": "ESP32-S3", "chip": "ESP32-S3", "default_baud": 115200},
     "esp32:esp32:esp32c3": {"name": "ESP32-C3", "chip": "ESP32-C3", "default_baud": 115200},
     "rp2040:rp2040:pico": {"name": "Raspberry Pi Pico", "chip": "RP2040", "default_baud": 115200},
+    "rp2040:rp2040:rpipicow": {"name": "Raspberry Pi Pico W", "chip": "RP2040", "default_baud": 115200},
     "STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8,upload_method=serialMethod": {
         "name": "STM32 Blue Pill (F103C8)", "chip": "STM32F103C8T6", "default_baud": 115200,
     },
@@ -129,6 +133,7 @@ BOARD_CATALOG = {
 
 BOARD_CORE_IDS = {
     "arduino:avr": "arduino:avr",
+    "arduino:megaavr": "arduino:megaavr",
     "esp32:esp32": "esp32:esp32",
     "rp2040:rp2040": "rp2040:rp2040",
     "STMicroelectronics:stm32": "STMicroelectronics:stm32",
@@ -143,7 +148,7 @@ BOARD_MANAGER_URLS = {
 BOARD_MAP = {
     "arduino:avr:uno": {
         "name": "Arduino Uno",
-        "vid_pid": ["2341:0043"],
+        "vid_pid": ["2341:0043", "2341:0001"],
     },
     "arduino:avr:nano": {
         "name": "Arduino Nano",
@@ -153,9 +158,21 @@ BOARD_MAP = {
         "name": "Arduino Mega",
         "vid_pid": ["2341:0042", "2341:0010"],
     },
+    "arduino:avr:leonardo": {
+        "name": "Arduino Leonardo",
+        "vid_pid": ["2341:0036", "2341:8036"],
+    },
+    "arduino:megaavr:nona4809": {
+        "name": "Arduino Nano Every",
+        "vid_pid": ["2341:0058"],
+    },
     "esp32:esp32:esp32": {
         "name": "ESP32 Dev Module",
-        "vid_pid": ["10C4:EA60", "1A86:55D4"],
+        "vid_pid": [],
+    },
+    "esp32:esp32:esp32s2": {
+        "name": "ESP32-S2",
+        "vid_pid": [],
     },
     "esp32:esp32:esp32s3": {
         "name": "ESP32-S3",
@@ -167,8 +184,25 @@ BOARD_MAP = {
     },
     "rp2040:rp2040:pico": {
         "name": "Raspberry Pi Pico",
-        "vid_pid": ["2E8A:000A"],
+        "vid_pid": [],
     },
+    "rp2040:rp2040:rpipicow": {
+        "name": "Raspberry Pi Pico W",
+        "vid_pid": [],
+    },
+}
+
+USB_DEVICE_LABELS = {
+    "1A86:7523": "CH340 USB-to-serial adapter",
+    "1A86:55D4": "CH9102 USB-to-serial adapter",
+    "0403:6001": "FTDI USB-to-serial adapter",
+    "10C4:EA60": "CP210x USB-to-serial adapter",
+    "10C4:EA70": "CP210x USB-to-serial adapter",
+    "303A:0002": "Espressif USB Serial/JTAG device — select the exact board",
+    "303A:1001": "Espressif USB Serial/JTAG device — select the exact board",
+    "2E8A:000A": "RP2040 USB device — select the exact board",
+    "2E8A:F00A": "RP2040 USB device — select the exact board",
+    "0483:5740": "STMicroelectronics virtual COM port",
 }
 
 def _board_core(board: str) -> str:
@@ -398,6 +432,7 @@ async def detect_boards():
             continue
         detected_board = None
         detected_fqbn = None
+        usb_label = USB_DEVICE_LABELS.get(vid_pid or "")
         if vid_pid:
             for fqbn, info in BOARD_MAP.items():
                 if vid_pid in info["vid_pid"]:
@@ -410,7 +445,13 @@ async def detect_boards():
         elif not detected_fqbn and "esp32-c3" in identity_text:
             detected_board = BOARD_CATALOG["esp32:esp32:esp32c3"]["name"]
             detected_fqbn = "esp32:esp32:esp32c3"
-        elif not detected_fqbn and ("arduino nano" in identity_text or "nano" in identity_text):
+        elif not detected_fqbn and "esp32-s2" in identity_text:
+            detected_board = BOARD_CATALOG["esp32:esp32:esp32s2"]["name"]
+            detected_fqbn = "esp32:esp32:esp32s2"
+        elif not detected_fqbn and "nano every" in identity_text:
+            detected_board = BOARD_CATALOG["arduino:megaavr:nona4809"]["name"]
+            detected_fqbn = "arduino:megaavr:nona4809"
+        elif not detected_fqbn and re.search(r"\barduino\s+nano\b", identity_text) and "esp32" not in identity_text:
             detected_board = BOARD_CATALOG["arduino:avr:nano"]["name"]
             detected_fqbn = "arduino:avr:nano"
         ports.append({
@@ -422,7 +463,8 @@ async def detect_boards():
             "serial_number": port_info.serial_number,
             "location": port_info.location,
             "board": detected_board,
-            "fqbn": detected_fqbn
+            "fqbn": detected_fqbn,
+            "usb_label": usb_label,
         })
     return {"ports": ports}
 

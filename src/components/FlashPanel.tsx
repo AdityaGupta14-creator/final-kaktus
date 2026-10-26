@@ -31,10 +31,14 @@ export const BOARD_OPTIONS: BoardOption[] = [
   { fqbn: 'arduino:avr:uno', name: 'Arduino Uno', chip: 'ATmega328P', defaultBaud: 9600, family: '8-bit AVR' },
   { fqbn: 'arduino:avr:nano', name: 'Arduino Nano', chip: 'ATmega328P', defaultBaud: 9600, family: '8-bit AVR' },
   { fqbn: 'arduino:avr:mega', name: 'Arduino Mega 2560', chip: 'ATmega2560', defaultBaud: 9600, family: '8-bit AVR' },
+  { fqbn: 'arduino:avr:leonardo', name: 'Arduino Leonardo', chip: 'ATmega32U4', defaultBaud: 9600, family: '8-bit AVR' },
+  { fqbn: 'arduino:megaavr:nona4809', name: 'Arduino Nano Every', chip: 'ATmega4809', defaultBaud: 9600, family: '8-bit AVR' },
   { fqbn: 'esp32:esp32:esp32', name: 'ESP32 Dev Module', chip: 'ESP32', defaultBaud: 115200, family: 'Dual-core wireless MCU' },
+  { fqbn: 'esp32:esp32:esp32s2', name: 'ESP32-S2', chip: 'ESP32-S2', defaultBaud: 115200, family: 'Wireless MCU' },
   { fqbn: 'esp32:esp32:esp32s3', name: 'ESP32-S3', chip: 'ESP32-S3', defaultBaud: 115200, family: 'Dual-core wireless MCU' },
   { fqbn: 'esp32:esp32:esp32c3', name: 'ESP32-C3', chip: 'ESP32-C3', defaultBaud: 115200, family: 'RISC-V wireless MCU' },
   { fqbn: 'rp2040:rp2040:pico', name: 'Raspberry Pi Pico', chip: 'RP2040', defaultBaud: 115200, family: 'Dual-core Cortex-M0+' },
+  { fqbn: 'rp2040:rp2040:rpipicow', name: 'Raspberry Pi Pico W', chip: 'RP2040', defaultBaud: 115200, family: 'Dual-core Cortex-M0+' },
   { fqbn: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8,upload_method=serialMethod', name: 'STM32 Blue Pill (serial bootloader)', chip: 'STM32F103C8T6', defaultBaud: 115200, family: 'Cortex-M3' },
 ];
 
@@ -43,6 +47,7 @@ interface SerialPortInfo {
   description?: string | null;
   manufacturer?: string | null;
   product?: string | null;
+  usb_label?: string | null;
   vid_pid?: string | null;
   serial_number?: string | null;
   board?: string | null;
@@ -138,6 +143,7 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
       setSelectedBoard((previous) => {
         const detected = autoTargetPort?.fqbn;
         if (detected && BOARD_OPTIONS.some((board) => board.fqbn === detected)) return detected;
+        if (autoTargetPort && autoTargetPort.port !== selectedPort) return '';
         return previous;
       });
 
@@ -185,7 +191,7 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
       setSelectedBoard(detected.fqbn);
       const board = BOARD_OPTIONS.find((item) => item.fqbn === detected.fqbn);
       if (board) setBaudRate(inferMonitorBaud(code, board.defaultBaud));
-    }
+    } else setSelectedBoard('');
     setStage('idle');
     setErrorText('');
   };
@@ -350,7 +356,7 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
   const busy = stage === 'compiling' || stage === 'uploading' || stage === 'detecting';
   const hasFirmware = Boolean(code.trim());
   const canFlash = serviceReady && hasFirmware && Boolean(currentPort && currentBoard) && !busy;
-  const deviceLabel = currentBoard?.name || currentPort?.board || currentPort?.product || 'USB serial device';
+  const deviceLabel = currentBoard?.name || currentPort?.board || currentPort?.usb_label || currentPort?.product || 'USB serial device';
 
   return (
     <motion.section
@@ -392,7 +398,7 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
               >
                 <option value="">Select detected port</option>
                 {ports.map((port) => {
-                  const name = port.board || port.product || port.description || 'USB serial device';
+                  const name = port.board || port.usb_label || port.product || port.description || 'USB serial device';
                   const serial = port.serial_number ? ' / S/N ' + port.serial_number : '';
                   return <option key={port.port} value={port.port}>{port.port + ' - ' + name + serial}</option>;
                 })}
