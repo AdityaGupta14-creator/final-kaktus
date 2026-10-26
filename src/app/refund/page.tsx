@@ -21,7 +21,7 @@ export default function RefundPage() {
           <p className="mb-4">Refunds will not be provided for partial months of service or for accounts that have violated our Terms and Conditions.</p>
 
           <h2 className="text-2xl font-bold text-black mt-8 mb-4">4. Contact for Refunds</h2>
-          <p className="mb-4">To request a refund or cancellation, please email us at admin@kaktus.com with your account details and order ID.</p>
+          <p className="mb-4">To request a refund or cancellation, please email us at <a href="mailto:dixitshubham68359@gmail.com" className="text-emerald-600 underline">dixitshubham68359@gmail.com</a> with your account details and order ID.</p>
         </div>
       </div>
     </div>

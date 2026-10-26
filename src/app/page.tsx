@@ -440,7 +440,17 @@ export default function LandingPage() {
             <ul className="flex flex-col gap-3 text-sm text-gray-500">
               <li><Link href="/app-info" className="hover:text-black transition-colors">About Us</Link></li>
               <li><Link href="/how-to-use" className="hover:text-black transition-colors">How to Use</Link></li>
-              <li><a href="mailto:admin@kaktus.com" className="hover:text-black transition-colors">Contact Us</a></li>
+              <li><Link href="/contact" className="hover:text-black transition-colors">Contact Us</Link></li>
+              <li>
+                <a 
+                  href="https://www.instagram.com/kaktus__k/" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="hover:text-black transition-colors"
+                >
+                  Instagram (@kaktus__k)
+                </a>
+              </li>
             </ul>
           </div>
         </div>

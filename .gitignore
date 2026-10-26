@@ -70,3 +70,5 @@ __pycache__/
 /backend/.arduino-downloads/
 /backend/.arduino-user/
 /backend/.work/
+brag/
+brag-output/

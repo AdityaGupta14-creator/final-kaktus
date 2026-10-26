@@ -20,7 +20,7 @@ export default function PrivacyPage() {
           <p className="mb-4">We implement appropriate technical and organizational measures to protect your personal data against unauthorized or unlawful processing.</p>
 
           <h2 className="text-2xl font-bold text-black mt-8 mb-4">4. Contact Us</h2>
-          <p className="mb-4">If you have any questions about this Privacy Policy, please contact us at admin@kaktus.com.</p>
+          <p className="mb-4">If you have any questions about this Privacy Policy, please contact us at <a href="mailto:dixitshubham68359@gmail.com" className="text-emerald-600 underline">dixitshubham68359@gmail.com</a>.</p>
         </div>
       </div>
     </div>
