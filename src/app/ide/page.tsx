@@ -9,7 +9,7 @@ import { ChatBox, ImplementationPlanCard } from '@/components/ChatBox';
 import { ModelSelector } from '@/components/ModelSelector';
 import type { TerminalCommandResult, TerminalConnectionStatus, TerminalRef } from '@/components/Terminal';
 import type { TutorialData } from '@/components/CircuitCanvas';
-import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, AlertCircle, RefreshCw } from 'lucide-react';
+import { TerminalSquare, X, Layers, Cpu, Cable, Zap, CircuitBoard, Usb, Upload, Trash2, Circle, LogOut, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { extractProjectPlanResponse } from '@/lib/agent/protocol';
 import type { PlanBuildAction, ProjectPlan, ResearchSource } from '@/lib/agent/protocol';
@@ -1079,15 +1079,6 @@ export default function Home() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => terminalRef.current?.reconnect()}
-                    className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-800 hover:text-gray-200"
-                    title="Retry local terminal connection"
-                    aria-label="Retry local terminal connection"
-                  >
-                    <RefreshCw size={13} />
-                  </button>
                   <button
                     type="button"
                     onClick={() => terminalRef.current?.clear()}

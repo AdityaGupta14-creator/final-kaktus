@@ -19,7 +19,6 @@ export interface TerminalRef {
   runCommand: (cmd: string) => Promise<TerminalCommandResult>;
   clear: () => void;
   focus: () => void;
-  reconnect: () => void;
 }
 
 interface TerminalProps {
@@ -60,7 +59,6 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
   const terminalRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const xtermRef = useRef<XTerm | null>(null);
-  const reconnectRef = useRef<() => void>(() => undefined);
   const inputQueueRef = useRef<string[]>([]);
   const inputQueueLengthRef = useRef(0);
   const pendingCommandsRef = useRef(new Map<string, PendingCommand>());
@@ -109,7 +107,6 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
     }),
     clear: () => xtermRef.current?.clear(),
     focus: () => xtermRef.current?.focus(),
-    reconnect: () => reconnectRef.current(),
   }));
 
   useEffect(() => {
@@ -120,30 +117,16 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
       cursorStyle: 'bar',
       fontFamily: 'Cascadia Code, Consolas, "SFMono-Regular", Menlo, Monaco, monospace',
       fontSize: 13,
-      lineHeight: 1.38,
+      lineHeight: 1.32,
       scrollback: 5000,
       theme: {
-        background: '#0b0e12',
-        foreground: '#d7dee7',
-        cursor: '#7ee787',
-        cursorAccent: '#0b0e12',
+        background: '#111214',
+        foreground: '#d7dce2',
+        cursor: '#e6edf3',
         selectionBackground: '#264f78',
-        black: '#0b0e12',
-        red: '#ff7b72',
-        green: '#7ee787',
-        yellow: '#e3b341',
-        blue: '#79c0ff',
-        magenta: '#d2a8ff',
-        cyan: '#76e3ea',
-        white: '#d7dee7',
-        brightBlack: '#6e7681',
-        brightRed: '#ffa198',
-        brightGreen: '#aff5b4',
-        brightYellow: '#f2cc60',
-        brightBlue: '#a5d6ff',
-        brightMagenta: '#e2c5ff',
-        brightCyan: '#b3f0ff',
-        brightWhite: '#f0f6fc',
+        black: '#111214',
+        brightBlack: '#727985',
+        brightWhite: '#f0f4f8',
       }
     });
     xtermRef.current = term;
@@ -196,12 +179,11 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
     let hasConnected = false;
     let hasReportedUnavailable = false;
     let reconnectAttempts = 0;
-    let connectAttempt = 0;
     availabilityRef.current = 'available';
     const wsUrl = 'ws://127.0.0.1:3001';
     const connectionHint = isLocalHost
       ? 'Restart the local app with npm run dev.'
-      : 'Run npm run terminal:bridge in the project folder and allow the browser’s local-network prompt.';
+      : 'Run npm run hardware:bridge in the project folder and allow the browser’s local-network prompt.';
     const failPendingCommands = (message: string) => {
       for (const pending of pendingCommandsRef.current.values()) {
         window.clearTimeout(pending.timeout);
@@ -211,7 +193,6 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
     };
     const connect = async () => {
       if (disposed) return;
-      const attempt = ++connectAttempt;
       statusCallbackRef.current?.(hasConnected ? 'disconnected' : 'connecting');
       let ws: WebSocket;
       try {
@@ -230,7 +211,7 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
         // On remote HTTPS pages, probe HTTP health on 3001 first to trigger LNA prompt and check status
         if (isRemoteSecurePage && !hasConnected) {
           const probe = await checkTerminalHealth(3001);
-          if (disposed || attempt !== connectAttempt) return;
+          if (disposed) return;
           if (!probe.ok) {
             availabilityRef.current = 'unavailable';
             statusCallbackRef.current?.('unavailable');
@@ -242,14 +223,14 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
                 term.writeln('To grant permission:');
                 term.writeln('  1. Click the tune/sliders icon next to the URL in the browser address bar.');
                 term.writeln('  2. Open "Site settings", locate "Apps on device" (or "Local network access"), and set to "Allow".');
-                term.writeln('  3. Run npm run terminal:bridge in your project folder, then press any key to retry.\r\n');
+                term.writeln('  3. Run npm run hardware:bridge in your project folder, then press any key to retry.\r\n');
               } else if (probe.state === 'cors-rejected') {
                 term.writeln('\r\n[Terminal Origin Rejected]');
                 term.writeln('The local terminal service rejected connection from this website origin.');
                 term.writeln('Add this origin to KAKTUS_WEB_ORIGINS in .env.local and restart the bridge.\r\n');
               } else {
                 term.writeln('\r\nLocal terminal service is not running on 127.0.0.1:3001.');
-                term.writeln('Run npm run terminal:bridge in the project folder to start it.');
+                term.writeln('Run npm run hardware:bridge in the project folder to start it.');
                 term.writeln('Press any key to retry connection.\r\n');
               }
             }
@@ -258,11 +239,9 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
         }
 
         const idToken = await currentUser.getIdToken();
-        if (disposed || attempt !== connectAttempt) return;
+        if (disposed) return;
         ws = connectToLoopbackTerminal(wsUrl, idToken, isRemoteSecurePage);
-      } catch {
-        if (disposed || attempt !== connectAttempt) return;
-        availabilityRef.current = 'unavailable';
+      } catch (error) {
         statusCallbackRef.current?.(hasConnected ? 'disconnected' : 'unavailable');
         if (!hasConnected && !hasReportedUnavailable) {
           term.writeln(`\r\nLocal terminal service unavailable. ${connectionHint}`);
@@ -372,23 +351,6 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
         reconnectTimer = window.setTimeout(connect, Math.min(6000, 1500 * Math.pow(1.5, reconnectAttempts)));
       };
     };
-    reconnectRef.current = () => {
-      if (disposed) return;
-      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
-      reconnectTimer = undefined;
-      reconnectAttempts = 0;
-      hasReportedUnavailable = false;
-      connectAttempt += 1;
-      const previousSocket = wsRef.current;
-      wsRef.current = null;
-      if (previousSocket) {
-        previousSocket.onclose = null;
-        previousSocket.onerror = null;
-        previousSocket.close();
-      }
-      term.writeln('\r\nRetrying local terminal connection…');
-      void connect();
-    };
     void connect();
 
     term.onData((data) => {
@@ -396,8 +358,10 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(data);
       } else {
-        if (availabilityRef.current === 'unavailable') {
-          reconnectRef.current();
+        if (!hasConnected && reconnectAttempts >= 4) {
+          reconnectAttempts = 0;
+          term.write('\r\nRetrying terminal connection...\r\n');
+          connect();
           return;
         }
         if (inputQueueLengthRef.current + data.length < 20_000) {
@@ -410,7 +374,6 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
     return () => {
       disposed = true;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
-      reconnectRef.current = () => undefined;
       failPendingCommands('Terminal was closed before the command completed.');
       resizeObserver.disconnect();
       window.clearTimeout(initialFit);
@@ -425,7 +388,7 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
 
   return (
     <div
-      className="h-full w-full overflow-hidden bg-[#0b0e12]"
+      className="h-full w-full overflow-hidden bg-[#111214]"
       onClick={() => xtermRef.current?.focus()}
       title="Click to type in the terminal"
     >

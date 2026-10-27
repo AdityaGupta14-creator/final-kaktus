@@ -16,7 +16,6 @@
     "hardware:autostart:enable": "node scripts/manage-bridge-autostart.js enable",
     "hardware:autostart:disable": "node scripts/manage-bridge-autostart.js disable",
     "hardware:autostart:status": "node scripts/manage-bridge-autostart.js status",
-    "terminal:bridge": "node terminal-service.js",
     "lint": "eslint"
   },
   "dependencies": {
