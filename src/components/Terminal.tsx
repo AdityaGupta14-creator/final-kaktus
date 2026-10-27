@@ -4,6 +4,7 @@ import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { auth } from '@/lib/firebase';
+import { checkTerminalHealth } from '@/lib/hardware-api';
 import '@xterm/xterm/css/xterm.css';
 
 export type TerminalConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'unavailable';
@@ -33,17 +34,22 @@ interface PendingCommand extends TerminalCommandResult {
   sent: boolean;
 }
 
-type LoopbackWebSocketConstructor = typeof WebSocket & {
-  new (url: string, protocols: string[], options: { targetAddressSpace: 'loopback' }): WebSocket;
-};
-
 function connectToLoopbackTerminal(url: string, idToken: string, remoteSecurePage: boolean): WebSocket {
   const protocols = ['kaktus-terminal.v1', `kaktus-auth.${idToken}`];
   if (remoteSecurePage) {
     try {
-      return new (WebSocket as LoopbackWebSocketConstructor)(url, protocols, { targetAddressSpace: 'loopback' });
+      // Chromium Local Network Access: pass options object with targetAddressSpace
+      return new (WebSocket as any)(url, {
+        protocols,
+        targetAddressSpace: 'loopback',
+      });
     } catch {
-      // Older browsers do not recognize the Local Network Access WebSocket option.
+      try {
+        // Fallback for 3-argument signature if supported
+        return new (WebSocket as any)(url, protocols, { targetAddressSpace: 'loopback' });
+      } catch {
+        // Standard fallback
+      }
     }
   }
   return new WebSocket(url, protocols);
@@ -201,6 +207,37 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
           reconnectTimer = window.setTimeout(() => { void connect(); }, 5000);
           return;
         }
+
+        // On remote HTTPS pages, probe HTTP health on 3001 first to trigger LNA prompt and check status
+        if (isRemoteSecurePage && !hasConnected) {
+          const probe = await checkTerminalHealth(3001);
+          if (disposed) return;
+          if (!probe.ok) {
+            availabilityRef.current = 'unavailable';
+            statusCallbackRef.current?.('unavailable');
+            if (!hasReportedUnavailable) {
+              hasReportedUnavailable = true;
+              if (probe.state === 'permission-required') {
+                term.writeln('\r\n[Local Network Access Required]');
+                term.writeln('Chrome/Edge blocked access to the local terminal on 127.0.0.1:3001.');
+                term.writeln('To grant permission:');
+                term.writeln('  1. Click the tune/sliders icon next to the URL in the browser address bar.');
+                term.writeln('  2. Open "Site settings", locate "Apps on device" (or "Local network access"), and set to "Allow".');
+                term.writeln('  3. Run npm run hardware:bridge in your project folder, then press any key to retry.\r\n');
+              } else if (probe.state === 'cors-rejected') {
+                term.writeln('\r\n[Terminal Origin Rejected]');
+                term.writeln('The local terminal service rejected connection from this website origin.');
+                term.writeln('Add this origin to KAKTUS_WEB_ORIGINS in .env.local and restart the bridge.\r\n');
+              } else {
+                term.writeln('\r\nLocal terminal service is not running on 127.0.0.1:3001.');
+                term.writeln('Run npm run hardware:bridge in the project folder to start it.');
+                term.writeln('Press any key to retry connection.\r\n');
+              }
+            }
+            return;
+          }
+        }
+
         const idToken = await currentUser.getIdToken();
         if (disposed) return;
         ws = connectToLoopbackTerminal(wsUrl, idToken, isRemoteSecurePage);

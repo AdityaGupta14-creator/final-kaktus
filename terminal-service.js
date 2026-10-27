@@ -42,6 +42,26 @@ function getFirebaseAuth() {
 
 function startTerminalService({ port = 3001 } = {}) {
   const server = createServer((req, res) => {
+    // Chrome Private Network Access (PNA) and CORS preflight handler
+    if (req.method === 'OPTIONS') {
+      const origin = req.headers.origin;
+      if (origin && isAllowedTerminalOrigin(origin)) {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || 'Sec-WebSocket-Protocol, Authorization, Content-Type, *',
+          'Access-Control-Allow-Private-Network': 'true',
+          'Access-Control-Max-Age': '600',
+          'Vary': 'Origin, Access-Control-Request-Headers, Access-Control-Request-Private-Network',
+        });
+        res.end();
+        return;
+      }
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Origin not allowed' }));
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/internal/verify-token'
       && req.headers.host === `127.0.0.1:${port}` && !req.headers.origin) {
       const authorization = String(req.headers.authorization || '');
@@ -62,9 +82,19 @@ function startTerminalService({ port = 3001 } = {}) {
         });
       return;
     }
-    if (req.method === 'GET' && req.url === '/healthz' && req.headers.host === `127.0.0.1:${port}`) {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      res.end(JSON.stringify({ ok: true }));
+    if (req.method === 'GET' && req.url === '/healthz') {
+      const origin = req.headers.origin;
+      const headers = {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      };
+      if (origin && isAllowedTerminalOrigin(origin)) {
+        headers['Access-Control-Allow-Origin'] = origin;
+        headers['Access-Control-Allow-Private-Network'] = 'true';
+        headers['Vary'] = 'Origin';
+      }
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({ ok: true, service: 'kaktus-terminal' }));
       return;
     }
     res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -267,3 +297,7 @@ function startTerminalService({ port = 3001 } = {}) {
 }
 
 module.exports = { startTerminalService };
+
+if (require.main === module) {
+  startTerminalService();
+}

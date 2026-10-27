@@ -946,11 +946,13 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
             <div className="m-3 rounded-lg border border-neutral-700 bg-neutral-900/90 p-4 text-xs text-neutral-200 shadow-xl">
               <div className="flex items-center justify-between gap-3 pb-2">
                 <div className="flex items-center gap-2 font-semibold text-sm">
-                  <AlertTriangle size={16} className={bridgeState === 'permission-required' ? 'text-amber-400' : 'text-neutral-400'} />
+                  <AlertTriangle size={16} className={bridgeState === 'permission-required' || bridgeState === 'cors-rejected' ? 'text-amber-400' : 'text-neutral-400'} />
                   {bridgeState === 'checking'
                     ? 'Checking local hardware bridge'
                     : bridgeState === 'permission-required'
-                    ? 'Local network permission required'
+                    ? 'Browser permission required'
+                    : bridgeState === 'cors-rejected'
+                    ? 'Origin not authorized by bridge'
                     : bridgeState === 'not-running'
                     ? 'Local hardware bridge is not running'
                     : 'Local hardware bridge connection issue'}
@@ -970,12 +972,21 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
 
               {bridgeState === 'permission-required' && (
                 <div className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200 leading-relaxed">
-                  <div className="font-semibold text-amber-300 mb-1">How to grant browser access:</div>
+                  <div className="font-semibold text-amber-300 mb-1">Granting local access in Google Chrome / Microsoft Edge:</div>
                   <ol className="list-decimal list-inside space-y-1 text-amber-200/90">
-                    <li>If Chrome or Edge prompted to allow access to local network devices, click <strong>Allow</strong>.</li>
-                    <li>If the prompt was dismissed: Click the tune/settings icon in the browser address bar next to the URL, open <strong>Site settings</strong>, and allow <strong>Insecure content</strong> or <strong>Local network access</strong>.</li>
-                    <li>Ensure the bridge is running with <code className="rounded bg-black/60 px-1 py-0.5 font-mono text-amber-300">npm run hardware:bridge</code>, then click <strong>Retry connection</strong> above.</li>
+                    <li>Click the <strong>tune / sliders icon</strong> (or lock icon) on the left of the address bar next to <code className="rounded bg-black/60 px-1 py-0.5 font-mono text-amber-300">final-kaktus.vercel.app</code>.</li>
+                    <li>Look for <strong>Apps on device</strong> (or open <strong>Site settings</strong> &gt; <strong>Local network access</strong>).</li>
+                    <li>Change the setting from <em>Block</em> to <strong>Allow</strong>.</li>
+                    <li>Ensure the bridge is running locally with <code className="rounded bg-black/60 px-1 py-0.5 font-mono text-amber-300">npm run hardware:bridge</code>, then click <strong>Retry connection</strong> above.</li>
                   </ol>
+                </div>
+              )}
+
+              {bridgeState === 'cors-rejected' && (
+                <div className="mt-3 rounded border border-red-500/30 bg-red-500/10 p-3 text-[11px] text-red-200 leading-relaxed">
+                  <div className="font-semibold text-red-300 mb-1">Origin Not Authorized:</div>
+                  <p>The local bridge is running, but rejected requests from this domain for security.</p>
+                  <p className="mt-1">Add <code className="rounded bg-black/60 px-1 py-0.5 font-mono text-red-300">https://final-kaktus.vercel.app</code> to <code className="rounded bg-black/60 px-1 py-0.5 font-mono text-red-300">KAKTUS_WEB_ORIGINS</code> in your <code className="rounded bg-black/60 px-1 py-0.5 font-mono text-red-300">.env.local</code> file and restart the bridge.</p>
                 </div>
               )}
 

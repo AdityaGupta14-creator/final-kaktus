@@ -45,11 +45,13 @@ function ParticleWave() {
   }, []);
 
   const pointsRef = useRef<THREE.Points>(null);
+  const timeRef = useRef(0);
   
-  useFrame((state) => {
+  useFrame((_, delta) => {
+    timeRef.current += delta;
     if (pointsRef.current) {
-      pointsRef.current.rotation.y = state.clock.elapsedTime * 0.03;
-      pointsRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.1) * 0.05;
+      pointsRef.current.rotation.y = timeRef.current * 0.03;
+      pointsRef.current.rotation.x = Math.sin(timeRef.current * 0.1) * 0.05;
     }
   });
 

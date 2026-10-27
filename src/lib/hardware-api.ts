@@ -4,7 +4,7 @@ const hardwareApiBase = (
   process.env.NEXT_PUBLIC_FLASH_API_URL || 'http://127.0.0.1:8000'
 ).replace(/\/+$/, '');
 
-type LocalNetworkRequestInit = RequestInit & { targetAddressSpace: 'local' };
+type LoopbackRequestInit = RequestInit & { targetAddressSpace?: 'loopback' | 'local' };
 
 export function hardwareApiUrl(path: string): string {
   return `${hardwareApiBase}${path.startsWith('/') ? path : `/${path}`}`;
@@ -17,14 +17,33 @@ export async function hardwareFetch(path: string, init: RequestInit = {}): Promi
     headers.set('Authorization', `Bearer ${await user.getIdToken()}`);
   }
 
-  const requestInit: LocalNetworkRequestInit = {
-    cache: 'no-store',
-    ...init,
-    headers,
-    targetAddressSpace: 'local',
-  };
+  const url = hardwareApiUrl(path);
 
-  return fetch(hardwareApiUrl(path), requestInit);
+  // Chrome 130+ W3C Local Network Access specification uses 'loopback' for 127.0.0.1
+  try {
+    const requestInit: LoopbackRequestInit = {
+      cache: 'no-store',
+      ...init,
+      headers,
+      targetAddressSpace: 'loopback',
+    };
+    return await fetch(url, requestInit);
+  } catch (err: any) {
+    const errText = String(err?.message || err || '').toLowerCase();
+    // Fallback if browser does not support 'loopback' but accepts 'local'
+    if (errText.includes('targetaddressspace') || errText.includes('invalid') || errText.includes('typeerror')) {
+      try {
+        const fallbackInit: LoopbackRequestInit = {
+          cache: 'no-store',
+          ...init,
+          headers,
+          targetAddressSpace: 'local',
+        };
+        return await fetch(url, fallbackInit);
+      } catch {}
+    }
+    throw err;
+  }
 }
 
 export async function hardwareResponseError(response: Response): Promise<string> {
@@ -37,6 +56,7 @@ export type BridgeConnectionState =
   | 'connected'
   | 'not-running'
   | 'permission-required'
+  | 'cors-rejected'
   | 'error';
 
 export interface BridgeHealthCheckResult {
@@ -50,11 +70,19 @@ export interface BridgeHealthCheckResult {
   statusCode?: number;
 }
 
-export function classifyHardwareError(error: unknown): {
+export function classifyHardwareError(error: unknown, status?: number): {
   state: BridgeConnectionState;
   message: string;
   permissionRequired: boolean;
 } {
+  if (status === 403) {
+    return {
+      state: 'cors-rejected',
+      message: 'Access denied: The local hardware service rejected requests from this origin.',
+      permissionRequired: false,
+    };
+  }
+
   if (error instanceof DOMException && error.name === 'AbortError') {
     return {
       state: 'error',
@@ -63,7 +91,34 @@ export function classifyHardwareError(error: unknown): {
     };
   }
 
-  if (error instanceof TypeError) {
+  const errStr = String(error instanceof Error ? error.message : error || '').toLowerCase();
+
+  // Explicit Chrome Local Network Access / loopback address space permission denial
+  const isPermissionDenied =
+    errStr.includes('permission was denied') ||
+    errStr.includes('loopback address space') ||
+    errStr.includes('local network') ||
+    errStr.includes('notallowederror') ||
+    errStr.includes('securityerror') ||
+    errStr.includes('blocked_by_local_network_access_checks');
+
+  if (isPermissionDenied) {
+    return {
+      state: 'permission-required',
+      message: 'Browser local-network / loopback access was denied for this website.',
+      permissionRequired: true,
+    };
+  }
+
+  if (errStr.includes('http 403') || errStr.includes('forbidden')) {
+    return {
+      state: 'cors-rejected',
+      message: 'Access denied: The local hardware service rejected requests from this origin.',
+      permissionRequired: false,
+    };
+  }
+
+  if (error instanceof TypeError || errStr.includes('failed to fetch') || errStr.includes('networkerror') || errStr.includes('econnrefused')) {
     const isBrowser = typeof window !== 'undefined';
     const isHttps = isBrowser && window.location.protocol === 'https:';
     if (isHttps) {
@@ -90,7 +145,10 @@ export function classifyHardwareError(error: unknown): {
 export function describeHardwareConnectionError(error: unknown): string {
   const classified = classifyHardwareError(error);
   if (classified.state === 'permission-required') {
-    return 'The local USB service is not reachable. Allow local-network access in your browser or start npm run hardware:bridge.';
+    return 'The local USB service is not reachable. Allow "Apps on device" / Local Network Access in your browser and ensure npm run hardware:bridge is running.';
+  }
+  if (classified.state === 'cors-rejected') {
+    return 'The local USB service rejected this origin. Check KAKTUS_WEB_ORIGINS in .env.local.';
   }
   if (classified.state === 'not-running') {
     return 'The local USB bridge is not running. Start it with npm run hardware:bridge in the project folder.';
@@ -178,3 +236,42 @@ export async function checkBridgeHealthWithRetry(options?: {
     detail: lastError instanceof Error ? lastError.message : undefined,
   };
 }
+
+/**
+ * Checks the local terminal service health on port 3001.
+ * Triggers browser Local Network Access prompt if not yet requested.
+ */
+export async function checkTerminalHealth(port = 3001, signal?: AbortSignal): Promise<{
+  ok: boolean;
+  state: 'connected' | 'not-running' | 'permission-required' | 'cors-rejected' | 'error';
+  message?: string;
+}> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/healthz`, {
+      method: 'GET',
+      cache: 'no-store',
+      signal,
+      targetAddressSpace: 'loopback',
+    } as any);
+
+    if (res.ok) {
+      return { ok: true, state: 'connected' };
+    }
+    if (res.status === 403) {
+      return { ok: false, state: 'cors-rejected', message: 'Terminal service rejected connection from this origin.' };
+    }
+    return { ok: false, state: 'error', message: `Terminal health returned HTTP ${res.status}.` };
+  } catch (err: any) {
+    const classified = classifyHardwareError(err);
+    const candidateState = classified.state;
+    const finalState = (candidateState === 'not-running' || candidateState === 'permission-required' || candidateState === 'cors-rejected')
+      ? candidateState
+      : 'error';
+    return {
+      ok: false,
+      state: finalState,
+      message: classified.message,
+    };
+  }
+}
+

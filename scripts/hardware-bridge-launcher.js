@@ -18,7 +18,9 @@ const os = require('os');
 const rootDir = path.resolve(__dirname, '..');
 const backendDir = path.join(rootDir, 'backend');
 const pidFile = path.join(backendDir, '.bridge.pid');
+const terminalPidFile = path.join(backendDir, '.terminal.pid');
 const logFile = path.join(backendDir, 'bridge.log');
+const terminalScript = path.join(rootDir, 'terminal-service.js');
 
 /**
  * Checks if the Kaktus bridge is responding on the specified port.
@@ -39,6 +41,25 @@ async function checkBridgeHealth(port = 8000, timeoutMs = 2000) {
   } catch (err) {
     clearTimeout(timer);
     return { ok: false, isKaktus: false, error: err.message };
+  }
+}
+
+/**
+ * Checks if the local terminal service is responding on port 3001.
+ */
+async function checkTerminalHealth(port = 3001, timeoutMs = 1500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/healthz`, {
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    clearTimeout(timer);
+    return { ok: response.ok, status: response.status };
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, error: err.message };
   }
 }
 
@@ -322,7 +343,50 @@ async function startBridge(options = {}) {
 }
 
 /**
- * Stops any running Kaktus bridge. Refuses to stop foreign processes.
+ * Ensures the terminal service on port 3001 is running.
+ */
+function startTerminalProcess(options = {}) {
+  const { daemon = false, verbose = true } = options;
+  const occupant = getPortOccupant(3001);
+  if (occupant && occupant.pid) {
+    if (verbose) console.log(`✓ Terminal service already running on 127.0.0.1:3001 (PID: ${occupant.pid}).`);
+    return { ok: true, alreadyRunning: true, pid: occupant.pid };
+  }
+
+  if (fs.existsSync(terminalScript)) {
+    if (daemon) {
+      const outFd = fs.openSync(logFile, 'a');
+      const errFd = fs.openSync(logFile, 'a');
+      const child = spawn(process.execPath, [terminalScript], {
+        cwd: rootDir,
+        detached: true,
+        stdio: ['ignore', outFd, errFd],
+        env: { ...process.env },
+        windowsHide: true,
+      });
+      child.unref();
+      if (child.pid) {
+        fs.writeFileSync(terminalPidFile, String(child.pid), 'utf8');
+      }
+      if (verbose) console.log(`✓ Terminal service launched in background (PID: ${child.pid}) on 127.0.0.1:3001.`);
+      return { ok: true, started: true, pid: child.pid };
+    } else {
+      try {
+        const { startTerminalService } = require(terminalScript);
+        const svc = startTerminalService({ port: 3001 });
+        if (verbose) console.log(`✓ Terminal service ready on 127.0.0.1:3001.`);
+        return { ok: true, instance: svc };
+      } catch (err) {
+        if (verbose) console.warn(`> [Terminal Note] Could not start in-process terminal service: ${err.message}`);
+        return { ok: false, error: err.message };
+      }
+    }
+  }
+  return { ok: false, error: 'terminal-service.js not found' };
+}
+
+/**
+ * Stops any running Kaktus bridge and terminal service. Refuses to stop foreign processes.
  */
 async function stopBridge() {
   const occupant = getPortOccupant(8000);
@@ -332,62 +396,85 @@ async function stopBridge() {
   if (!pidToStop) {
     console.log('No bridge process found listening on port 8000.');
     try { if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile); } catch {}
-    return { ok: true, stopped: false };
-  }
+  } else {
+    // Verify it is Kaktus bridge before killing!
+    const health = await checkBridgeHealth(8000, 2000);
+    if (!health.ok && occupant && occupant.pid) {
+      // If not healthy and port is occupied, double check if it's our stored PID
+      if (storedPid !== occupant.pid) {
+        console.error(`Refusing to stop process PID ${occupant.pid}: It does not respond as a Kaktus bridge and does not match stored PID.`);
+        return { ok: false, error: 'Foreign process detected on port 8000.' };
+      }
+    }
 
-  // Verify it is Kaktus bridge before killing!
-  const health = await checkBridgeHealth(8000, 2000);
-  if (!health.ok && occupant && occupant.pid) {
-    // If not healthy and port is occupied, double check if it's our stored PID
-    if (storedPid !== occupant.pid) {
-      console.error(`Refusing to stop process PID ${occupant.pid}: It does not respond as a Kaktus bridge and does not match stored PID.`);
-      return { ok: false, error: 'Foreign process detected on port 8000.' };
+    console.log(`Stopping Kaktus hardware bridge (PID: ${pidToStop})...`);
+    try {
+      if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/PID', String(pidToStop), '/T', '/F'], { windowsHide: true });
+      } else {
+        process.kill(pidToStop, 'SIGTERM');
+      }
+      try { if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile); } catch {}
+      console.log('✓ Bridge stopped successfully.');
+      appendLog(`Bridge PID ${pidToStop} stopped manually.`);
+    } catch (err) {
+      console.error(`Failed to stop bridge PID ${pidToStop}: ${err.message}`);
     }
   }
 
-  console.log(`Stopping Kaktus hardware bridge (PID: ${pidToStop})...`);
-  try {
-    if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/PID', String(pidToStop), '/T', '/F'], { windowsHide: true });
-    } else {
-      process.kill(pidToStop, 'SIGTERM');
-    }
-    try { if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile); } catch {}
-    console.log('✓ Bridge stopped successfully.');
-    appendLog(`Bridge PID ${pidToStop} stopped manually.`);
-    return { ok: true, stopped: true, pid: pidToStop };
-  } catch (err) {
-    console.error(`Failed to stop bridge PID ${pidToStop}: ${err.message}`);
-    return { ok: false, error: err.message };
+  // Also cleanly stop terminal service if running
+  const termOccupant = getPortOccupant(3001);
+  const storedTermPid = fs.existsSync(terminalPidFile) ? parseInt(fs.readFileSync(terminalPidFile, 'utf8').trim(), 10) : null;
+  const termPid = termOccupant?.pid || storedTermPid;
+  if (termPid && isPidAlive(termPid)) {
+    console.log(`Stopping Kaktus terminal service (PID: ${termPid})...`);
+    try {
+      if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/PID', String(termPid), '/T', '/F'], { windowsHide: true });
+      } else {
+        process.kill(termPid, 'SIGTERM');
+      }
+    } catch {}
+    try { if (fs.existsSync(terminalPidFile)) fs.unlinkSync(terminalPidFile); } catch {}
+    console.log('✓ Terminal service stopped.');
   }
+
+  return { ok: true, stopped: true };
 }
 
 /**
- * Prints diagnostic status of the bridge.
+ * Prints diagnostic status of the bridge and terminal service.
  */
 async function statusBridge() {
   const health = await checkBridgeHealth(8000, 2500);
   const occupant = getPortOccupant(8000);
   const storedPid = getStoredPid();
 
-  console.log('=== Kaktus Hardware Bridge Status ===');
-  console.log(`Port 8000 responding:   ${health.ok ? 'Yes (HTTP 200)' : 'No'}`);
-  console.log(`Is Kaktus Bridge:       ${health.isKaktus ? 'Yes' : 'No'}`);
-  console.log(`Occupying PID:          ${occupant?.pid || 'None'}${occupant?.name ? ` (${occupant.name})` : ''}`);
-  console.log(`Stored PID in lockfile: ${storedPid || 'None'}`);
+  const termHealth = await checkTerminalHealth(3001, 1500);
+  const termOccupant = getPortOccupant(3001);
+
+  console.log('=== Kaktus Local Services Status ===');
+  console.log(`[Bridge :8000] Responding:   ${health.ok ? 'Yes (HTTP 200)' : 'No'}`);
+  console.log(`[Bridge :8000] Is Kaktus:     ${health.isKaktus ? 'Yes' : 'No'}`);
+  console.log(`[Bridge :8000] Occupying PID: ${occupant?.pid || 'None'}${occupant?.name ? ` (${occupant.name})` : ''}`);
+  console.log(`[Bridge :8000] Lockfile PID:  ${storedPid || 'None'}`);
 
   if (health.ok && health.isKaktus) {
-    console.log(`Service Name:           ${health.payload.service || 'Gatekeeper API'}`);
-    console.log(`Flash Enabled:          ${health.payload.flash_enabled}`);
-    console.log('Status:                 HEALTHY');
+    console.log(`[Bridge :8000] Service:       ${health.payload.service || 'Gatekeeper API'}`);
+    console.log(`[Bridge :8000] Status:        HEALTHY`);
   } else if (occupant?.pid) {
-    console.log('Status:                 CONFLICT (Port occupied by another process)');
+    console.log(`[Bridge :8000] Status:        CONFLICT (Port occupied by another process)`);
   } else {
-    console.log('Status:                 STOPPED / OFFLINE');
+    console.log(`[Bridge :8000] Status:        STOPPED / OFFLINE`);
   }
-  console.log('=====================================');
 
-  return { health, occupant, storedPid };
+  console.log('------------------------------------');
+  console.log(`[Terminal :3001] Responding:  ${termHealth.ok ? 'Yes (HTTP 200)' : 'No'}`);
+  console.log(`[Terminal :3001] PID:         ${termOccupant?.pid || 'None'}${termOccupant?.name ? ` (${termOccupant.name})` : ''}`);
+  console.log(`[Terminal :3001] Status:      ${termHealth.ok ? 'HEALTHY' : termOccupant?.pid ? 'OCCUPIED' : 'OFFLINE'}`);
+  console.log('====================================');
+
+  return { health, occupant, storedPid, termHealth, termOccupant };
 }
 
 // CLI Execution entrypoint
@@ -400,6 +487,7 @@ if (require.main === module) {
   } else {
     const isDaemon = args.includes('--daemon') || args.includes('-d');
     startBridge({ daemon: isDaemon }).then((res) => {
+      startTerminalProcess({ daemon: isDaemon });
       if (isDaemon) process.exit(res.ok ? 0 : 1);
     });
   }
@@ -407,6 +495,8 @@ if (require.main === module) {
 
 module.exports = {
   checkBridgeHealth,
+  checkTerminalHealth,
+  startTerminalProcess,
   getPortOccupant,
   isPidAlive,
   getStoredPid,
@@ -415,5 +505,6 @@ module.exports = {
   statusBridge,
   backendDir,
   pidFile,
+  terminalPidFile,
   logFile,
 };
