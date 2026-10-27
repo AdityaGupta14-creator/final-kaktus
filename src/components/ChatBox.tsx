@@ -1053,7 +1053,9 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
   }, []);
 
   const [input, setInput] = useState('');
-  const modelRecommendation = /flash-lite/i.test(model) && isLargeHardwareTask(input)
+  const dismissedWarningRequestRef = useRef<string | null>(null);
+  const isDismissedPrompt = Boolean(dismissedWarningRequestRef.current && dismissedWarningRequestRef.current === input.trim());
+  const modelRecommendation = !isDismissedPrompt && /flash-lite/i.test(model) && isLargeHardwareTask(input)
     ? recommendFullFlashModel(model, availableModels)
     : undefined;
   const [pendingModelWarning, setPendingModelWarning] = useState<{
@@ -1084,6 +1086,16 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
       isMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    submittingRef.current = false;
+  }, [model]);
+
+  useEffect(() => {
+    submittingRef.current = false;
+    setPendingModelWarning(null);
+    dismissedWarningRequestRef.current = null;
+  }, [sessionId]);
 
   const totalMessages = messages.length;
   const startIndex = Math.max(0, totalMessages - visibleCount);
@@ -1136,7 +1148,6 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
       return;
     }
     if (submittingRef.current || isProcessing || isPreparingImages) return;
-    submittingRef.current = true;
     const textToSend = overrideInput || input;
     const attachedImages = pendingImages;
     const userMsg = textToSend.trim() || (attachedImages.length
@@ -1145,17 +1156,24 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
     const requestModel = modelOverride || model;
     const workflowPhase = workflowOverride?.plan.subsystems[workflowOverride.phaseIndex];
     if (!userMsg || !apiKeys || apiKeys.length === 0 || !requestModel) {
+      submittingRef.current = false;
       if (!apiKeys || apiKeys.length === 0) alert('Please add at least one API Key in the Admin Panel.');
       return;
     }
 
-    if (!allowLiteTask && /flash-lite/i.test(requestModel) && isLargeHardwareTask(userMsg)) {
+    const isExplicitlyAllowedOrDismissed = allowLiteTask || dismissedWarningRequestRef.current === userMsg;
+    if (!isExplicitlyAllowedOrDismissed && /flash-lite/i.test(requestModel) && isLargeHardwareTask(userMsg)) {
       const recommendation = recommendFullFlashModel(requestModel, availableModels);
       if (recommendation) {
+        submittingRef.current = false;
         setPendingModelWarning({ request: userMsg, recommendation, workflowOverride });
         return;
       }
     }
+    
+    submittingRef.current = true;
+    dismissedWarningRequestRef.current = null;
+    setPendingModelWarning(null);
     
     onUpdateSessionTitle(sessionTitle === 'New chat' ? normalizeSessionTitle(userMsg) : undefined);
     if (workflowOverride) {
@@ -1894,7 +1912,9 @@ RULES:
                   onClick={() => {
                     const pending = pendingModelWarning;
                     if (!pending) return;
+                    submittingRef.current = false;
                     setPendingModelWarning(null);
+                    dismissedWarningRequestRef.current = null;
                     onModelChange?.(pending.recommendation.name);
                     void handleSend(pending.request, pending.workflowOverride, true, pending.recommendation.name);
                   }}
@@ -1908,7 +1928,9 @@ RULES:
                   onClick={() => {
                     const pending = pendingModelWarning;
                     if (!pending) return;
+                    submittingRef.current = false;
                     setPendingModelWarning(null);
+                    dismissedWarningRequestRef.current = pending.request;
                     void handleSend(pending.request, pending.workflowOverride, true, model);
                   }}
                   className="rounded-lg px-2 py-1 text-[10px] text-amber-100/70 transition-colors hover:bg-amber-300/10 hover:text-amber-100 disabled:opacity-50"
@@ -1919,7 +1941,11 @@ RULES:
                   type="button"
                   onClick={() => {
                     const pending = pendingModelWarning;
-                    if (pending) setInput(current => current.trim() ? current : pending.request);
+                    if (pending) {
+                      setInput(current => current.trim() ? current : pending.request);
+                      dismissedWarningRequestRef.current = pending.request;
+                    }
+                    submittingRef.current = false;
                     setPendingModelWarning(null);
                   }}
                   title="Dismiss model warning"
@@ -1932,7 +1958,11 @@ RULES:
             ) : onModelChange ? (
               <button
                 type="button"
-                onClick={() => onModelChange(modelRecommendation!.name)}
+                onClick={() => {
+                  submittingRef.current = false;
+                  setPendingModelWarning(null);
+                  onModelChange(modelRecommendation!.name);
+                }}
                 className="mt-1 rounded-lg border border-amber-300/20 bg-amber-300/10 px-2 py-1 text-[10px] font-semibold text-amber-100 transition-colors hover:bg-amber-300/20"
               >
                 Switch to {modelLabel(modelRecommendation!.name, availableModels)}
@@ -2319,6 +2349,7 @@ RULES:
             onChange={e => {
               setInput(e.target.value);
               if (pendingModelWarning) setPendingModelWarning(null);
+              submittingRef.current = false;
             }}
             onClick={() => { if (isQuotaReached) onQuotaReached?.(); }}
             onKeyDown={e => {
