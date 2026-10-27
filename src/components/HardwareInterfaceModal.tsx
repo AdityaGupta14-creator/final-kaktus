@@ -67,7 +67,7 @@ export function HardwareInterfaceModal({ isOpen, onClose }: HardwareInterfaceMod
               Connect a supported board by USB. The local bridge detects its serial port and runs Arduino CLI to build, upload and monitor firmware.
             </p>
             <p className="mx-auto mt-2 max-w-md text-[11px] leading-relaxed text-zinc-500">
-              The local app starts the bridge automatically. When using the hosted site, start <code className="rounded bg-zinc-800 px-1">npm run hardware:bridge</code> or enable login auto-start with <code className="rounded bg-zinc-800 px-1">npm run hardware:autostart:enable</code>. The browser may ask to allow local-network access.
+              The local app starts its bridge automatically. The hosted site routes hardware work through the paired outbound bridge, so it does not need Chrome/Edge local-network permission. A local helper must be installed and running on the computer connected to the board.
             </p>
           </div>
 

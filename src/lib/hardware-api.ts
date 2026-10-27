@@ -24,10 +24,10 @@ async function resolveCloudBridgeId(idToken: string, signal?: AbortSignal): Prom
     headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store', signal,
   });
   const payload = await response.json().catch(() => ({})) as { devices?: Array<{ id?: string; lastSeenAt?: number | null }> };
+  if (!response.ok) throw new Error('Could not check paired hardware computers. Sign in again and retry.');
   const saved = window.localStorage.getItem(CLOUD_BRIDGE_STORAGE_KEY);
   const onlineDevices = (payload.devices || []).filter((device) => typeof device.lastSeenAt === 'number' && Date.now() - device.lastSeenAt < 20_000);
   const bridgeId = onlineDevices.find((device) => device.id === saved)?.id || onlineDevices[0]?.id;
-  if (!response.ok) throw new Error('Could not check paired hardware computers.');
   if (!bridgeId) {
     const hasPairedDevice = payload.devices?.some((device) => Boolean(device.id));
     throw new Error(hasPairedDevice
@@ -167,6 +167,14 @@ export function classifyHardwareError(error: unknown, status?: number): {
   message: string;
   permissionRequired: boolean;
 } {
+  if (status === 403 && isHostedRelay()) {
+    return {
+      state: 'error',
+      message: 'The secure hardware relay denied this request. Refresh your sign-in and retry.',
+      permissionRequired: false,
+    };
+  }
+
   if (status === 403) {
     return {
       state: 'cors-rejected',
@@ -184,6 +192,20 @@ export function classifyHardwareError(error: unknown, status?: number): {
   }
 
   const errStr = String(error instanceof Error ? error.message : error || '').toLowerCase();
+
+  // Hosted production requests use the authenticated cloud relay. A failed
+  // relay request is not a browser permission denial for localhost.
+  const isNetworkFailure = error instanceof TypeError
+    || errStr.includes('failed to fetch')
+    || errStr.includes('networkerror')
+    || errStr.includes('econnrefused');
+  if (isHostedRelay() && isNetworkFailure) {
+    return {
+      state: 'error',
+      message: 'Could not reach the secure hardware relay. Retry the connection.',
+      permissionRequired: false,
+    };
+  }
 
   // Explicit Chrome Local Network Access / loopback address space permission denial
   const isPermissionDenied =
@@ -236,6 +258,9 @@ export function classifyHardwareError(error: unknown, status?: number): {
 
 export function describeHardwareConnectionError(error: unknown): string {
   const classified = classifyHardwareError(error);
+  if (isHostedRelay() && !classified.permissionRequired && classified.state === 'error') {
+    return classified.message;
+  }
   if (classified.state === 'permission-required') {
     return 'The local USB service is not reachable. Allow "Apps on device" / Local Network Access in your browser and ensure npm run hardware:bridge is running.';
   }

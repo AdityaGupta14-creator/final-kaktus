@@ -305,7 +305,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const refreshDevicesBackend = useCallback(async () => {
     setStage('detecting');
     setBridgeState('checking');
-    setStatusText('Checking local hardware bridge...');
+    setStatusText(hostedProduction ? 'Checking secure hardware bridge...' : 'Checking local hardware bridge...');
     setServiceError('');
     setErrorText('');
 
@@ -376,10 +376,18 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     } finally {
       setStage((current) => current === 'detecting' ? 'idle' : current);
     }
-  }, [selectedPort]);
+  }, [hostedProduction, selectedPort]);
 
   /* ── Unified refresh: try backend first, fall back to Web Serial ── */
   const refreshDevices = useCallback(async () => {
+    // A hosted page must never probe 127.0.0.1. That can trigger Chrome/Edge
+    // Local Network Access prompts and cannot start a process on the user's PC.
+    // Hosted flashing always goes through the authenticated outbound relay.
+    if (hostedProduction) {
+      setMode('local');
+      await refreshDevicesBackend();
+      return;
+    }
     if (mode === 'browser') {
       return refreshDevicesWebSerial();
     }
@@ -391,7 +399,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       setMode('browser');
       await refreshDevicesWebSerial();
     }
-  }, [mode, refreshDevicesBackend, refreshDevicesWebSerial]);
+  }, [hostedProduction, mode, refreshDevicesBackend, refreshDevicesWebSerial]);
 
   /* ── Request a new device pairing (Web Serial browser picker) ── */
   const requestNewDevice = useCallback(async () => {
@@ -428,7 +436,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
 
   /* ── Bridge auto-polling: check if localhost:8000 comes online ── */
   useEffect(() => {
-    if (mode !== 'browser') {
+    if (hostedProduction || mode !== 'browser') {
       if (bridgePollRef.current) { clearInterval(bridgePollRef.current); bridgePollRef.current = null; }
       return;
     }
@@ -448,7 +456,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     };
     bridgePollRef.current = setInterval(poll, 5000);
     return () => { if (bridgePollRef.current) { clearInterval(bridgePollRef.current); bridgePollRef.current = null; } };
-  }, [mode, refreshDevicesBackend]);
+  }, [hostedProduction, mode, refreshDevicesBackend]);
 
   /* ── Auto-request bridge setup when board detected in browser mode ── */
   useEffect(() => {
@@ -1046,7 +1054,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               {hostedProduction && (
                 <div className="mt-3 rounded border border-blue-500/30 bg-blue-500/10 p-3 text-[11px] text-blue-100 leading-relaxed">
                   <div className="font-semibold text-blue-200 mb-2">Connect this computer without browser local-network permission</div>
-                  <p>The paired agent makes an outbound encrypted connection and can compile and flash boards plugged into that computer. Pairing is required once per computer.</p>
+                  <p>The app uses an authenticated outbound bridge, so Chrome/Edge local-network access is not needed. Pair and start the helper on the computer connected to the board once; builds and uploads then run through this app.</p>
                   <button
                     type="button"
                     onClick={() => void setupCloudBridge()}
