@@ -92,6 +92,10 @@ interface FlashPanelProps {
   code: string;
   left?: number;
   onClose: () => void;
+  /** Called when the panel wants the IDE to start the hardware bridge (e.g. via terminal). */
+  onRequestBridgeSetup?: () => void;
+  /** If true, the IDE is currently running the bridge setup. */
+  bridgeSetupRunning?: boolean;
 }
 
 type FlashStage = 'idle' | 'detecting' | 'compiling' | 'uploading' | 'success' | 'error' | 'monitoring';
@@ -113,7 +117,7 @@ function parseSerialEvents(buffer: string): { events: string[]; remainder: strin
   return { events, remainder };
 }
 
-export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
+export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, bridgeSetupRunning }: FlashPanelProps) {
   const [stage, setStage] = useState<FlashStage>('detecting');
   const [ports, setPorts] = useState<SerialPortInfo[]>([]);
   const [selectedPort, setSelectedPort] = useState('');
@@ -134,6 +138,7 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
   const webSerialReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const webSerialWriterRef = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null);
   const webSerialPortRef = useRef<SerialPort | null>(null);
+  const bridgePollRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentBoard = useMemo(
     () => BOARD_OPTIONS.find((board) => board.fqbn === selectedBoard) || null,
@@ -308,6 +313,39 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ── Bridge auto-polling: check if localhost:8000 comes online ── */
+  useEffect(() => {
+    if (mode !== 'browser') {
+      if (bridgePollRef.current) { clearInterval(bridgePollRef.current); bridgePollRef.current = null; }
+      return;
+    }
+    const poll = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:8000/flash/status', { cache: 'no-store', signal: AbortSignal.timeout(2000) });
+        if (res.ok) {
+          // Bridge came online! Switch to local mode
+          setMode('local');
+          setStatusText('Local bridge detected! Switching to full mode...');
+          if (bridgePollRef.current) { clearInterval(bridgePollRef.current); bridgePollRef.current = null; }
+          void refreshDevicesBackend().then(() => setMode('local')).catch(() => {});
+        }
+      } catch {
+        // Still offline, keep polling
+      }
+    };
+    bridgePollRef.current = setInterval(poll, 5000);
+    return () => { if (bridgePollRef.current) { clearInterval(bridgePollRef.current); bridgePollRef.current = null; } };
+  }, [mode, refreshDevicesBackend]);
+
+  /* ── Auto-request bridge setup when board detected in browser mode ── */
+  useEffect(() => {
+    if (mode === 'browser' && ports.length > 0 && onRequestBridgeSetup && !bridgeSetupRunning) {
+      // Board detected but no bridge — ask IDE to start bridge
+      onRequestBridgeSetup();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, ports.length]);
 
   useEffect(() => {
     if (autoScroll && serialContainerRef.current) {
@@ -745,11 +783,77 @@ export function FlashPanel({ code, left = 0, onClose }: FlashPanelProps) {
 
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0a0e13]">
           {busy && <div className="h-0.5 w-full overflow-hidden bg-neutral-800"><motion.div className="h-full w-1/3 bg-neutral-100" animate={{ x: ['-100%', '300%'] }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }} /></div>}
-          {mode === 'browser' && !currentPort && !errorText && stage !== 'monitoring' && (
-            <div className="m-3 rounded-md border border-green-900/40 bg-green-950/20 p-3 text-xs text-green-200">
-              <div className="flex items-center gap-2 font-semibold"><Wifi size={14} /> Web Serial mode (production)</div>
-              <p className="mt-1 text-green-300/80">Your browser connects directly to the USB board. Board detection and serial monitor work from any device.</p>
-              <p className="mt-1.5 text-green-300/60">Compile & Flash require the local bridge: <code className="rounded bg-black/40 px-1 text-green-200">npm run hardware:bridge</code></p>
+          {mode === 'browser' && !errorText && stage !== 'monitoring' && (
+            <div className="m-3 rounded-lg border border-neutral-800 bg-[#0c0c0c] overflow-hidden">
+              <div className="flex items-center gap-2.5 border-b border-neutral-800 bg-[#141414] px-4 py-2.5">
+                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-green-950 border border-green-900/50">
+                  <Wifi size={12} className="text-green-400" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-neutral-100">Hardware Bridge Setup</div>
+                  <div className="text-[10px] text-neutral-500">Auto-detecting compile service...</div>
+                </div>
+              </div>
+              <div className="p-3 space-y-2.5">
+                {/* Step 1: Board Detection */}
+                <div className="flex items-start gap-2.5">
+                  <div className={'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ' + (currentPort ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-neutral-800 text-neutral-500 border border-neutral-700')}>
+                    {currentPort ? '✓' : '1'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className={'text-xs font-medium ' + (currentPort ? 'text-green-400' : 'text-neutral-300')}>
+                      {currentPort ? `${deviceLabel} detected` : 'Detect USB board'}
+                    </div>
+                    <div className="text-[10px] text-neutral-500">
+                      {currentPort ? `Port: ${currentPort.port} · USB ID: ${currentPort.vid_pid || 'N/A'}` : 'Connect a board and pair it via the browser'}
+                    </div>
+                  </div>
+                </div>
+                {/* Step 2: Serial Monitor */}
+                <div className="flex items-start gap-2.5">
+                  <div className={'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ' + (currentPort ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-neutral-800 text-neutral-500 border border-neutral-700')}>
+                    {currentPort ? '✓' : '2'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className={'text-xs font-medium ' + (currentPort ? 'text-green-400' : 'text-neutral-400')}>Serial monitor ready</div>
+                    <div className="text-[10px] text-neutral-500">Direct browser connection · No bridge needed</div>
+                  </div>
+                </div>
+                {/* Step 3: Compile Bridge */}
+                <div className="flex items-start gap-2.5">
+                  <div className={'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ' + (bridgeSetupRunning ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-neutral-800 text-neutral-500 border border-neutral-700')}>
+                    {bridgeSetupRunning ? <Loader2 size={10} className="animate-spin" /> : '3'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className={'text-xs font-medium ' + (bridgeSetupRunning ? 'text-amber-400' : 'text-neutral-400')}>
+                      {bridgeSetupRunning ? 'Starting compile service...' : 'Compile & Flash service'}
+                    </div>
+                    <div className="text-[10px] text-neutral-500">
+                      {bridgeSetupRunning
+                        ? 'Running npm run hardware:bridge in terminal...'
+                        : 'Waiting for local Arduino CLI bridge on :8000'}
+                    </div>
+                    {!bridgeSetupRunning && onRequestBridgeSetup && (
+                      <button
+                        type="button"
+                        onClick={onRequestBridgeSetup}
+                        className="mt-1.5 flex items-center gap-1.5 rounded-md border border-neutral-700 bg-[#1a1a1a] px-2.5 py-1.5 text-[10px] font-medium text-neutral-200 hover:border-neutral-500 hover:text-white transition-colors"
+                      >
+                        <Terminal size={10} /> Start bridge via terminal
+                      </button>
+                    )}
+                    {!onRequestBridgeSetup && (
+                      <div className="mt-1.5 rounded-md bg-black/50 px-2.5 py-1.5 font-mono text-[10px] text-neutral-400 select-all cursor-text">
+                        npm run hardware:bridge
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 border-t border-neutral-800 bg-[#0a0a0a] px-4 py-2 text-[10px] text-neutral-500">
+                <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                Auto-polling bridge every 5s — will auto-connect when ready
+              </div>
             </div>
           )}
           {errorText && (

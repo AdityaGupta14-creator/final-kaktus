@@ -343,6 +343,7 @@ export default function Home() {
   const [isFlashOpen, setIsFlashOpen] = useState(false);
   const [connectedDeviceName, setConnectedDeviceName] = useState('');
   const [generatedCode, setGeneratedCode] = useState('');
+  const [bridgeSetupRunning, setBridgeSetupRunning] = useState(false);
   const terminalRef = useRef<TerminalRef>(null);
 
   const [sidebarWidth, setSidebarWidth] = useState(340);
@@ -415,6 +416,17 @@ export default function Home() {
     }
     throw new Error('The terminal could not open. Close and reopen it, then retry the task.');
   };
+
+  const handleRequestBridgeSetup = useCallback(() => {
+    if (bridgeSetupRunning) return;
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      // Terminal not available — can't auto-run
+      return;
+    }
+    setBridgeSetupRunning(true);
+    terminal.sendCommand('npm run hardware:bridge\r');
+  }, [bridgeSetupRunning]);
 
   const handleCircuitUpdate = useCallback((data: TutorialData, requestedTabId?: string) => {
     setWorkspace(prev => {
@@ -1039,6 +1051,8 @@ export default function Home() {
               code={generatedCode}
               left={sidebarWidth}
               onClose={() => setIsFlashOpen(false)}
+              onRequestBridgeSetup={terminalStatus === 'connected' ? handleRequestBridgeSetup : undefined}
+              bridgeSetupRunning={bridgeSetupRunning}
             />
           )}
         </AnimatePresence>
