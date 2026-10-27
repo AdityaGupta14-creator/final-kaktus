@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 LOCAL_API = "http://127.0.0.1:8001"
 PROJECT_ID = "otpdemo-291bd"
 MAX_RESULT_BYTES = 1_000_000

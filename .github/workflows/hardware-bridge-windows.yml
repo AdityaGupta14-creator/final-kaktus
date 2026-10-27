@@ -41,8 +41,8 @@ jobs:
       - name: Check packaged companion dependencies
         shell: pwsh
         run: |
-          & "dist/KaktusHardwareBridge.exe" --self-check
-          if ($LASTEXITCODE -ne 0) {
+          $check = Start-Process -FilePath "dist/KaktusHardwareBridge.exe" -ArgumentList "--self-check" -Wait -PassThru
+          if ($check.ExitCode -ne 0) {
             $log = Join-Path $env:APPDATA "Kaktus/HardwareBridge/agent.log"
             if (Test-Path $log) { Get-Content $log }
             throw "The packaged companion could not load its hardware dependencies."

@@ -188,7 +188,7 @@ export async function POST(request: Request) {
         label: typeof data.label === 'string' ? data.label.slice(0, 80) : 'This computer',
         createdAt: Date.now(),
         lastSeenAt: null,
-        agentVersion: 'windows-companion-1.0.1',
+        agentVersion: 'windows-companion-1.0.2',
       });
       transaction.delete(pairingRef);
       return 'paired';
