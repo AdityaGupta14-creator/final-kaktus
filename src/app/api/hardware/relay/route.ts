@@ -16,6 +16,7 @@ const ALLOWED_ROUTES = new Map<string, string>([
   ['GET /', 'health'],
   ['GET /flash/status', 'status'],
   ['GET /flash/boards', 'boards'],
+  ['GET /flash/upload/status', 'upload-status'],
   ['POST /flash/compile', 'compile'],
   ['POST /flash/upload', 'upload'],
   ['POST /flash/install-core', 'install-core'],
@@ -188,7 +189,7 @@ export async function POST(request: Request) {
         label: typeof data.label === 'string' ? data.label.slice(0, 80) : 'This computer',
         createdAt: Date.now(),
         lastSeenAt: null,
-        agentVersion: 'windows-companion-1.0.2',
+        agentVersion: 'windows-companion-1.0.4',
       });
       transaction.delete(pairingRef);
       return 'paired';

@@ -48,6 +48,7 @@ export const BOARD_OPTIONS: BoardOption[] = [
   { fqbn: 'esp32:esp32:esp32c3', name: 'ESP32-C3', chip: 'ESP32-C3', defaultBaud: 115200, family: 'RISC-V wireless MCU' },
   { fqbn: 'rp2040:rp2040:pico', name: 'Raspberry Pi Pico', chip: 'RP2040', defaultBaud: 115200, family: 'Dual-core Cortex-M0+' },
   { fqbn: 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8,upload_method=serialMethod', name: 'STM32 Blue Pill (serial bootloader)', chip: 'STM32F103C8T6', defaultBaud: 115200, family: 'Cortex-M3' },
+  { fqbn: 'esp32:esp32:esp32s2', name: 'ESP32-S2', chip: 'ESP32-S2', defaultBaud: 115200, family: 'Single-core wireless MCU' },
 ];
 
 /* ── Known USB VID:PID → Board mapping for Web Serial detection ── */
@@ -61,7 +62,7 @@ const USB_VID_PID_MAP: Record<string, BoardOption> = {
   '2341:0058': BOARD_OPTIONS[1], // Arduino Nano
   '10C4:EA60': BOARD_OPTIONS[3], // CP2102 → ESP32
   '10C4:EA70': BOARD_OPTIONS[3], // CP2104 → ESP32
-  '303A:0002': BOARD_OPTIONS[4], // ESP32-S2 (map to S3)
+  '303A:0002': BOARD_OPTIONS[8], // ESP32-S2 native USB
   '303A:1001': BOARD_OPTIONS[4], // ESP32-S3
   '303A:1002': BOARD_OPTIONS[5], // ESP32-C3
   '2E8A:0005': BOARD_OPTIONS[6], // RP2040 Pico
@@ -111,6 +112,76 @@ interface SerialPortInfo {
   _webSerialPort?: SerialPort;
 }
 
+interface FlashSelectionPreference {
+  port: string;
+  board: string;
+  serial_number: string;
+  vid_pid: string;
+}
+
+interface UploadOperationSnapshot {
+  operation_id?: string;
+  status?: 'running' | 'success' | 'error';
+  stage?: string;
+  progress?: number;
+  message?: string;
+  stdout?: string;
+  error?: string;
+  board_connected?: boolean;
+}
+
+const FLASH_SELECTION_KEY = 'kaktus.hardware.flashSelection.v1';
+const ACTIVE_UPLOAD_KEY = 'kaktus.hardware.activeUpload.v1';
+
+function readFlashSelection(): FlashSelectionPreference {
+  if (typeof window === 'undefined') return { port: '', board: '', serial_number: '', vid_pid: '' };
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(FLASH_SELECTION_KEY) || '{}') as Partial<FlashSelectionPreference>;
+    return {
+      port: typeof saved.port === 'string' ? saved.port : '',
+      board: typeof saved.board === 'string' ? saved.board : '',
+      serial_number: typeof saved.serial_number === 'string' ? saved.serial_number : '',
+      vid_pid: typeof saved.vid_pid === 'string' ? saved.vid_pid : '',
+    };
+  } catch {
+    return { port: '', board: '', serial_number: '', vid_pid: '' };
+  }
+}
+
+function readActiveUploadId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const saved = window.sessionStorage.getItem(ACTIVE_UPLOAD_KEY) || '';
+    return /^[a-f0-9]{32}$/.test(saved) ? saved : '';
+  } catch { return ''; }
+}
+
+function identifyBoardFromPortInfo(port: SerialPortInfo): BoardOption | null {
+  const exact = BOARD_OPTIONS.find((board) => board.fqbn === port.fqbn);
+  if (exact) return exact;
+
+  const usbBoard = port.vid_pid ? USB_VID_PID_MAP[port.vid_pid.toUpperCase()] : null;
+  if (usbBoard) return usbBoard;
+
+  const identity = [port.board, port.description, port.product, port.manufacturer].filter(Boolean).join(' ').toLowerCase();
+  if (identity.includes('esp32-s3')) return BOARD_OPTIONS[4];
+  if (identity.includes('esp32-c3')) return BOARD_OPTIONS[5];
+  if (identity.includes('esp32-s2')) return BOARD_OPTIONS[8];
+  if (identity.includes('esp32')) return BOARD_OPTIONS[3];
+  if (identity.includes('arduino mega')) return BOARD_OPTIONS[2];
+  if (identity.includes('arduino nano')) return BOARD_OPTIONS[1];
+  if (identity.includes('arduino uno')) return BOARD_OPTIONS[0];
+  if (identity.includes('rp2040') || identity.includes('raspberry pi pico')) return BOARD_OPTIONS[6];
+  return null;
+}
+
+function matchesSavedPort(port: SerialPortInfo, saved: FlashSelectionPreference): boolean {
+  if (saved.serial_number && port.serial_number) return port.serial_number === saved.serial_number;
+  if (saved.vid_pid && port.vid_pid && saved.vid_pid !== port.vid_pid) return false;
+  if (saved.port && port.port === saved.port) return true;
+  return Boolean(saved.vid_pid && port.vid_pid === saved.vid_pid && !saved.serial_number);
+}
+
 interface FlashPanelProps {
   code: string;
   left?: number;
@@ -121,7 +192,7 @@ interface FlashPanelProps {
   bridgeSetupRunning?: boolean;
 }
 
-type FlashStage = 'idle' | 'detecting' | 'compiling' | 'uploading' | 'success' | 'error' | 'monitoring';
+type FlashStage = 'idle' | 'detecting' | 'preparing' | 'compiling' | 'uploading' | 'disconnecting' | 'reconnecting' | 'success' | 'error' | 'monitoring';
 type BackendMode = 'checking' | 'local' | 'browser';
 
 function inferMonitorBaud(source: string, fallback: number): number {
@@ -141,11 +212,13 @@ function parseSerialEvents(buffer: string): { events: string[]; remainder: strin
 }
 
 export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, bridgeSetupRunning }: FlashPanelProps) {
+  const [savedSelection] = useState(readFlashSelection);
   const [stage, setStage] = useState<FlashStage>('detecting');
   const [ports, setPorts] = useState<SerialPortInfo[]>([]);
-  const [selectedPort, setSelectedPort] = useState('');
+  const [selectedPort, setSelectedPort] = useState(savedSelection.port);
+  const [isTargetConnected, setIsTargetConnected] = useState(false);
   const [bridgeState, setBridgeState] = useState<BridgeConnectionState>('checking');
-  const [selectedBoard, setSelectedBoard] = useState('');
+  const [selectedBoard, setSelectedBoard] = useState(savedSelection.board);
   const [baudRate, setBaudRate] = useState(115200);
   const [serviceReady, setServiceReady] = useState(false);
   const [serviceError, setServiceError] = useState('');
@@ -158,6 +231,8 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const [compileOutput, setCompileOutput] = useState('');
   const [serialLines, setSerialLines] = useState<string[]>([]);
   const [serialInput, setSerialInput] = useState('');
+  const [activeUploadId, setActiveUploadId] = useState(readActiveUploadId);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [autoScroll, setAutoScroll] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [mode, setMode] = useState<BackendMode>('checking');
@@ -176,6 +251,22 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     () => ports.find((port) => port.port === selectedPort) || null,
     [ports, selectedPort],
   );
+
+  useEffect(() => {
+    if (!selectedPort) return;
+    const previous = readFlashSelection();
+    const sameDevice = currentPort
+      ? matchesSavedPort(currentPort, previous)
+      : selectedPort === previous.port;
+    const selection: FlashSelectionPreference = {
+      port: selectedPort,
+      board: selectedBoard || (sameDevice ? previous.board : ''),
+      serial_number: currentPort?.serial_number || (sameDevice ? previous.serial_number : ''),
+      vid_pid: currentPort?.vid_pid || (sameDevice ? previous.vid_pid : ''),
+    };
+    try { window.localStorage.setItem(FLASH_SELECTION_KEY, JSON.stringify(selection)); } catch {}
+  }, [currentPort, selectedBoard, selectedPort]);
+
   const hostedProduction = typeof window !== 'undefined'
     && window.location.protocol === 'https:'
     && window.location.hostname !== 'localhost'
@@ -316,7 +407,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       const foundPorts: SerialPortInfo[] = webPorts.map((port: SerialPort, index: number) => {
         const board = identifyBoardFromWebSerial(port);
         const vidPid = getVidPidString(port);
-        return {
+        const detectedPort: SerialPortInfo = {
           port: `WebSerial-${index}`,
           board: board?.name || null,
           fqbn: board?.fqbn || null,
@@ -325,19 +416,25 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
           description: board ? `${board.name} (${board.chip})` : 'USB Serial Device',
           _webSerialPort: port,
         };
+        const inferredBoard = identifyBoardFromPortInfo(detectedPort);
+        return { ...detectedPort, board: detectedPort.board || inferredBoard?.name || null, fqbn: detectedPort.fqbn || inferredBoard?.fqbn || null };
       });
       setPorts(foundPorts);
       setServiceReady(true);
 
       const recognizedPorts = foundPorts.filter((p) => p.fqbn && BOARD_OPTIONS.some((b) => b.fqbn === p.fqbn));
-      const autoTarget = foundPorts.find((p) => p.port === selectedPort)
+      const autoTarget = foundPorts.find((p) => matchesSavedPort(p, savedSelection))
+        || foundPorts.find((p) => p.port === selectedPort)
         || (foundPorts.length === 1 ? foundPorts[0] : recognizedPorts.length === 1 ? recognizedPorts[0] : null);
+      setIsTargetConnected(Boolean(autoTarget));
 
       if (autoTarget) {
         setSelectedPort(autoTarget.port);
-        if (autoTarget.fqbn && BOARD_OPTIONS.some((b) => b.fqbn === autoTarget.fqbn)) {
-          setSelectedBoard(autoTarget.fqbn);
-        }
+        const inferredBoard = identifyBoardFromPortInfo(autoTarget);
+        const retainedBoard = autoTarget.port === selectedPort || matchesSavedPort(autoTarget, savedSelection)
+          ? (selectedBoard || savedSelection.board)
+          : '';
+        setSelectedBoard(retainedBoard || inferredBoard?.fqbn || '');
       }
 
       if (!foundPorts.length) {
@@ -350,11 +447,12 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     } catch (error) {
       setServiceError(error instanceof Error ? error.message : 'Could not scan USB devices.');
       setPorts([]);
+      setIsTargetConnected(false);
       setStatusText('USB scan failed.');
     } finally {
       setStage((current) => current === 'detecting' ? 'idle' : current);
     }
-  }, [selectedPort]);
+  }, [savedSelection, selectedBoard, selectedPort]);
 
   /* ── Detect ports via local backend (localhost:8000) ── */
   const refreshDevicesBackend = useCallback(async () => {
@@ -383,6 +481,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
         setServiceError(health.error || 'Local hardware bridge is unavailable.');
         setPorts([]);
         setSelectedPort('');
+        setIsTargetConnected(false);
         setStatusText(health.error || 'Local hardware bridge is unavailable.');
         return;
       }
@@ -397,17 +496,25 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       const portsResponse = await hardwareFetch('/flash/boards');
       if (!portsResponse.ok) throw new Error(await hardwareResponseError(portsResponse));
       const portPayload = await portsResponse.json() as { ports?: SerialPortInfo[] };
-      const foundPorts = Array.isArray(portPayload.ports) ? portPayload.ports : [];
+      const foundPorts = (Array.isArray(portPayload.ports) ? portPayload.ports : []).map((port) => {
+        const inferredBoard = identifyBoardFromPortInfo(port);
+        return { ...port, board: port.board || inferredBoard?.name || null, fqbn: port.fqbn || inferredBoard?.fqbn || null };
+      });
       setPorts(foundPorts);
       const recognizedPorts = foundPorts.filter((port) => port.fqbn && BOARD_OPTIONS.some((board) => board.fqbn === port.fqbn));
-      const autoTargetPort = foundPorts.find((port) => port.port === selectedPort)
+      const autoTargetPort = foundPorts.find((port) => matchesSavedPort(port, savedSelection))
+        || foundPorts.find((port) => port.port === selectedPort)
         || (foundPorts.length === 1 ? foundPorts[0] : recognizedPorts.length === 1 ? recognizedPorts[0] : null);
 
       setSelectedPort(autoTargetPort?.port || '');
+      setIsTargetConnected(Boolean(autoTargetPort));
       setSelectedBoard((previous) => {
-        const detected = autoTargetPort?.fqbn;
-        if (detected && BOARD_OPTIONS.some((board) => board.fqbn === detected)) return detected;
-        return previous;
+        const detected = autoTargetPort ? identifyBoardFromPortInfo(autoTargetPort) : null;
+        const sameDevice = Boolean(autoTargetPort && (
+          autoTargetPort.port === selectedPort || matchesSavedPort(autoTargetPort, savedSelection)
+        ));
+        const retainedBoard = sameDevice ? previous || savedSelection.board : '';
+        return retainedBoard || detected?.fqbn || '';
       });
 
       if (!health.compilerReady) {
@@ -427,11 +534,12 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       setServiceError(message);
       setPorts([]);
       setSelectedPort('');
+      setIsTargetConnected(false);
       setStatusText('Local hardware service is unavailable.');
     } finally {
       setStage((current) => current === 'detecting' ? 'idle' : current);
     }
-  }, [hostedProduction, selectedPort]);
+  }, [hostedProduction, savedSelection, selectedPort]);
 
   /* ── Unified refresh: try backend first, fall back to Web Serial ── */
   const refreshDevices = useCallback(async () => {
@@ -519,6 +627,74 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     return () => { if (bridgePollRef.current) { clearInterval(bridgePollRef.current); bridgePollRef.current = null; } };
   }, [hostedProduction, mode, refreshDevicesBackend]);
 
+  useEffect(() => {
+    if (!activeUploadId) return;
+    const controller = new AbortController();
+    let stopped = false;
+    let timer: number | undefined;
+
+    const finishOperation = (payload: UploadOperationSnapshot) => {
+      try { window.sessionStorage.removeItem(ACTIVE_UPLOAD_KEY); } catch {}
+      setCompileOutput(payload.stdout || '');
+      setUploadProgress(payload.progress || (payload.status === 'success' ? 100 : 0));
+      setActiveUploadId('');
+      if (payload.status === 'success') {
+        setErrorText('');
+        setStatusText(payload.message || `Firmware uploaded to ${currentPort?.port || 'the selected board'}.`);
+        setStage('success');
+      } else {
+        const error = payload.error || payload.message || 'Firmware upload failed.';
+        setErrorText(error);
+        setStatusText(payload.board_connected === false ? 'Board disconnected. Firmware was not confirmed as uploaded.' : 'Compile or upload failed.');
+        setStage('error');
+      }
+    };
+
+    const pollOperation = async () => {
+      if (stopped) return;
+      try {
+        const response = await hardwareFetch(`/flash/upload/status?operation_id=${encodeURIComponent(activeUploadId)}`, {
+          signal: controller.signal,
+        });
+        const payload = await response.json().catch(() => ({})) as UploadOperationSnapshot & { detail?: string };
+        if (!response.ok) {
+          if (response.status === 404) {
+            finishOperation({ status: 'error', error: payload.error || payload.detail || 'The saved firmware operation has expired. Start the upload again.' });
+            return;
+          }
+          throw new Error(payload.error || payload.detail || `Hardware service returned HTTP ${response.status}.`);
+        }
+
+        setUploadProgress(Math.max(0, Math.min(100, Number(payload.progress) || 0)));
+        setCompileOutput(payload.stdout || '');
+        setStatusText(payload.message || 'Firmware operation is running…');
+        if (typeof payload.board_connected === 'boolean') setIsTargetConnected(payload.board_connected);
+
+        if (payload.status === 'success' || payload.status === 'error') {
+          finishOperation(payload);
+          return;
+        }
+
+        setStage(payload.stage === 'disconnecting' || payload.board_connected === false
+          ? 'disconnecting'
+          : payload.stage === 'uploading' ? 'uploading' : payload.stage === 'preparing' ? 'preparing' : 'compiling');
+        timer = window.setTimeout(pollOperation, hostedProduction ? 1200 : 650);
+      } catch (error) {
+        if (stopped || controller.signal.aborted) return;
+        setStage('reconnecting');
+        setStatusText('Waiting for the hardware bridge. Upload completion is not confirmed yet.');
+        timer = window.setTimeout(pollOperation, 2500);
+      }
+    };
+
+    void pollOperation();
+    return () => {
+      stopped = true;
+      controller.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [activeUploadId, currentPort?.port, hostedProduction]);
+
   /* ── Auto-request bridge setup when board detected in browser mode ── */
   useEffect(() => {
     if (mode === 'browser' && ports.length > 0 && onRequestBridgeSetup && !bridgeSetupRunning) {
@@ -541,10 +717,13 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const handlePortChange = (port: string) => {
     setSelectedPort(port);
     const detected = ports.find((item) => item.port === port);
-    if (detected?.fqbn && BOARD_OPTIONS.some((board) => board.fqbn === detected.fqbn)) {
-      setSelectedBoard(detected.fqbn);
-      const board = BOARD_OPTIONS.find((item) => item.fqbn === detected.fqbn);
-      if (board) setBaudRate(inferMonitorBaud(code, board.defaultBaud));
+    setIsTargetConnected(Boolean(detected));
+    const detectedBoard = detected ? identifyBoardFromPortInfo(detected) : null;
+    if (detectedBoard) {
+      setSelectedBoard(detectedBoard.fqbn);
+      setBaudRate(inferMonitorBaud(code, detectedBoard.defaultBaud));
+    } else if (port !== selectedPort) {
+      setSelectedBoard('');
     }
     setStage('idle');
     setErrorText('');
@@ -603,7 +782,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       setStage('error');
       return;
     }
-    if (!currentPort || !currentBoard) {
+    if (!currentPort || !currentBoard || !isTargetConnected) {
       setErrorText('Connect a USB serial board, select its port, and choose the correct board target.');
       setStage('error');
       return;
@@ -616,6 +795,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     serialControllerRef.current?.abort();
     serialControllerRef.current = null;
     setStage('uploading');
+    setUploadProgress(5);
     setStatusText('Preparing board support, compiling, then uploading to ' + currentPort.port + '...');
     setErrorText('');
     setCompileOutput('');
@@ -623,19 +803,31 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       const response = await hardwareFetch('/flash/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, board: currentBoard.fqbn, port: currentPort.port }),
+        body: JSON.stringify({
+          code,
+          board: currentBoard.fqbn,
+          port: currentPort.port,
+          vid_pid: currentPort.vid_pid || null,
+          serial_number: currentPort.serial_number || null,
+        }),
       });
-      const payload = await response.json().catch(() => ({})) as { status?: string; error?: string; detail?: string; message?: string; stdout?: string };
-      if (!response.ok || payload.status !== 'success') throw new Error(payload.error || payload.detail || await hardwareResponseError(response));
-      setCompileOutput(payload.stdout || payload.message || 'Firmware upload completed.');
-      setStatusText(payload.message || 'Firmware uploaded successfully to ' + currentBoard.name + '.');
-      setStage('success');
+      const payload = await response.json().catch(() => ({})) as UploadOperationSnapshot & { detail?: string };
+      if (!response.ok || !payload.operation_id) {
+        const failure = payload.error || payload.detail || await hardwareResponseError(response);
+        if (/serial port .*no longer available|board .*disconnected/i.test(failure)) setIsTargetConnected(false);
+        throw new Error(failure);
+      }
+      try { window.sessionStorage.setItem(ACTIVE_UPLOAD_KEY, payload.operation_id); } catch {}
+      setUploadProgress(payload.progress || 5);
+      setStatusText(payload.message || 'Firmware operation started.');
+      setStage('compiling');
+      setActiveUploadId(payload.operation_id);
     } catch (error) {
       setErrorText(describeHardwareConnectionError(error));
       setStatusText('Compile or upload failed.');
       setStage('error');
     }
-  }, [code, currentBoard, currentPort, mode]);
+  }, [code, currentBoard, currentPort, isTargetConnected, mode]);
 
   /* ── Stop serial monitor (works for both modes) ── */
   const stopSerialMonitor = useCallback(async () => {
@@ -822,10 +1014,10 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     }
   }, [currentPort, isSending, mode, serialInput, stage]);
 
-  const busy = stage === 'compiling' || stage === 'uploading' || stage === 'detecting';
+  const busy = stage === 'preparing' || stage === 'compiling' || stage === 'uploading' || stage === 'disconnecting' || stage === 'reconnecting' || stage === 'detecting';
   const hasFirmware = Boolean(code.trim());
-  const canMonitor = Boolean(currentPort) && !busy;
-  const canFlash = mode === 'local' && serviceReady && hasFirmware && Boolean(currentPort && currentBoard) && !busy;
+  const canMonitor = Boolean(currentPort && isTargetConnected) && !busy;
+  const canFlash = mode === 'local' && serviceReady && hasFirmware && Boolean(currentPort && currentBoard && isTargetConnected) && !busy;
   const deviceLabel = currentBoard?.name || currentPort?.board || currentPort?.product || 'USB serial device';
 
   return (
@@ -845,7 +1037,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
           <span className="hidden h-4 w-px bg-neutral-700 sm:block" />
           <span className="truncate text-[11px] text-neutral-400">
             {currentPort
-              ? `${deviceLabel} · ${currentPort.port}`
+              ? isTargetConnected ? `${deviceLabel} · ${currentPort.port}` : `${currentPort.port} · board disconnected`
               : bridgeState === 'checking'
               ? 'Checking local bridge...'
               : bridgeState === 'permission-required'
@@ -865,8 +1057,10 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               'rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ' +
               (bridgeState === 'checking'
                 ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 animate-pulse'
-                : currentPort
+                : currentPort && isTargetConnected
                 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                : currentPort
+                ? 'border-red-500/40 bg-red-950/30 text-red-300'
                 : bridgeState === 'connected'
                 ? 'border-emerald-600/30 bg-emerald-950/40 text-emerald-400'
                 : bridgeState === 'permission-required'
@@ -874,10 +1068,16 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
                 : 'border-neutral-800 bg-neutral-900 text-neutral-400')
             }
           >
-            {stage === 'compiling'
+            {stage === 'preparing'
+              ? 'Preparing'
+              : stage === 'compiling'
               ? 'Building'
               : stage === 'uploading'
               ? 'Uploading'
+              : stage === 'disconnecting'
+              ? 'Disconnected'
+              : stage === 'reconnecting'
+              ? 'Bridge Offline'
               : stage === 'monitoring'
               ? 'Monitoring'
               : stage === 'error'
@@ -886,8 +1086,10 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               ? 'Checking'
               : bridgeState === 'permission-required'
               ? 'Permission Required'
-              : currentPort
+              : currentPort && isTargetConnected
               ? 'Connected'
+              : currentPort
+              ? 'Disconnected'
               : bridgeState === 'connected'
               ? 'Bridge Ready'
               : mode === 'browser'
@@ -919,6 +1121,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
                 id="hardware-port"
                 value={selectedPort}
                 onChange={(event) => handlePortChange(event.target.value)}
+                disabled={busy}
                 className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-[#0b0b0b] px-2 py-2 text-xs text-neutral-100 outline-none focus:border-neutral-300"
               >
                 <option value="">Select detected port</option>
@@ -931,7 +1134,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               <button
                 type="button"
                 onClick={() => mode === 'browser' ? void requestNewDevice() : void refreshDevices()}
-                disabled={stage === 'detecting'}
+                disabled={busy}
                 title={mode === 'browser' ? 'Pair a new USB device' : 'Scan USB ports'}
                 aria-label={mode === 'browser' ? 'Pair a new USB device' : 'Scan USB ports'}
                 className="rounded-md border border-neutral-700 bg-[#202020] p-2 text-neutral-300 hover:border-neutral-500 hover:text-white disabled:opacity-50"
@@ -947,11 +1150,15 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               id="hardware-board"
               value={selectedBoard}
               onChange={(event) => handleBoardChange(event.target.value)}
+              disabled={busy}
               className="w-full rounded-md border border-neutral-700 bg-[#0b0b0b] px-2 py-2 text-xs text-neutral-100 outline-none focus:border-neutral-300"
             >
               <option value="">Choose the exact board</option>
               {BOARD_OPTIONS.map((board) => <option key={board.fqbn} value={board.fqbn}>{board.name} - {board.family}</option>)}
             </select>
+            {currentPort && /^10C4:EA(60|70)$/i.test(currentPort.vid_pid || '') && (
+              <p className="mt-1.5 text-[10px] leading-4 text-neutral-500">CP210x USB bridge detected. ESP32 Dev Module is preselected; change the target if this adapter is attached to another board.</p>
+            )}
             {selectedBoard.startsWith('STMicroelectronics:') && <p className="mt-1.5 text-[10px] leading-4 text-neutral-300">Blue Pill needs a USB-to-UART adapter and an STM32 serial bootloader; the board itself has no USB serial interface.</p>}
           </div>
 
@@ -961,6 +1168,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               id="hardware-baud"
               value={baudRate}
               onChange={(event) => setBaudRate(Number(event.target.value))}
+              disabled={busy}
               className="w-full rounded-md border border-neutral-700 bg-[#0b0b0b] px-2 py-2 text-xs text-neutral-100 outline-none focus:border-neutral-300"
             >
               {[baudFromSketch, 9600, 19200, 38400, 57600, 115200, 230400].filter((value, index, all) => all.indexOf(value) === index).map((value) => (
@@ -977,8 +1185,8 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               title={mode === 'browser' ? 'Requires local hardware bridge (npm run hardware:bridge)' : undefined}
               className="flex flex-1 items-center justify-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-semibold text-black hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {stage === 'uploading' ? <Loader2 size={14} className="animate-spin" /> : stage === 'success' ? <Check size={14} /> : <Upload size={14} />}
-              {stage === 'uploading' ? 'Compiling and uploading' : stage === 'success' ? 'Flash again' : 'Compile and flash'}
+              {stage === 'preparing' || stage === 'uploading' || stage === 'compiling' ? <Loader2 size={14} className="animate-spin" /> : stage === 'success' ? <Check size={14} /> : <Upload size={14} />}
+              {stage === 'disconnecting' ? 'Stopping after disconnect' : stage === 'reconnecting' ? 'Waiting for bridge' : stage === 'preparing' ? 'Preparing board' : stage === 'uploading' || stage === 'compiling' ? 'Compile and upload' : stage === 'success' ? 'Flash again' : 'Compile and flash'}
             </button>
             <button
               type="button"
@@ -1008,7 +1216,30 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0a0e13]">
-          {busy && <div className="h-0.5 w-full overflow-hidden bg-neutral-800"><motion.div className="h-full w-1/3 bg-neutral-100" animate={{ x: ['-100%', '300%'] }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }} /></div>}
+          {activeUploadId ? (
+            <div className="mx-3 mt-3 rounded-md border border-neutral-800 bg-[#0b0b0b] p-3 font-mono text-[11px]">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2 text-neutral-200">
+                  {stage === 'disconnecting' || stage === 'reconnecting'
+                    ? <AlertTriangle size={13} className="shrink-0 text-amber-300" />
+                    : <Loader2 size={13} className="shrink-0 animate-spin text-neutral-300" />}
+                  <span className="truncate">{statusText}</span>
+                </div>
+                <span className="shrink-0 text-neutral-100">{uploadProgress}%</span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-800" role="progressbar" aria-label="Firmware operation progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={uploadProgress}>
+                <motion.div className="h-full rounded-full bg-neutral-100 transition-[width] duration-500" style={{ width: `${uploadProgress}%` }} />
+              </div>
+              <div className="mt-2 flex items-center gap-4 text-[10px] text-neutral-500">
+                <span className={uploadProgress >= 12 ? 'text-neutral-200' : ''}>Board support</span>
+                <span className={uploadProgress >= 30 ? 'text-neutral-200' : ''}>Compile</span>
+                <span className={uploadProgress >= 65 ? 'text-neutral-200' : ''}>Upload</span>
+              </div>
+              {compileOutput && <pre className="mt-2 max-h-16 overflow-auto whitespace-pre-wrap border-t border-neutral-800 pt-2 text-[10px] leading-4 text-neutral-400">{compileOutput}</pre>}
+            </div>
+          ) : busy ? (
+            <div className="h-0.5 w-full overflow-hidden bg-neutral-800"><motion.div className="h-full w-1/3 bg-neutral-100" animate={{ x: ['-100%', '300%'] }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }} /></div>
+          ) : null}
           {mode === 'browser' && !errorText && stage !== 'monitoring' && (
             <div className="m-3 rounded-lg border border-neutral-800 bg-[#0c0c0c] overflow-hidden">
               <div className="flex items-center gap-2.5 border-b border-neutral-800 bg-[#141414] px-4 py-2.5">
@@ -1214,7 +1445,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               <CheckCircle2 size={15} /> Firmware upload completed on {currentPort?.port}.
             </div>
           )}
-          {compileOutput && !errorText && stage !== 'monitoring' && (
+          {compileOutput && !errorText && !activeUploadId && stage !== 'monitoring' && (
             <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-3 font-mono text-[11px] leading-5 text-neutral-300">{compileOutput}</pre>
           )}
           {stage === 'monitoring' && !errorText && (

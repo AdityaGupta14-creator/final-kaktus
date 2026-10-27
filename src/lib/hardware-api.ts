@@ -56,7 +56,8 @@ async function cloudHardwareFetch(path: string, init: RequestInit, idToken: stri
     throw new Error(queued.error || `Hardware relay returned HTTP ${enqueueResponse.status}.`);
   }
 
-  const timeoutMs = /^\/flash\/(?:compile|upload|install-core|install-library)/.test(path)
+  const routePath = path.split('?', 1)[0];
+  const timeoutMs = ['/flash/compile', '/flash/upload', '/flash/install-core', '/flash/install-library'].includes(routePath)
     ? 4 * 60_000
     : 20_000;
   const deadline = Date.now() + timeoutMs;

@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
-from threading import RLock
+from queue import Empty, Queue
+from threading import RLock, Thread
 import subprocess
 import tempfile
 import os
@@ -16,6 +17,7 @@ import serial.tools.list_ports
 import serial
 import platform
 import hashlib
+import secrets
 import time
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import id_token
@@ -336,6 +338,8 @@ class FlashRequest(BaseModel):
     code: str = Field(max_length=1_000_000)
     board: str = Field(max_length=120)
     port: str = Field(max_length=120)
+    vid_pid: Optional[str] = Field(default=None, max_length=20)
+    serial_number: Optional[str] = Field(default=None, max_length=120)
 
 class InstallLibRequest(BaseModel):
     library: str = Field(min_length=1, max_length=100)
@@ -584,42 +588,292 @@ async def compile_code(req: CompileRequest):
         shutil.rmtree(tmp_dir, ignore_errors=True)
         return {"status": "error", "error": str(e)}
 
+_upload_operations = {}
+_upload_operations_lock = RLock()
+_UPLOAD_OPERATION_MAX_AGE_SECONDS = 30 * 60
+_UPLOAD_OUTPUT_MAX_CHARS = 12_000
+
+
+def _upload_operation_snapshot(operation_id: str):
+    with _upload_operations_lock:
+        operation = _upload_operations.get(operation_id)
+        return dict(operation) if operation else None
+
+
+def _update_upload_operation(operation_id: str, **updates):
+    with _upload_operations_lock:
+        operation = _upload_operations.get(operation_id)
+        if operation is None:
+            return
+        operation.update(updates)
+        operation["updated_at"] = int(time.time() * 1000)
+
+
+def _append_upload_output(operation_id: str, line: str):
+    current = _upload_operation_snapshot(operation_id)
+    if not current:
+        return
+    output = (str(current.get("stdout", "")) + line)[-_UPLOAD_OUTPUT_MAX_CHARS:]
+    updates = {"stdout": output}
+    if current.get("stage") == "compiling":
+        lower_line = line.lower()
+        compile_milestones = (
+            ("detecting libraries used", 34),
+            ("generating function prototypes", 40),
+            ("compiling sketch", 45),
+            ("compiling libraries", 50),
+            ("linking everything together", 58),
+            ("sketch uses", 60),
+        )
+        for marker, progress in compile_milestones:
+            if marker in lower_line:
+                updates["progress"] = max(int(current.get("progress", 30)), progress)
+                updates["message"] = f"Compiling firmware ({progress}% build stage)…"
+                break
+    elif current.get("stage") == "uploading":
+        match = re.search(r"\b(?:Writing|Uploading)[^\r\n]*?\b(\d{1,3})\s*%", line, flags=re.IGNORECASE)
+        if match:
+            percent = min(100, max(0, int(match.group(1))))
+            updates["progress"] = max(int(current.get("progress", 65)), 65 + round(percent * 0.3))
+            updates["message"] = f"Uploading firmware to the board ({percent}% reported by the uploader)."
+    _update_upload_operation(operation_id, **updates)
+
+
+def _port_identity_matches(port_info, requested_port: str, requested_vid_pid: Optional[str], requested_serial: Optional[str], board: str):
+    if str(port_info.device or "").casefold() == requested_port.casefold():
+        return True
+    vid_pid = f"{port_info.vid:04X}:{port_info.pid:04X}" if port_info.vid and port_info.pid else ""
+    if requested_serial and str(port_info.serial_number or "") == requested_serial:
+        # ESP32 bootloaders can expose a different USB product ID after reset.
+        # The stable serial number is enough to identify that same physical board.
+        return board.startswith("esp32:") or not requested_vid_pid or vid_pid.casefold() == requested_vid_pid.casefold()
+    # Native USB ESP boards may re-enumerate under another COM port on reset.
+    # A matching USB identity lets the upload survive that bootloader hand-off.
+    return bool(
+        board.startswith("esp32:")
+        and requested_vid_pid
+        and vid_pid.casefold() == requested_vid_pid.casefold()
+    )
+
+
+def _target_board_is_present(req: FlashRequest) -> bool:
+    try:
+        return any(
+            _port_identity_matches(port, req.port, req.vid_pid, req.serial_number, req.board)
+            for port in serial.tools.list_ports.comports()
+        )
+    except Exception:
+        return False
+
+
+def _terminate_upload_process(process):
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except Exception:
+            process.kill()
+    else:
+        process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def _run_upload_cli(operation_id: str, args: List[str], timeout: int, req: FlashRequest, watch_disconnect: bool = False):
+    for directory in (ARDUINO_DATA_DIR, ARDUINO_DOWNLOADS_DIR, ARDUINO_USER_DIR, BUILD_TEMP_DIR):
+        os.makedirs(directory, exist_ok=True)
+    if not os.path.exists(ARDUINO_CONFIG_FILE):
+        with open(ARDUINO_CONFIG_FILE, "w", encoding="utf-8") as config_file:
+            config_file.write(
+                "directories:\n"
+                f"  data: {json.dumps(ARDUINO_DATA_DIR)}\n"
+                f"  downloads: {json.dumps(ARDUINO_DOWNLOADS_DIR)}\n"
+                f"  user: {json.dumps(ARDUINO_USER_DIR)}\n"
+            )
+
+    process = subprocess.Popen(
+        [ARDUINO_CLI, "--config-file", ARDUINO_CONFIG_FILE, *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        universal_newlines=True,
+        bufsize=1,
+    )
+    output_queue = Queue()
+
+    def collect_output():
+        try:
+            if process.stdout:
+                for line in process.stdout:
+                    output_queue.put(line)
+        finally:
+            output_queue.put(None)
+
+    reader = Thread(target=collect_output, name="KaktusArduinoCliOutput", daemon=True)
+    reader.start()
+    started = time.monotonic()
+    missing_since = None
+    output_finished = False
+
+    while process.poll() is None or not output_finished:
+        if time.monotonic() - started > timeout:
+            _terminate_upload_process(process)
+            snapshot = _upload_operation_snapshot(operation_id) or {}
+            raise subprocess.TimeoutExpired([ARDUINO_CLI, *args], timeout, output=snapshot.get("stdout", ""))
+
+        if watch_disconnect and process.poll() is None:
+            attached = _target_board_is_present(req)
+            current = _upload_operation_snapshot(operation_id) or {}
+            if attached:
+                missing_since = None
+            else:
+                if missing_since is None:
+                    missing_since = time.monotonic()
+                    _update_upload_operation(
+                        operation_id,
+                        stage="disconnecting",
+                        resume_stage=current.get("stage") if current.get("stage") in {"compiling", "uploading"} else "uploading",
+                        message="Board disconnected. Checking the firmware operation…",
+                        board_connected=False,
+                    )
+                phase = "upload" if current.get("stage") == "uploading" or current.get("resume_stage") == "uploading" else "compile"
+                grace_seconds = (15 if req.board.startswith("esp32:") else 4) if phase == "upload" else 2
+                if time.monotonic() - missing_since >= grace_seconds:
+                    _terminate_upload_process(process)
+                    raise RuntimeError(f"Board {req.port} disconnected during {phase}. The firmware upload did not complete; reconnect the board and retry.")
+            if missing_since is None:
+                if current.get("stage") == "disconnecting":
+                    resume_stage = current.get("resume_stage") if current.get("resume_stage") in {"compiling", "uploading"} else "uploading"
+                    message = "Board reconnected. Compilation is continuing." if resume_stage == "compiling" else "Board reconnected to the bootloader. Upload is continuing."
+                    _update_upload_operation(operation_id, stage=resume_stage, message=message, board_connected=True, resume_stage=None)
+
+        try:
+            line = output_queue.get(timeout=0.2)
+            if line is None:
+                output_finished = True
+            else:
+                _append_upload_output(operation_id, line)
+        except Empty:
+            pass
+
+    reader.join(timeout=1)
+    return_code = process.wait()
+    operation = _upload_operation_snapshot(operation_id) or {}
+    output = str(operation.get("stdout", ""))
+    if return_code != 0:
+        raise RuntimeError(output.strip() or f"Arduino CLI exited with code {return_code}.")
+    return subprocess.CompletedProcess(args, return_code, stdout=output, stderr="")
+
+
+def _run_upload_operation(operation_id: str, req: FlashRequest):
+    tmp_dir = None
+    try:
+        _update_upload_operation(stage="preparing", progress=12, message=f"Preparing {BOARD_CATALOG[req.board]['name']} support…", board_connected=True)
+        _ensure_board_core(req.board)
+        if not _target_board_is_present(req):
+            raise RuntimeError(f"Board {req.port} disconnected before compilation. Reconnect it and scan USB ports again.")
+
+        os.makedirs(BUILD_TEMP_DIR, exist_ok=True)
+        tmp_dir = tempfile.mkdtemp(prefix="hw_studio_", dir=BUILD_TEMP_DIR)
+        sketch_name = "sketch"
+        sketch_dir = os.path.join(tmp_dir, sketch_name)
+        build_dir = os.path.join(tmp_dir, "build")
+        os.makedirs(sketch_dir, exist_ok=True)
+        os.makedirs(build_dir, exist_ok=True)
+        with open(os.path.join(sketch_dir, f"{sketch_name}.ino"), "w", encoding="utf-8") as sketch_file:
+            sketch_file.write(req.code)
+
+        _update_upload_operation(stage="compiling", progress=30, message=f"Compiling firmware for {BOARD_CATALOG[req.board]['name']}…")
+        _run_upload_cli(operation_id, ["compile", "--fqbn", req.board, "--output-dir", build_dir, sketch_dir], 180, req, watch_disconnect=True)
+
+        if not _target_board_is_present(req):
+            raise RuntimeError(f"Board {req.port} disconnected after compilation. The firmware was compiled but not uploaded.")
+
+        _update_upload_operation(stage="uploading", progress=65, message=f"Uploading compiled firmware to {req.port}…", board_connected=True)
+        _run_upload_cli(
+            operation_id,
+            ["upload", "--fqbn", req.board, "--port", req.port, "--input-dir", build_dir, sketch_dir],
+            180,
+            req,
+            watch_disconnect=True,
+        )
+        board_still_connected = _target_board_is_present(req)
+        _update_upload_operation(
+            status="success",
+            stage="success",
+            progress=100,
+            message=(f"Firmware upload completed on {req.port}." if board_still_connected else f"Firmware upload completed on {req.port}; the board disconnected after transfer."),
+            board_connected=board_still_connected,
+            error="",
+        )
+    except subprocess.TimeoutExpired as error:
+        _update_upload_operation(status="error", stage="error", message="Firmware operation timed out.", error=f"Compile and upload timed out ({error.timeout}s).", board_connected=_target_board_is_present(req))
+    except Exception as error:
+        _update_upload_operation(status="error", stage="error", message="Firmware upload failed.", error=str(error)[:3000], board_connected=_target_board_is_present(req))
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 @app.post("/flash/upload")
 async def upload_to_board(req: FlashRequest):
     if req.board not in BOARD_CATALOG:
         raise HTTPException(status_code=400, detail="Unsupported board target.")
     if not os.path.exists(ARDUINO_CLI):
         raise HTTPException(status_code=500, detail="arduino-cli not found")
-    if not any(port.device == req.port for port in serial.tools.list_ports.comports()):
+    if not _target_board_is_present(req):
         return {"status": "error", "error": f"Serial port {req.port} is no longer available. Re-scan USB ports and select the connected board."}
-    try:
-        await asyncio.to_thread(_ensure_board_core, req.board)
-    except Exception as e:
-        return {"status": "error", "error": f"Could not prepare board support: {e}"}
-    await asyncio.to_thread(_close_serial_connection, req.port)
-    os.makedirs(BUILD_TEMP_DIR, exist_ok=True)
-    tmp_dir = tempfile.mkdtemp(prefix="hw_studio_", dir=BUILD_TEMP_DIR)
-    sketch_name = "sketch"
-    sketch_dir = os.path.join(tmp_dir, sketch_name)
-    os.makedirs(sketch_dir, exist_ok=True)
-    ino_path = os.path.join(sketch_dir, f"{sketch_name}.ino")
-    with open(ino_path, "w", encoding="utf-8") as f:
-        f.write(req.code)
-    try:
-        result = await asyncio.to_thread(
-            _run_cli,
-            ["compile", "--upload", "--fqbn", req.board, "--port", req.port, sketch_dir],
-            300,
-        )
-        return {"status": "success", "stdout": (result.stdout + result.stderr).strip(), "message": f"Firmware uploaded to {req.port}"}
-    except subprocess.TimeoutExpired:
-        return {"status": "error", "error": "Compile and upload timed out (300s)"}
-    except RuntimeError as e:
-        return {"status": "error", "error": str(e)}
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    with _upload_operations_lock:
+        now = time.time()
+        stale_ids = [
+            operation_id for operation_id, operation in _upload_operations.items()
+            if operation.get("status") != "running"
+            and now - (float(operation.get("updated_at", 0)) / 1000) > _UPLOAD_OPERATION_MAX_AGE_SECONDS
+        ]
+        for operation_id in stale_ids:
+            _upload_operations.pop(operation_id, None)
+        if any(operation.get("status") == "running" for operation in _upload_operations.values()):
+            raise HTTPException(status_code=409, detail="A firmware operation is already running. Wait for it to finish before starting another.")
+        operation_id = secrets.token_hex(16)
+        _upload_operations[operation_id] = {
+            "operation_id": operation_id,
+            "status": "running",
+            "stage": "preparing",
+            "progress": 5,
+            "message": "Starting firmware preparation…",
+            "stdout": "",
+            "error": "",
+            "board_connected": True,
+            "created_at": int(now * 1000),
+            "updated_at": int(now * 1000),
+        }
+
+    worker = Thread(target=_run_upload_operation, args=(operation_id, req), name="KaktusFirmwareUpload", daemon=True)
+    worker.start()
+    return {"status": "running", "operation_id": operation_id, "stage": "preparing", "progress": 5, "message": "Starting firmware preparation…"}
+
+
+@app.get("/flash/upload/status")
+async def flash_upload_status(operation_id: str):
+    if not re.fullmatch(r"[a-f0-9]{32}", operation_id):
+        raise HTTPException(status_code=400, detail="Invalid firmware operation id.")
+    operation = _upload_operation_snapshot(operation_id)
+    if not operation:
+        raise HTTPException(status_code=404, detail="Firmware operation not found. Start a new upload.")
+    return operation
 
 
 _serial_connections = {}

@@ -15,6 +15,7 @@ const ALLOWED_ROUTES = new Set([
   'GET /',
   'GET /flash/status',
   'GET /flash/boards',
+  'GET /flash/upload/status',
   'POST /flash/compile',
   'POST /flash/upload',
   'POST /flash/install-core',
