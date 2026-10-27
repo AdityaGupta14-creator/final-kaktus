@@ -10,6 +10,7 @@
     "start": "node server.js --production",
     "hardware:setup": "node hardware-setup.js",
     "hardware:bridge": "node hardware-bridge.js",
+    "hardware:bridge:cloud": "node scripts/hardware-cloud-bridge.js",
     "hardware:bridge:daemon": "node scripts/hardware-bridge-launcher.js --daemon",
     "hardware:status": "node scripts/hardware-bridge-launcher.js --status",
     "hardware:stop": "node scripts/hardware-bridge-launcher.js --stop",
