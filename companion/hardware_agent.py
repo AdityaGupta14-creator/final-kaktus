@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 import json
+import logging
 import os
 import re
 import sys
@@ -16,7 +17,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 LOCAL_API = "http://127.0.0.1:8001"
 PROJECT_ID = "otpdemo-291bd"
 MAX_RESULT_BYTES = 1_000_000
@@ -278,11 +279,29 @@ def packaged_self_check() -> int:
             raise RuntimeError(f"Bundled Arduino CLI is missing (resource root: {root}).")
         if hardware_main.app is None:
             raise RuntimeError("The packaged Kaktus hardware API did not initialize.")
+        configure_local_uvicorn(uvicorn, hardware_main.app)
         log("Packaged companion dependency check passed.")
         return 0
     except Exception as error:
         log(f"Packaged companion dependency check failed: {type(error).__name__}: {error}")
         return 1
+
+
+def configure_local_uvicorn(uvicorn_module, app):
+    # The companion is built with PyInstaller's --windowed flag, so stdout and
+    # stderr are None. Uvicorn's default formatter probes them with isatty().
+    logger = logging.getLogger("uvicorn")
+    logger.handlers.clear()
+    logger.addHandler(logging.NullHandler())
+    logger.propagate = False
+    return uvicorn_module.Config(
+        app,
+        host="127.0.0.1",
+        port=8001,
+        log_level="warning",
+        access_log=False,
+        log_config=None,
+    )
 
 
 def start_local_hardware_api() -> None:
@@ -306,7 +325,7 @@ def start_local_hardware_api() -> None:
     import main as hardware_main
     import uvicorn
 
-    config = uvicorn.Config(hardware_main.app, host="127.0.0.1", port=8001, log_level="warning", access_log=False)
+    config = configure_local_uvicorn(uvicorn, hardware_main.app)
     server = uvicorn.Server(config)
     server_thread = threading.Thread(target=server.run, name="KaktusLocalUSBService", daemon=True)
     server_thread.start()
