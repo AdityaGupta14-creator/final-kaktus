@@ -123,7 +123,10 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
     if (action === 'poll') {
-      await bridge.ref.update({ lastSeenAt: now });
+      await bridge.ref.update({
+        lastSeenAt: now,
+        agentVersion: typeof body.agentVersion === 'string' ? body.agentVersion.slice(0, 40) : 'unknown',
+      });
       const queued = await bridge.ref.collection('commands').where('status', '==', 'queued').limit(20).get();
       const pending = queued.docs.filter((doc) => doc.get('expiresAt') > now);
       await Promise.all(queued.docs.filter((doc) => doc.get('expiresAt') <= now)
@@ -189,7 +192,10 @@ export async function POST(request: Request) {
         label: typeof data.label === 'string' ? data.label.slice(0, 80) : 'This computer',
         createdAt: Date.now(),
         lastSeenAt: null,
-        agentVersion: 'windows-companion-1.0.7',
+        // The real helper reports its own version on the first poll. Do not
+        // claim that an old installed binary is current just because pairing
+        // was completed against a newer web deployment.
+        agentVersion: 'awaiting-helper',
       });
       transaction.delete(pairingRef);
       return 'paired';
