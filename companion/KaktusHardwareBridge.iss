@@ -1,5 +1,5 @@
 #define AppName "Kaktus Hardware Bridge"
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 #define AppPublisher "Kaktus"
 #define AppExe "KaktusHardwareBridge.exe"
 
@@ -13,6 +13,8 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
+CloseApplications=yes
+RestartApplications=no
 OutputDir=..\dist
 OutputBaseFilename=KaktusHardwareBridgeSetup
 Compression=lzma2
@@ -22,6 +24,9 @@ UninstallDisplayIcon={app}\{#AppExe}
 
 [Files]
 Source: "..\dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+
+[Run]
+Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait skipifsilent
 
 [Icons]
 Name: "{group}\Kaktus Hardware Bridge"; Filename: "{app}\{#AppExe}"

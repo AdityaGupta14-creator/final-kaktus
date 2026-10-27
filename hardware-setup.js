@@ -29,7 +29,7 @@ try {
     run(systemPython, createArgs);
   }
 
-  const importCheck = spawnSync(venvPython, ['-c', 'import fastapi, serial, uvicorn, google.auth, google.oauth2.id_token'], {
+  const importCheck = spawnSync(venvPython, ['-c', 'import fastapi, serial, uvicorn, google.auth, google.oauth2.id_token, google.auth.transport.requests, requests'], {
     cwd: backendDir,
     encoding: 'utf8',
     windowsHide: true,

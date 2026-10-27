@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 LOCAL_API = "http://127.0.0.1:8001"
 PROJECT_ID = "otpdemo-291bd"
 MAX_RESULT_BYTES = 1_000_000
@@ -244,6 +244,47 @@ def resource_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def configure_hardware_runtime() -> Path:
+    root = resource_root()
+    backend_path = root / "backend"
+    if not backend_path.exists():
+        backend_path = root
+    if str(backend_path) not in sys.path:
+        sys.path.insert(0, str(backend_path))
+    os.environ["KAKTUS_HARDWARE_HOME"] = str(data_dir())
+    os.environ["KAKTUS_HARDWARE_PORT"] = "8001"
+    os.environ["FIREBASE_PROJECT_ID"] = PROJECT_ID
+    cli_candidates = (
+        root / "arduino-cli" / "arduino-cli.exe",
+        root / "backend" / "arduino-cli" / "arduino-cli.exe",
+    )
+    cli = next((path for path in cli_candidates if path.exists()), None)
+    if cli:
+        os.environ["ARDUINO_CLI_PATH"] = str(cli)
+    return root
+
+
+def packaged_self_check() -> int:
+    try:
+        root = configure_hardware_runtime()
+        import google.auth.transport.requests  # noqa: F401
+        import requests  # noqa: F401
+        import serial  # noqa: F401
+        import uvicorn  # noqa: F401
+        import main as hardware_main
+
+        cli = os.environ.get("ARDUINO_CLI_PATH", "")
+        if not cli or not Path(cli).is_file():
+            raise RuntimeError(f"Bundled Arduino CLI is missing (resource root: {root}).")
+        if hardware_main.app is None:
+            raise RuntimeError("The packaged Kaktus hardware API did not initialize.")
+        log("Packaged companion dependency check passed.")
+        return 0
+    except Exception as error:
+        log(f"Packaged companion dependency check failed: {type(error).__name__}: {error}")
+        return 1
+
+
 def start_local_hardware_api() -> None:
     import urllib.request
 
@@ -261,19 +302,7 @@ def start_local_hardware_api() -> None:
         if not isinstance(error.reason, (ConnectionRefusedError, TimeoutError, OSError)):
             raise RuntimeError(f"Could not check the local USB service: {error.reason}") from error
 
-    root = resource_root()
-    backend_path = root / "backend"
-    if not backend_path.exists():
-        backend_path = root
-    sys.path.insert(0, str(backend_path))
-    home = data_dir()
-    os.environ["KAKTUS_HARDWARE_HOME"] = str(home)
-    os.environ["KAKTUS_HARDWARE_PORT"] = "8001"
-    os.environ["FIREBASE_PROJECT_ID"] = PROJECT_ID
-    cli = root / "arduino-cli" / "arduino-cli.exe"
-    if cli.exists():
-        os.environ["ARDUINO_CLI_PATH"] = str(cli)
-
+    configure_hardware_runtime()
     import main as hardware_main
     import uvicorn
 
@@ -388,6 +417,8 @@ def main() -> int:
     if os.name != "nt":
         show_error("Kaktus Hardware Bridge setup is currently available for Windows.")
         return 1
+    if "--self-check" in sys.argv[1:]:
+        return packaged_self_check()
     try:
         uri = next((arg for arg in sys.argv[1:] if arg.lower().startswith("kaktus-bridge://")), None)
         if uri:
@@ -396,6 +427,8 @@ def main() -> int:
             register_startup()
             log("This computer was paired successfully with Kaktus.")
         else:
+            if "--background" in sys.argv[1:] and not (data_dir() / "bridge.secret").exists():
+                return 0
             config = load_config()
         run_agent(config)
     except KeyboardInterrupt:
