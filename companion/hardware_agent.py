@@ -19,7 +19,7 @@ import urllib.request
 from xml.sax.saxutils import escape as xml_escape
 from pathlib import Path
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 LOCAL_API = "http://127.0.0.1:8001"
 PROJECT_ID = "otpdemo-291bd"
 STARTUP_TASK_NAME = r"\KaktusHardwareBridge"
@@ -276,7 +276,7 @@ def register_startup() -> bool:
         task_xml = f'''<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>Kaktus hardware bridge for the signed-in Windows user.</Description></RegistrationInfo>
-  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user_id}</UserId></LogonTrigger></Triggers>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><Repetition><Interval>PT2M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><UserId>{user_id}</UserId></LogonTrigger></Triggers>
   <Principals><Principal id="Author"><UserId>{user_id}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>
     <AllowStartOnDemand>true</AllowStartOnDemand>

@@ -35,7 +35,7 @@ function hasBackgroundRecovery(version: string): boolean {
   const match = version.match(/(\d+)\.(\d+)\.(\d+)/);
   if (!match) return false;
   const current = match.slice(1).map(Number);
-  const required = [1, 0, 6];
+  const required = [1, 0, 7];
   for (let index = 0; index < required.length; index += 1) {
     if (current[index] !== required[index]) return current[index] > required[index];
   }
