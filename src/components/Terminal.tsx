@@ -19,6 +19,7 @@ export interface TerminalRef {
   runCommand: (cmd: string) => Promise<TerminalCommandResult>;
   clear: () => void;
   focus: () => void;
+  blur: () => void;
   reconnect: () => void;
 }
 
@@ -109,6 +110,7 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
     }),
     clear: () => xtermRef.current?.clear(),
     focus: () => xtermRef.current?.focus(),
+    blur: () => xtermRef.current?.blur(),
     reconnect: () => reconnectRef.current(),
   }));
 

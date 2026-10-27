@@ -339,6 +339,7 @@ export default function Home() {
   }, [sessionId]);
   
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [hasOpenedTerminal, setHasOpenedTerminal] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState<TerminalConnectionStatus>('connecting');
   const [isFlashOpen, setIsFlashOpen] = useState(false);
   const [connectedDeviceName, setConnectedDeviceName] = useState('');
@@ -408,6 +409,7 @@ export default function Home() {
   
 
   const handleExecuteCommand = async (cmd: string): Promise<TerminalCommandResult> => {
+    setHasOpenedTerminal(true);
     setIsTerminalOpen(true);
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const terminal = terminalRef.current;
@@ -416,6 +418,10 @@ export default function Home() {
     }
     throw new Error('The terminal could not open. Close and reopen it, then retry the task.');
   };
+
+  useEffect(() => {
+    if (!isTerminalOpen) terminalRef.current?.blur();
+  }, [isTerminalOpen]);
 
   const handleRequestBridgeSetup = useCallback(() => {
     if (bridgeSetupRunning) return;
@@ -702,6 +708,7 @@ export default function Home() {
             <button 
               onClick={() => {
                 const open = !isTerminalOpen;
+                if (open) setHasOpenedTerminal(true);
                 setIsTerminalOpen(open);
                 if (open) setIsFlashOpen(false);
               }}
@@ -1059,13 +1066,13 @@ export default function Home() {
 
         {/* Right/Bottom: Sliding Terminal Drawer */}
         <AnimatePresence>
-          {isTerminalOpen && (
+          {hasOpenedTerminal && (
             <motion.div 
               initial={{ y: '100%', opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: '100%', opacity: 0 }}
+              animate={isTerminalOpen ? { y: 0, opacity: 1 } : { y: '100%', opacity: 0 }}
               transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-              style={{ left: sidebarWidth }}
+              style={{ left: sidebarWidth, pointerEvents: isTerminalOpen ? 'auto' : 'none' }}
+              aria-hidden={!isTerminalOpen}
               className="absolute bottom-0 right-0 z-40 flex h-[36vh] min-h-[220px] max-h-[380px] flex-col overflow-hidden border-l border-t border-gray-700/80 bg-[#111214] shadow-2xl"
             >
               <div className="h-9 shrink-0 border-b border-gray-800 bg-[#1b1c1f] flex items-center justify-between px-3">
