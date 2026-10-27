@@ -812,11 +812,21 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
         }),
       });
       const payload = await response.json().catch(() => ({})) as UploadOperationSnapshot & { detail?: string };
-      if (!response.ok || !payload.operation_id) {
+      if (!response.ok) {
         const failure = payload.error || payload.detail || await hardwareResponseError(response);
         if (/serial port .*no longer available|board .*disconnected/i.test(failure)) setIsTargetConnected(false);
         throw new Error(failure);
       }
+      // Older installed bridge versions return the finished upload directly.
+      // Keep those users able to flash while they upgrade to the progress-aware bridge.
+      if (!payload.operation_id && payload.status === 'success') {
+        setCompileOutput(payload.stdout || payload.message || 'Firmware upload completed.');
+        setUploadProgress(100);
+        setStatusText(payload.message || `Firmware uploaded to ${currentBoard.name}.`);
+        setStage('success');
+        return;
+      }
+      if (!payload.operation_id) throw new Error(payload.error || payload.detail || 'The hardware bridge did not start a firmware operation.');
       try { window.sessionStorage.setItem(ACTIVE_UPLOAD_KEY, payload.operation_id); } catch {}
       setUploadProgress(payload.progress || 5);
       setStatusText(payload.message || 'Firmware operation started.');
