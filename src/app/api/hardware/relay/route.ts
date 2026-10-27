@@ -80,7 +80,7 @@ export async function GET(request: Request) {
       const snapshot = await devices.where('ownerUid', '==', user.uid).get();
       const list = snapshot.docs.map((doc) => {
         const data = doc.data();
-        return { id: doc.id, active: data.active === true, createdAt: data.createdAt || null, lastSeenAt: data.lastSeenAt || null, label: data.label || 'This computer' };
+        return { id: doc.id, active: data.active === true, createdAt: data.createdAt || null, lastSeenAt: data.lastSeenAt || null, agentVersion: data.agentVersion || null, label: data.label || 'This computer' };
       }).filter((device) => device.active);
       list.sort((a, b) => Number(b.lastSeenAt || 0) - Number(a.lastSeenAt || 0));
       return Response.json({ devices: list }, { headers: { 'Cache-Control': 'no-store' } });
@@ -189,7 +189,7 @@ export async function POST(request: Request) {
         label: typeof data.label === 'string' ? data.label.slice(0, 80) : 'This computer',
         createdAt: Date.now(),
         lastSeenAt: null,
-        agentVersion: 'windows-companion-1.0.5',
+        agentVersion: 'windows-companion-1.0.6',
       });
       transaction.delete(pairingRef);
       return 'paired';

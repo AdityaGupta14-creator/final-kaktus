@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import threading
@@ -15,11 +16,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from xml.sax.saxutils import escape as xml_escape
 from pathlib import Path
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 LOCAL_API = "http://127.0.0.1:8001"
 PROJECT_ID = "otpdemo-291bd"
+STARTUP_TASK_NAME = r"\KaktusHardwareBridge"
 MAX_RESULT_BYTES = 1_000_000
 ALLOWED_ROUTES = {
     ("GET", "/"): "health",
@@ -65,6 +68,13 @@ def log(message: str) -> None:
             log_file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message[:1000]}\n")
     except OSError:
         pass
+
+
+def run_schtasks(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["schtasks.exe", *args], capture_output=True, text=True,
+        timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False,
+    )
 
 
 def show_error(message: str) -> None:
@@ -230,15 +240,107 @@ def post_json(api_base: str, path: str, payload: dict, token: str | None = None,
         raise RelayHttpError(error.code, message) from error
 
 
-def register_startup() -> None:
+def register_startup() -> bool:
     if os.name != "nt":
-        return
+        return False
     import winreg
 
-    command = f'"{Path(sys.executable).resolve()}" --background'
+    executable = Path(sys.executable).resolve()
+    if getattr(sys, "frozen", False):
+        command = str(executable)
+        arguments = "--background --task-agent"
+    else:
+        command = str(executable)
+        arguments = f'"{Path(__file__).resolve()}" --background --task-agent'
+
+    def remove_legacy_run_entry() -> None:
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+                winreg.DeleteValue(key, "KaktusHardwareBridge")
+        except OSError:
+            pass
+
+    try:
+        existing = run_schtasks("/Query", "/TN", STARTUP_TASK_NAME, "/XML")
+        if existing.returncode == 0 and str(executable).lower() in existing.stdout.lower():
+            remove_legacy_run_entry()
+            log("Automatic startup and crash recovery are already registered.")
+            return True
+
+        username = os.environ.get("USERNAME", "").strip()
+        domain = (os.environ.get("USERDOMAIN") or os.environ.get("COMPUTERNAME") or ".").strip()
+        if not username:
+            raise RuntimeError("Windows user identity is unavailable for automatic startup.")
+        user_id = xml_escape(f"{domain}\\{username}")
+        task_xml = f'''<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Kaktus hardware bridge for the signed-in Windows user.</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user_id}</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>{user_id}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>255</Count></RestartOnFailure>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <Enabled>true</Enabled><Hidden>true</Hidden>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>{xml_escape(command)}</Command><Arguments>{xml_escape(arguments)}</Arguments><WorkingDirectory>{xml_escape(str(executable.parent))}</WorkingDirectory></Exec></Actions>
+</Task>'''
+        task_file = data_dir() / "startup-task.xml"
+        try:
+            task_file.write_text(task_xml, encoding="utf-16")
+            result = run_schtasks("/Create", "/TN", STARTUP_TASK_NAME, "/XML", str(task_file), "/F")
+        finally:
+            try:
+                task_file.unlink()
+            except OSError:
+                pass
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout or "Task Scheduler registration failed.").strip())
+        remove_legacy_run_entry()
+        log("Automatic Windows sign-in startup and crash recovery registered.")
+        return True
+    except Exception as error:
+        log(f"Task Scheduler registration failed ({type(error).__name__}); using Windows sign-in startup fallback.")
+
+    command_line = f'"{command}" {arguments}'
     key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
-        winreg.SetValueEx(key, "KaktusHardwareBridge", 0, winreg.REG_SZ, command)
+    try:
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, "KaktusHardwareBridge", 0, winreg.REG_SZ, command_line)
+    except OSError as error:
+        log(f"Windows sign-in startup fallback could not be registered ({type(error).__name__}).")
+        return False
+    return False
+
+
+def unregister_startup() -> None:
+    if os.name != "nt":
+        return
+    try:
+        run_schtasks("/Delete", "/TN", STARTUP_TASK_NAME, "/F")
+    except Exception:
+        pass
+    try:
+        import winreg
+
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.DeleteValue(key, "KaktusHardwareBridge")
+    except OSError:
+        pass
+
+
+def clear_saved_config() -> None:
+    try:
+        (data_dir() / "bridge.secret").unlink()
+    except OSError:
+        pass
 
 
 def acquire_single_instance() -> bool:
@@ -261,6 +363,34 @@ def acquire_single_instance() -> bool:
         return False
 
     _instance_mutex_handle = handle
+    return True
+
+
+def release_single_instance() -> None:
+    global _instance_mutex_handle
+    if not _instance_mutex_handle or os.name != "nt":
+        return
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.ReleaseMutex.argtypes = [wintypes.HANDLE]
+    kernel32.ReleaseMutex.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.ReleaseMutex(_instance_mutex_handle)
+    kernel32.CloseHandle(_instance_mutex_handle)
+    _instance_mutex_handle = None
+
+
+def hand_off_to_registered_task() -> bool:
+    """Run the persistent agent as a Task Scheduler instance for crash recovery."""
+    release_single_instance()
+    result = run_schtasks("/Run", "/TN", STARTUP_TASK_NAME)
+    if result.returncode == 0:
+        return True
+    # Restore this process as the singleton if the scheduled launch failed.
+    if acquire_single_instance():
+        log("Could not start the registered task; continuing in this process.")
+        return False
+    log("Another helper instance took over while Task Scheduler was starting it.")
     return True
 
 
@@ -402,8 +532,7 @@ def execute_command(command: dict) -> tuple[int, object]:
         return status, text
 
 
-def run_agent(config: dict) -> None:
-    start_local_hardware_api()
+def run_agent(config: dict) -> bool:
     log("Kaktus Hardware Bridge is connected and waiting for hardware operations.")
     while True:
         try:
@@ -447,9 +576,11 @@ def run_agent(config: dict) -> None:
                 "agentVersion": VERSION,
             }, config["bridgeToken"], timeout=20)
         except RelayHttpError as error:
-            if error.status in (401, 403):
+            if error.status == 401:
                 log("The paired bridge was revoked or its credentials expired; stopping this helper instance.")
-                return
+                unregister_startup()
+                clear_saved_config()
+                return False
             log(f"Cloud relay request failed with HTTP {error.status}; retrying shortly.")
             time.sleep(5)
         except Exception as error:
@@ -463,8 +594,17 @@ def main() -> int:
         return 1
     if "--self-check" in sys.argv[1:]:
         return packaged_self_check()
+    task_agent = "--task-agent" in sys.argv[1:]
     try:
         if not acquire_single_instance():
+            if "--background" in sys.argv[1:] and (data_dir() / "bridge.secret").exists():
+                try:
+                    # An installer upgrade may start while the previous helper
+                    # still owns the mutex. Register this executable for future
+                    # sign-ins without disturbing the already-running agent.
+                    register_startup()
+                except Exception as error:
+                    log(f"Could not refresh automatic startup during upgrade ({type(error).__name__}).")
             log("The Kaktus Hardware Bridge is already running; ignored duplicate launch.")
             return 0
 
@@ -474,22 +614,33 @@ def main() -> int:
             if parsed_uri.netloc.lower() == "pair":
                 config = pair_from_uri(uri)
                 save_config(config)
-                register_startup()
                 log("This computer was paired successfully with Kaktus.")
             elif parsed_uri.netloc.lower() == "start" and not parsed_uri.query and not parsed_uri.fragment:
                 config = load_config()
                 log("Started the previously paired Kaktus Hardware Bridge.")
             else:
-                raise ValueError("This Kaktus link is invalid. Use Pair once, then start the saved helper.")
+                raise ValueError("This Kaktus link is invalid. Pair this computer once from the app.")
         else:
             if "--background" in sys.argv[1:] and not (data_dir() / "bridge.secret").exists():
                 return 0
             config = load_config()
-        run_agent(config)
+        task_registered = register_startup()
+        if task_registered and not task_agent and hand_off_to_registered_task():
+            return 0
+        while True:
+            try:
+                start_local_hardware_api()
+                if run_agent(config) is False:
+                    return 0
+            except Exception as error:
+                log(f"Hardware bridge startup failed ({type(error).__name__}); retrying automatically.")
+                time.sleep(15)
     except KeyboardInterrupt:
         return 0
     except Exception as error:
-        show_error(str(error) or "Kaktus Hardware Bridge could not start.")
+        log(f"Hardware bridge could not initialize ({type(error).__name__}).")
+        if "--background" not in sys.argv[1:]:
+            show_error(str(error) or "Kaktus Hardware Bridge could not start.")
         return 1
     return 0
 

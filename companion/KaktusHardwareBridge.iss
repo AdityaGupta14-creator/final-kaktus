@@ -1,5 +1,5 @@
 #define AppName "Kaktus Hardware Bridge"
-#define AppVersion "1.0.5"
+#define AppVersion "1.0.6"
 #define AppPublisher "Kaktus"
 #define AppExe "KaktusHardwareBridge.exe"
 
@@ -26,7 +26,9 @@ UninstallDisplayIcon={app}\{#AppExe}
 Source: "..\dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Run]
-Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait skipifsilent
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""\KaktusHardwareBridge"" /F"; Flags: runhidden waituntilterminated
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM {#AppExe} /F"; Flags: runhidden waituntilterminated
+Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait
 
 [Icons]
 Name: "{group}\Kaktus Hardware Bridge"; Filename: "{app}\{#AppExe}"
@@ -41,5 +43,6 @@ Root: HKCU; Subkey: "Software\Classes\kaktus-bridge\shell\open\command"; ValueTy
 Type: filesandordirs; Name: "{localappdata}\Kaktus\HardwareBridge"
 
 [UninstallRun]
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""\KaktusHardwareBridge"" /F"; Flags: runhidden waituntilterminated
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM {#AppExe} /F"; Flags: runhidden waituntilterminated
 Filename: "{sys}\reg.exe"; Parameters: "delete ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v KaktusHardwareBridge /f"; Flags: runhidden waituntilterminated

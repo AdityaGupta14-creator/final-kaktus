@@ -31,6 +31,17 @@ import {
 const HARDWARE_BRIDGE_INSTALLER_URL = process.env.NEXT_PUBLIC_HARDWARE_BRIDGE_INSTALLER_URL
   || 'https://github.com/AdityaGupta14-creator/final-kaktus/releases/latest/download/KaktusHardwareBridgeSetup.exe';
 
+function hasBackgroundRecovery(version: string): boolean {
+  const match = version.match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!match) return false;
+  const current = match.slice(1).map(Number);
+  const required = [1, 0, 6];
+  for (let index = 0; index < required.length; index += 1) {
+    if (current[index] !== required[index]) return current[index] > required[index];
+  }
+  return true;
+}
+
 export interface BoardOption {
   fqbn: string;
   name: string;
@@ -226,9 +237,10 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const [cloudSetupBusy, setCloudSetupBusy] = useState(false);
   const [cloudSetupMessage, setCloudSetupMessage] = useState('');
   const [pairedBridgeId, setPairedBridgeId] = useState('');
+  const [pairedBridgeAgentVersion, setPairedBridgeAgentVersion] = useState('');
   const [pairedBridgeLoaded, setPairedBridgeLoaded] = useState(false);
+  const [cloudBridgeStatusChecked, setCloudBridgeStatusChecked] = useState(false);
   const [pairingPendingSince, setPairingPendingSince] = useState(0);
-  const [startingPairedHelper, setStartingPairedHelper] = useState(false);
   const [errorText, setErrorText] = useState('');
   const [compileOutput, setCompileOutput] = useState('');
   const [serialLines, setSerialLines] = useState<string[]>([]);
@@ -244,6 +256,8 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const webSerialWriterRef = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null);
   const webSerialPortRef = useRef<SerialPort | null>(null);
   const bridgePollRef = useRef<NodeJS.Timeout | null>(null);
+  const lastOnlineCloudBridgeRef = useRef('');
+  const lastCloudRefreshAtRef = useRef(0);
 
   const currentBoard = useMemo(
     () => BOARD_OPTIONS.find((board) => board.fqbn === selectedBoard) || null,
@@ -295,7 +309,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
             cache: 'no-store',
           });
           const payload = await response.json().catch(() => ({})) as {
-            devices?: Array<{ id?: string; createdAt?: number | null; lastSeenAt?: number | null }>;
+            devices?: Array<{ id?: string; createdAt?: number | null; lastSeenAt?: number | null; agentVersion?: string | null }>;
           };
           const paired = (payload.devices || [])
             .filter((device) => typeof device.id === 'string'
@@ -305,8 +319,11 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
           if (paired?.id) {
             window.localStorage.setItem('kaktus.hardwareBridgeId', paired.id);
             setPairedBridgeId(paired.id);
+            setPairedBridgeAgentVersion(paired.agentVersion || '');
             setCloudSetupMessage('This computer is connected. Plug in a supported board and use Flash in Kaktus.');
             setPairingPendingSince(0);
+            lastOnlineCloudBridgeRef.current = paired.id;
+            lastCloudRefreshAtRef.current = Date.now();
             window.dispatchEvent(new Event('kaktus-hardware-paired'));
             return;
           }
@@ -328,20 +345,9 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     };
   }, [pairingPendingSince]);
 
-  const startPairedHelper = useCallback(() => {
-    if (!pairedBridgeId) {
-      setCloudSetupMessage('Pair this computer once before starting its helper.');
-      return;
-    }
-    setCloudSetupBusy(true);
-    setStartingPairedHelper(true);
-    setCloudSetupMessage('Starting the saved helper. This computer stays paired; no new pairing is being created.');
-    window.location.href = 'kaktus-bridge://start';
-  }, [pairedBridgeId]);
-
   const setupCloudBridge = useCallback(async () => {
     if (pairedBridgeId) {
-      startPairedHelper();
+      setCloudSetupMessage('This computer is already paired. Kaktus reconnects its helper automatically.');
       return;
     }
     const user = auth.currentUser;
@@ -378,7 +384,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     } finally {
       setCloudSetupBusy(false);
     }
-  }, [pairedBridgeId, startPairedHelper]);
+  }, [pairedBridgeId]);
 
   const revokeCloudBridge = useCallback(async () => {
     const user = auth.currentUser;
@@ -395,6 +401,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       if (!response.ok) throw new Error(payload.error || `Could not revoke bridge (HTTP ${response.status}).`);
       window.localStorage.removeItem('kaktus.hardwareBridgeId');
       setPairedBridgeId('');
+      setPairedBridgeAgentVersion('');
       setCloudSetupMessage('This computer’s relay key has been revoked. Pair it again to reconnect.');
       window.dispatchEvent(new Event('kaktus-hardware-paired'));
     } catch (error) {
@@ -583,61 +590,82 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   }, [hostedProduction, mode, refreshDevicesBackend, refreshDevicesWebSerial]);
 
   useEffect(() => {
-    if (!startingPairedHelper || !pairedBridgeId) return;
+    if (!hostedProduction) return;
+    setMode('local');
+    if (!pairedBridgeLoaded) return;
     let stopped = false;
-    let attempts = 0;
-    let timer = 0;
+    let timer: number | undefined;
 
-    const checkHelper = async () => {
+    const refreshCloudBridgeStatus = async () => {
       if (stopped) return;
-      attempts += 1;
       try {
         const user = auth.currentUser;
-        if (!user) throw new Error('Sign-in is still loading.');
-        const response = await fetch('/api/hardware/relay?action=devices', {
-          headers: { Authorization: `Bearer ${await user.getIdToken()}` },
-          cache: 'no-store',
-        });
-        const payload = await response.json().catch(() => ({})) as {
-          devices?: Array<{ id?: string; lastSeenAt?: number | null }>;
-        };
-        if (response.ok) {
-          const paired = (payload.devices || []).find((device) => device.id === pairedBridgeId);
-          if (paired && Number(paired.lastSeenAt || 0) >= Date.now() - 20_000) {
-            setStartingPairedHelper(false);
-            setCloudSetupBusy(false);
-            setCloudSetupMessage('Your existing helper is online. The pairing is saved for future sessions.');
-            window.dispatchEvent(new Event('kaktus-hardware-paired'));
-            return;
-          }
-          if (!paired) {
-            window.localStorage.removeItem('kaktus.hardwareBridgeId');
-            setPairedBridgeId('');
-            setStartingPairedHelper(false);
-            setCloudSetupBusy(false);
-            setCloudSetupMessage('This paired computer is no longer available. Pair it again once.');
-            return;
+        if (user) {
+          const response = await fetch('/api/hardware/relay?action=devices', {
+            headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+            cache: 'no-store',
+          });
+          const payload = await response.json().catch(() => ({})) as {
+            devices?: Array<{ id?: string; lastSeenAt?: number | null; agentVersion?: string | null }>;
+          };
+          if (response.ok) {
+            setCloudBridgeStatusChecked(true);
+            const devices = (payload.devices || []).filter((device): device is { id: string; lastSeenAt?: number | null; agentVersion?: string | null } => typeof device.id === 'string');
+            const savedId = window.localStorage.getItem('kaktus.hardwareBridgeId') || '';
+            const savedDevice = savedId ? devices.find((device) => device.id === savedId) : undefined;
+            if (savedId && !savedDevice) {
+              window.localStorage.removeItem('kaktus.hardwareBridgeId');
+              setPairedBridgeId('');
+              setPairedBridgeAgentVersion('');
+              setCloudSetupMessage('This computer was revoked. Pair it again only if you want to reconnect it.');
+              lastOnlineCloudBridgeRef.current = '';
+            }
+
+            // Reuse the saved computer. If browser storage was cleared, adopt the
+            // most recently seen active bridge instead of asking the user to pair again.
+            const selectedDevice = savedDevice
+              || devices.find((device) => Number(device.lastSeenAt || 0) >= Date.now() - 25_000)
+              || devices[0];
+            if (selectedDevice?.id) {
+              window.localStorage.setItem('kaktus.hardwareBridgeId', selectedDevice.id);
+              setPairedBridgeId(selectedDevice.id);
+              setPairedBridgeAgentVersion(selectedDevice.agentVersion || '');
+              const online = Number(selectedDevice.lastSeenAt || 0) >= Date.now() - 25_000;
+              if (online) {
+                setServiceError('');
+                if (lastOnlineCloudBridgeRef.current !== selectedDevice.id || Date.now() - lastCloudRefreshAtRef.current >= 36_000) {
+                  lastOnlineCloudBridgeRef.current = selectedDevice.id;
+                  lastCloudRefreshAtRef.current = Date.now();
+                  await refreshDevicesBackend();
+                }
+              } else {
+                lastOnlineCloudBridgeRef.current = '';
+                setBridgeState('not-running');
+                setServiceReady(false);
+                setIsTargetConnected(false);
+                setServiceError('This computer is paired. Its helper will reconnect automatically when the PC and network are available.');
+              }
+            } else {
+              lastOnlineCloudBridgeRef.current = '';
+              setBridgeState('not-running');
+              setServiceReady(false);
+              setIsTargetConnected(false);
+            }
           }
         }
       } catch {
-        // Keep checking while the Windows helper starts and sends its heartbeat.
+        // Keep the last known pairing and retry quietly on the next status tick.
       }
 
-      if (attempts >= 20) {
-        setStartingPairedHelper(false);
-        setCloudSetupBusy(false);
-        setCloudSetupMessage('The saved helper did not come online. Pairing was kept; try Start paired helper again.');
-        return;
-      }
-      timer = window.setTimeout(checkHelper, 2500);
+      if (!stopped) timer = window.setTimeout(refreshCloudBridgeStatus, 12_000);
     };
 
-    timer = window.setTimeout(checkHelper, 1500);
+    void refreshCloudBridgeStatus();
     return () => {
       stopped = true;
-      window.clearTimeout(timer);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [pairedBridgeId, startingPairedHelper]);
+  }, [hostedProduction, pairedBridgeLoaded, refreshDevicesBackend]);
 
   useEffect(() => {
     const refreshAfterPairing = () => { void refreshDevices(); };
@@ -658,7 +686,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   }, [refreshDevicesWebSerial]);
 
   useEffect(() => {
-    void refreshDevices();
+    if (!hostedProduction) void refreshDevices();
     return () => {
       serialControllerRef.current?.abort();
       // Cleanup Web Serial connections
@@ -1406,15 +1434,17 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
                     ? 'Local hardware bridge is not running'
                     : 'Local hardware bridge connection issue'}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void refreshDevices()}
-                  disabled={stage === 'detecting'}
-                  className="flex shrink-0 items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-black transition-colors hover:bg-neutral-200 disabled:opacity-50"
-                >
-                  <RefreshCw size={12} className={stage === 'detecting' ? 'animate-spin' : ''} />
-                  Retry connection
-                </button>
+                {!hostedProduction && (
+                  <button
+                    type="button"
+                    onClick={() => void refreshDevices()}
+                    disabled={stage === 'detecting'}
+                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-black transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={stage === 'detecting' ? 'animate-spin' : ''} />
+                    Retry connection
+                  </button>
+                )}
               </div>
 
               <p className="mt-1 text-neutral-300 leading-relaxed">{serviceError || statusText}</p>
@@ -1422,26 +1452,41 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               {hostedProduction && (
                 <div className="mt-3 rounded border border-blue-500/30 bg-blue-500/10 p-3 text-[11px] text-blue-100 leading-relaxed">
                   <div className="font-semibold text-blue-200 mb-2">Connect this computer without browser local-network permission</div>
-                  <p>Install and pair this computer once. The helper starts with Windows; if it is offline, start the saved helper below. You do not need to pair again.</p>
-                  <a
-                    href={HARDWARE_BRIDGE_INSTALLER_URL}
-                    className="mt-3 inline-flex items-center gap-2 rounded-md border border-neutral-600 bg-neutral-900 px-3 py-2 text-xs font-semibold text-neutral-100 hover:bg-neutral-800"
-                  >
-                    <Download size={13} /> Download Kaktus Hardware Bridge
-                  </a>
-                  {!pairedBridgeLoaded ? (
+                  <p>Pair this computer once. While it is on and signed in to Windows, the helper runs in the background and reconnects automatically. You only need to revoke the computer to stop access.</p>
+                  {(!pairedBridgeId || !hasBackgroundRecovery(pairedBridgeAgentVersion)) && (
+                    <>
+                      {pairedBridgeId && (
+                        <p className="mt-2 text-amber-200">Install this one-time helper update to enable background recovery. Your saved pairing and USB setup are preserved.</p>
+                      )}
+                      <a
+                        href={HARDWARE_BRIDGE_INSTALLER_URL}
+                        className="mt-3 inline-flex items-center gap-2 rounded-md border border-neutral-600 bg-neutral-900 px-3 py-2 text-xs font-semibold text-neutral-100 hover:bg-neutral-800"
+                      >
+                        <Download size={13} /> {pairedBridgeId ? 'Update helper once' : 'Download Kaktus Hardware Bridge'}
+                      </a>
+                    </>
+                  )}
+                  {!pairedBridgeLoaded || (!pairedBridgeId && !cloudBridgeStatusChecked) ? (
                     <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-neutral-700 px-3 py-2 text-xs text-neutral-300">
                       <Loader2 size={13} className="animate-spin" /> Checking saved pairing…
+                    </div>
+                  ) : pairedBridgeId ? (
+                    <div className="mt-3 rounded-md border border-neutral-700 bg-neutral-950/70 p-2.5">
+                      <div className="flex items-center gap-2 font-medium text-neutral-100">
+                        <span className={`h-1.5 w-1.5 rounded-full ${bridgeState === 'connected' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+                        {bridgeState === 'connected' ? 'Connected automatically' : 'Paired · reconnecting automatically'}
+                      </div>
+                      <p className="mt-1 text-neutral-400">No start or reconnect button is needed. The saved helper resumes when this computer is available.</p>
                     </div>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => pairedBridgeId ? startPairedHelper() : void setupCloudBridge()}
-                      disabled={cloudSetupBusy}
+                      onClick={() => void setupCloudBridge()}
+                      disabled={cloudSetupBusy || pairingPendingSince > 0}
                       className="mt-3 inline-flex items-center gap-2 rounded-md bg-blue-500 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-400 disabled:cursor-wait disabled:opacity-60"
                     >
-                      {cloudSetupBusy ? <Loader2 size={13} className="animate-spin" /> : pairedBridgeId ? <RefreshCw size={13} /> : <Usb size={13} />}
-                      {cloudSetupBusy ? (startingPairedHelper ? 'Starting saved helper…' : 'Preparing pairing…') : pairedBridgeId ? 'Start paired helper' : 'Pair and start helper'}
+                      {cloudSetupBusy || pairingPendingSince > 0 ? <Loader2 size={13} className="animate-spin" /> : <Usb size={13} />}
+                      {pairingPendingSince > 0 ? 'Waiting for one-time pairing…' : cloudSetupBusy ? 'Preparing one-time pairing…' : 'Pair this computer once'}
                     </button>
                   )}
                   {pairedBridgeId && (
@@ -1498,17 +1543,25 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
             </div>
           )}
           {hostedProduction && bridgeState === 'connected' && pairedBridgeId && (
-            <div className="mx-3 mt-2 flex items-center justify-between gap-3 rounded-md border border-neutral-800 bg-neutral-950/80 px-3 py-2 text-[11px] text-neutral-300">
-              <span className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Kaktus Hardware Bridge connected</span>
-              <button
-                type="button"
-                onClick={() => void revokeCloudBridge()}
-                disabled={cloudSetupBusy}
-                className="rounded border border-neutral-700 px-2 py-1 text-neutral-300 hover:border-red-400/50 hover:text-red-200 disabled:opacity-60"
-              >
-                {cloudSetupBusy ? 'Working…' : 'Revoke computer'}
-              </button>
-            </div>
+            <>
+              <div className="mx-3 mt-2 flex items-center justify-between gap-3 rounded-md border border-neutral-800 bg-neutral-950/80 px-3 py-2 text-[11px] text-neutral-300">
+                <span className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Kaktus Hardware Bridge connected</span>
+                <button
+                  type="button"
+                  onClick={() => void revokeCloudBridge()}
+                  disabled={cloudSetupBusy}
+                  className="rounded border border-neutral-700 px-2 py-1 text-neutral-300 hover:border-red-400/50 hover:text-red-200 disabled:opacity-60"
+                >
+                  {cloudSetupBusy ? 'Working…' : 'Revoke computer'}
+                </button>
+              </div>
+              {!hasBackgroundRecovery(pairedBridgeAgentVersion) && (
+                <div className="mx-3 mt-2 flex items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-100">
+                  <span>Install one helper update for automatic recovery. Your pairing stays saved.</span>
+                  <a href={HARDWARE_BRIDGE_INSTALLER_URL} className="shrink-0 rounded border border-neutral-700 px-2 py-1 text-neutral-100 hover:bg-neutral-800">Update once</a>
+                </div>
+              )}
+            </>
           )}
           {serviceError && serviceReady && (
             <div className="m-3 rounded-md border border-neutral-700 bg-neutral-900/70 p-3 text-xs text-neutral-200">
