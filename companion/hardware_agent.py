@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 LOCAL_API = "http://127.0.0.1:8001"
 PROJECT_ID = "otpdemo-291bd"
 MAX_RESULT_BYTES = 1_000_000
@@ -40,6 +40,7 @@ ALLOWED_API_HOSTS = {
 }
 PAIRING_ID = re.compile(r"^[a-f0-9]{32}$")
 PAIRING_CODE = re.compile(r"^[A-Za-z0-9_-]{40,48}$")
+_instance_mutex_handle = None
 
 
 class RelayHttpError(RuntimeError):
@@ -238,6 +239,29 @@ def register_startup() -> None:
     key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
     with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
         winreg.SetValueEx(key, "KaktusHardwareBridge", 0, winreg.REG_SZ, command)
+
+
+def acquire_single_instance() -> bool:
+    """Keep startup, protocol-link, and manual launches from spawning duplicate agents."""
+    global _instance_mutex_handle
+    if os.name != "nt":
+        return True
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_mutex = kernel32.CreateMutexW
+    create_mutex.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    create_mutex.restype = wintypes.HANDLE
+    ctypes.set_last_error(0)
+    handle = create_mutex(None, True, "Local\\KaktusHardwareBridgeAgent")
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle(handle)
+        return False
+
+    _instance_mutex_handle = handle
+    return True
 
 
 def resource_root() -> Path:
@@ -440,12 +464,23 @@ def main() -> int:
     if "--self-check" in sys.argv[1:]:
         return packaged_self_check()
     try:
+        if not acquire_single_instance():
+            log("The Kaktus Hardware Bridge is already running; ignored duplicate launch.")
+            return 0
+
         uri = next((arg for arg in sys.argv[1:] if arg.lower().startswith("kaktus-bridge://")), None)
         if uri:
-            config = pair_from_uri(uri)
-            save_config(config)
-            register_startup()
-            log("This computer was paired successfully with Kaktus.")
+            parsed_uri = urllib.parse.urlsplit(uri)
+            if parsed_uri.netloc.lower() == "pair":
+                config = pair_from_uri(uri)
+                save_config(config)
+                register_startup()
+                log("This computer was paired successfully with Kaktus.")
+            elif parsed_uri.netloc.lower() == "start" and not parsed_uri.query and not parsed_uri.fragment:
+                config = load_config()
+                log("Started the previously paired Kaktus Hardware Bridge.")
+            else:
+                raise ValueError("This Kaktus link is invalid. Use Pair once, then start the saved helper.")
         else:
             if "--background" in sys.argv[1:] and not (data_dir() / "bridge.secret").exists():
                 return 0

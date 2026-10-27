@@ -1,5 +1,5 @@
 #define AppName "Kaktus Hardware Bridge"
-#define AppVersion "1.0.4"
+#define AppVersion "1.0.5"
 #define AppPublisher "Kaktus"
 #define AppExe "KaktusHardwareBridge.exe"
 

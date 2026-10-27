@@ -5,10 +5,10 @@ This companion removes the manual terminal command and browser local-network per
 ## User flow
 
 1. Download and install `KaktusHardwareBridgeSetup.exe` once on the Windows computer connected to the board. The per-user installer registers the `kaktus-bridge:` link and does not require administrator access.
-2. In Kaktus, choose **Pair and start helper**. Approve the Windows app-open prompt once if shown.
+2. In Kaktus, choose **Pair and start helper** once. Approve the Windows app-open prompt once if shown.
 3. The helper stores the relay secret with Windows DPAPI, starts at Windows sign-in, and starts the local USB API. After that, connect the board and use Flash in Kaktus.
 
-The first installation still requires Windows to approve a downloaded app. Future sessions need no PowerShell, downloaded config, Python setup, or browser local-network permission. Revoking the computer in Kaktus invalidates its cloud credential.
+If the helper is offline later, choose **Start paired helper**. This reuses the saved pairing and does not create a new device or pairing code. Future sessions need no PowerShell, downloaded config, Python setup, or browser local-network permission. Revoking the computer in Kaktus invalidates its cloud credential.
 
 ## Build
 
