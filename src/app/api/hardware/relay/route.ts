@@ -78,12 +78,18 @@ export async function GET(request: Request) {
     const user = await requireAuthenticatedUser(request);
     if (action === 'devices') {
       const snapshot = await devices.where('ownerUid', '==', user.uid).get();
-      const list = snapshot.docs.map((doc) => {
+      const allDevices = snapshot.docs.map((doc) => {
         const data = doc.data();
         return { id: doc.id, active: data.active === true, createdAt: data.createdAt || null, lastSeenAt: data.lastSeenAt || null, agentVersion: data.agentVersion || null, label: data.label || 'This computer' };
-      }).filter((device) => device.active);
+      });
+      const requestedBridgeId = url.searchParams.get('bridgeId') || '';
+      const savedBridge = validId(requestedBridgeId) ? allDevices.find((device) => device.id === requestedBridgeId) : undefined;
+      const savedBridgeStatus: 'active' | 'revoked' | 'missing' | null = !requestedBridgeId || !validId(requestedBridgeId)
+        ? null
+        : savedBridge ? savedBridge.active ? 'active' : 'revoked' : 'missing';
+      const list = allDevices.filter((device) => device.active);
       list.sort((a, b) => Number(b.lastSeenAt || 0) - Number(a.lastSeenAt || 0));
-      return Response.json({ devices: list }, { headers: { 'Cache-Control': 'no-store' } });
+      return Response.json({ devices: list, savedBridgeStatus }, { headers: { 'Cache-Control': 'no-store' } });
     }
     if (action === 'command') {
       const commandId = url.searchParams.get('commandId') || '';

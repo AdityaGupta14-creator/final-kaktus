@@ -20,18 +20,30 @@ function isHostedRelay(): boolean {
 }
 
 async function resolveCloudBridgeId(idToken: string, signal?: AbortSignal): Promise<string> {
-  const response = await fetch('/api/hardware/relay?action=devices', {
+  const saved = window.localStorage.getItem(CLOUD_BRIDGE_STORAGE_KEY);
+  const bridgeQuery = saved ? `&bridgeId=${encodeURIComponent(saved)}` : '';
+  const response = await fetch(`/api/hardware/relay?action=devices${bridgeQuery}`, {
     headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store', signal,
   });
-  const payload = await response.json().catch(() => ({})) as { devices?: Array<{ id?: string; lastSeenAt?: number | null }> };
+  const payload = await response.json().catch(() => ({})) as {
+    devices?: Array<{ id?: string; lastSeenAt?: number | null }>;
+    savedBridgeStatus?: 'active' | 'revoked' | 'missing' | null;
+  };
   if (!response.ok) throw new Error('Could not check paired hardware computers. Sign in again and retry.');
-  const saved = window.localStorage.getItem(CLOUD_BRIDGE_STORAGE_KEY);
+  if (saved && payload.savedBridgeStatus === 'revoked') {
+    window.localStorage.removeItem(CLOUD_BRIDGE_STORAGE_KEY);
+    throw new Error('This computer was revoked. Pair it again only if you want to reconnect it.');
+  }
   const onlineDevices = (payload.devices || []).filter((device) => typeof device.lastSeenAt === 'number' && Date.now() - device.lastSeenAt < 20_000);
-  const bridgeId = onlineDevices.find((device) => device.id === saved)?.id || onlineDevices[0]?.id;
+  const bridgeId = saved
+    ? onlineDevices.find((device) => device.id === saved)?.id
+    : onlineDevices[0]?.id;
   if (!bridgeId) {
     const hasPairedDevice = payload.devices?.some((device) => Boolean(device.id));
     throw new Error(hasPairedDevice
-      ? 'The paired computer is offline. Kaktus will reconnect automatically when that computer is on and signed in to Windows.'
+      ? 'The paired computer is offline. Its pairing stays saved; Kaktus will reconnect automatically when that computer is available.'
+      : saved && payload.savedBridgeStatus === 'missing'
+      ? 'The saved computer is not listed for this account. Its local pairing was kept; verify you are signed in to the account used when pairing.'
       : 'Install Kaktus Hardware Bridge once, then pair this computer once in Kaktus.');
   }
   window.localStorage.setItem(CLOUD_BRIDGE_STORAGE_KEY, bridgeId);

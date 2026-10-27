@@ -258,6 +258,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const bridgePollRef = useRef<NodeJS.Timeout | null>(null);
   const lastOnlineCloudBridgeRef = useRef('');
   const lastCloudRefreshAtRef = useRef(0);
+  const hasConfirmedBridgeRef = useRef(false);
 
   const currentBoard = useMemo(
     () => BOARD_OPTIONS.find((board) => board.fqbn === selectedBoard) || null,
@@ -480,12 +481,15 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   }, [savedSelection, selectedBoard, selectedPort]);
 
   /* ── Detect ports via local backend (localhost:8000) ── */
-  const refreshDevicesBackend = useCallback(async () => {
-    setStage('detecting');
-    setBridgeState('checking');
-    setStatusText(hostedProduction ? 'Checking secure hardware bridge...' : 'Checking local hardware bridge...');
-    setServiceError('');
-    setErrorText('');
+  const refreshDevicesBackend = useCallback(async (options?: { background?: boolean }) => {
+    const backgroundRefresh = options?.background === true;
+    if (!backgroundRefresh) {
+      setStage('detecting');
+      setBridgeState('checking');
+      setStatusText(hostedProduction ? 'Checking secure hardware bridge...' : 'Checking local hardware bridge...');
+      setServiceError('');
+      setErrorText('');
+    }
 
     try {
       // 1. Perform health check with bounded retry strategy
@@ -501,7 +505,14 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       });
 
       if (!health.ready) {
+        if (backgroundRefresh && hasConfirmedBridgeRef.current) {
+          setServiceReady(false);
+          setServiceError(health.error || 'The paired computer is online, but its USB service check did not finish.');
+          setStatusText('The USB status check was delayed. The saved bridge connection is being checked again automatically.');
+          return;
+        }
         setBridgeState(health.state);
+        hasConfirmedBridgeRef.current = false;
         setServiceReady(false);
         setServiceError(health.error || 'Local hardware bridge is unavailable.');
         setPorts([]);
@@ -512,6 +523,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       }
 
       setBridgeState('connected');
+      hasConfirmedBridgeRef.current = true;
       setServiceReady(health.compilerReady);
       if (!health.compilerReady && health.error) {
         setServiceError(health.error);
@@ -554,7 +566,14 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       }
     } catch (error) {
       const message = describeHardwareConnectionError(error);
+      if (backgroundRefresh && hasConfirmedBridgeRef.current) {
+        setServiceReady(false);
+        setServiceError(message);
+        setStatusText('The USB status check was delayed. The saved bridge connection is being checked again automatically.');
+        return;
+      }
       setBridgeState('error');
+      hasConfirmedBridgeRef.current = false;
       setServiceReady(false);
       setServiceError(message);
       setPorts([]);
@@ -562,7 +581,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       setIsTargetConnected(false);
       setStatusText('Local hardware service is unavailable.');
     } finally {
-      setStage((current) => current === 'detecting' ? 'idle' : current);
+      if (!backgroundRefresh) setStage((current) => current === 'detecting' ? 'idle' : current);
     }
   }, [hostedProduction, savedSelection, selectedPort]);
 
@@ -601,19 +620,25 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       try {
         const user = auth.currentUser;
         if (user) {
-          const response = await fetch('/api/hardware/relay?action=devices', {
+          const savedIdAtRequest = window.localStorage.getItem('kaktus.hardwareBridgeId') || '';
+          const bridgeQuery = savedIdAtRequest ? `&bridgeId=${encodeURIComponent(savedIdAtRequest)}` : '';
+          const response = await fetch(`/api/hardware/relay?action=devices${bridgeQuery}`, {
             headers: { Authorization: `Bearer ${await user.getIdToken()}` },
             cache: 'no-store',
+            signal: AbortSignal.timeout(8_000),
           });
+          if (!response.ok) throw new Error(`Hardware status returned HTTP ${response.status}.`);
           const payload = await response.json().catch(() => ({})) as {
             devices?: Array<{ id?: string; lastSeenAt?: number | null; agentVersion?: string | null }>;
+            savedBridgeStatus?: 'active' | 'revoked' | 'missing' | null;
           };
           if (response.ok) {
             setCloudBridgeStatusChecked(true);
             const devices = (payload.devices || []).filter((device): device is { id: string; lastSeenAt?: number | null; agentVersion?: string | null } => typeof device.id === 'string');
-            const savedId = window.localStorage.getItem('kaktus.hardwareBridgeId') || '';
+            const savedId = savedIdAtRequest;
             const savedDevice = savedId ? devices.find((device) => device.id === savedId) : undefined;
-            if (savedId && !savedDevice) {
+            const savedBridgeWasRevoked = Boolean(savedId && payload.savedBridgeStatus === 'revoked');
+            if (savedBridgeWasRevoked) {
               window.localStorage.removeItem('kaktus.hardwareBridgeId');
               setPairedBridgeId('');
               setPairedBridgeAgentVersion('');
@@ -621,32 +646,47 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               lastOnlineCloudBridgeRef.current = '';
             }
 
-            // Reuse the saved computer. If browser storage was cleared, adopt the
-            // most recently seen active bridge instead of asking the user to pair again.
-            const selectedDevice = savedDevice
-              || devices.find((device) => Number(device.lastSeenAt || 0) >= Date.now() - 25_000)
-              || devices[0];
+            // Keep the exact saved computer while it is offline. Never silently
+            // switch firmware uploads to another paired computer.
+            const selectedDevice = savedId && !savedBridgeWasRevoked
+              ? savedDevice
+              : devices.find((device) => Number(device.lastSeenAt || 0) >= Date.now() - 25_000)
+                || devices[0];
             if (selectedDevice?.id) {
               window.localStorage.setItem('kaktus.hardwareBridgeId', selectedDevice.id);
               setPairedBridgeId(selectedDevice.id);
               setPairedBridgeAgentVersion(selectedDevice.agentVersion || '');
               const online = Number(selectedDevice.lastSeenAt || 0) >= Date.now() - 25_000;
               if (online) {
+                hasConfirmedBridgeRef.current = true;
+                setBridgeState('connected');
                 setServiceError('');
                 if (lastOnlineCloudBridgeRef.current !== selectedDevice.id || Date.now() - lastCloudRefreshAtRef.current >= 36_000) {
                   lastOnlineCloudBridgeRef.current = selectedDevice.id;
                   lastCloudRefreshAtRef.current = Date.now();
-                  await refreshDevicesBackend();
+                  await refreshDevicesBackend({ background: true });
                 }
               } else {
                 lastOnlineCloudBridgeRef.current = '';
+                hasConfirmedBridgeRef.current = false;
                 setBridgeState('not-running');
                 setServiceReady(false);
                 setIsTargetConnected(false);
                 setServiceError('This computer is paired. Its helper will reconnect automatically when the PC and network are available.');
               }
+            } else if (savedId && !savedBridgeWasRevoked) {
+              lastOnlineCloudBridgeRef.current = '';
+              hasConfirmedBridgeRef.current = false;
+              setBridgeState('not-running');
+              setServiceReady(false);
+              setIsTargetConnected(false);
+              setStatusText('Pairing remains saved. Waiting for this computer to reconnect automatically.');
+              setServiceError(payload.savedBridgeStatus === 'missing'
+                ? 'The saved computer is not listed for this account. Its pairing stays saved here; sign in to the account used when pairing.'
+                : 'This computer will not be paired again or replaced automatically. Revoke it only if you want to remove the saved pairing.');
             } else {
               lastOnlineCloudBridgeRef.current = '';
+              hasConfirmedBridgeRef.current = false;
               setBridgeState('not-running');
               setServiceReady(false);
               setIsTargetConnected(false);
@@ -654,7 +694,15 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
           }
         }
       } catch {
-        // Keep the last known pairing and retry quietly on the next status tick.
+        setCloudBridgeStatusChecked(true);
+        if (!lastOnlineCloudBridgeRef.current) {
+          hasConfirmedBridgeRef.current = false;
+          setBridgeState('not-running');
+          setServiceReady(false);
+          setIsTargetConnected(false);
+          setStatusText('Pairing stays saved. Live status could not be confirmed; Kaktus will keep checking automatically.');
+          setServiceError('The paired computer is still saved. Waiting for the automatic connection check to complete.');
+        }
       }
 
       if (!stopped) timer = window.setTimeout(refreshCloudBridgeStatus, 12_000);
@@ -1140,7 +1188,9 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
           <span className="shrink-0 text-xs font-semibold text-neutral-100">Hardware console</span>
           <span className="hidden h-4 w-px bg-neutral-700 sm:block" />
           <span className="truncate text-[11px] text-neutral-400">
-            {currentPort
+            {hostedProduction && pairedBridgeId && bridgeState !== 'connected'
+              ? bridgeState === 'checking' ? 'Paired computer · checking status...' : 'Paired computer · waiting for connection'
+              : currentPort
               ? isTargetConnected ? `${deviceLabel} · ${currentPort.port}` : `${currentPort.port} · board disconnected`
               : bridgeState === 'checking'
               ? 'Checking local bridge...'
@@ -1159,7 +1209,9 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
           <span
             className={
               'rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ' +
-              (bridgeState === 'checking'
+              (hostedProduction && pairedBridgeId && bridgeState !== 'connected'
+                ? 'border-neutral-700 bg-neutral-900 text-neutral-300'
+                : bridgeState === 'checking'
                 ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 animate-pulse'
                 : currentPort && isTargetConnected
                 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
@@ -1186,6 +1238,8 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               ? 'Monitoring'
               : stage === 'error'
               ? 'Error'
+              : hostedProduction && pairedBridgeId && bridgeState !== 'connected'
+              ? 'Paired'
               : bridgeState === 'checking'
               ? 'Checking'
               : bridgeState === 'permission-required'
@@ -1423,7 +1477,9 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
                 <div className="flex items-center gap-2 font-semibold text-sm">
                   <AlertTriangle size={16} className={bridgeState === 'permission-required' || bridgeState === 'cors-rejected' ? 'text-amber-400' : 'text-neutral-400'} />
                   {bridgeState === 'checking'
-                    ? 'Checking local hardware bridge'
+                    ? hostedProduction && pairedBridgeId ? 'Checking the paired computer' : 'Checking local hardware bridge'
+                    : hostedProduction && pairedBridgeId && bridgeState !== 'connected'
+                    ? 'Computer paired · waiting for connection'
                     : hostedProduction
                     ? 'Secure hardware bridge not connected'
                     : bridgeState === 'permission-required'
