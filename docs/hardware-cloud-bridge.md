@@ -7,7 +7,7 @@ The hosted app sends hardware operations to an authenticated Kaktus API. A paire
 1. Sign in to the hosted Kaktus app and open the Hardware console.
 2. Choose **Pair computer and download setup file**. The JSON file contains a revocable, computer-scoped secret; keep it private.
 3. On the computer physically connected to the microcontroller, use a trusted Kaktus checkout with Node.js 20+ and Python available. Keep the downloaded JSON outside any shared/public folder.
-4. Run `npm run hardware:bridge:cloud -- --config "<path-to-kaktus-hardware-bridge.json>"` from the project folder. The agent starts the local USB service if needed, then waits for authenticated commands over HTTPS.
+4. Run `npm run hardware:bridge:cloud -- --config "<path-to-kaktus-hardware-bridge.json>"` from the project folder. The agent starts the local authorization service and USB service if needed, then waits for authenticated commands over HTTPS.
 5. Return to the app and retry device detection. The selected board, compile, and flash requests are routed through the paired computer.
 
 The bridge agent never accepts a shell command or arbitrary URL from the cloud. It only forwards the explicit allowlist in `scripts/hardware-cloud-bridge.js`. User Firebase ID tokens are passed only with a claimed command, then removed from its Firestore document.

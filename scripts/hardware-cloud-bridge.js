@@ -5,6 +5,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const projectRoot = path.resolve(__dirname, '..');
+require('dotenv').config({ path: path.join(projectRoot, '.env.local') });
+
 const VERSION = '1.0.0';
 const LOCAL_API = 'http://127.0.0.1:8000';
 const MAX_RESULT_BYTES = 1_000_000;
@@ -90,7 +93,17 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
   const config = readConfig();
-  const { startBridge, checkBridgeHealth } = require('./hardware-bridge-launcher');
+  const { startBridge, startTerminalProcess, checkBridgeHealth, checkTerminalHealth } = require('./hardware-bridge-launcher');
+  const terminal = startTerminalProcess({ daemon: true, verbose: true });
+  if (!terminal?.ok) throw new Error(terminal?.error || 'Could not start the local hardware authorization service.');
+  let terminalReady = false;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const health = await checkTerminalHealth(3001, 1000);
+    if (health.ok) { terminalReady = true; break; }
+    await sleep(350);
+  }
+  if (!terminalReady) throw new Error('The local hardware authorization service did not become ready. Check backend/bridge.log.');
+
   const localBridge = await startBridge({ daemon: true, verbose: true });
   if (!localBridge?.ok) throw new Error(localBridge?.error || 'Could not start the local USB hardware service.');
   let localReady = false;
