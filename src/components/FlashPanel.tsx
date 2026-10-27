@@ -19,7 +19,13 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import { describeHardwareConnectionError, hardwareFetch, hardwareResponseError } from '@/lib/hardware-api';
+import {
+  BridgeConnectionState,
+  checkBridgeHealthWithRetry,
+  describeHardwareConnectionError,
+  hardwareFetch,
+  hardwareResponseError,
+} from '@/lib/hardware-api';
 
 export interface BoardOption {
   fqbn: string;
@@ -58,6 +64,19 @@ const USB_VID_PID_MAP: Record<string, BoardOption> = {
   '2E8A:000A': BOARD_OPTIONS[6], // RP2040 Pico W
   '0483:5740': BOARD_OPTIONS[7], // STM32 Virtual COM
 };
+
+interface SerialPortInfoWeb {
+  usbVendorId?: number;
+  usbProductId?: number;
+}
+
+interface SerialPort {
+  open(options: { baudRate: number }): Promise<void>;
+  close(): Promise<void>;
+  readable: ReadableStream<Uint8Array> | null;
+  writable: WritableStream<Uint8Array> | null;
+  getInfo(): SerialPortInfoWeb;
+}
 
 function identifyBoardFromWebSerial(port: SerialPort): BoardOption | null {
   const info = port.getInfo();
@@ -121,6 +140,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const [stage, setStage] = useState<FlashStage>('detecting');
   const [ports, setPorts] = useState<SerialPortInfo[]>([]);
   const [selectedPort, setSelectedPort] = useState('');
+  const [bridgeState, setBridgeState] = useState<BridgeConnectionState>('checking');
   const [selectedBoard, setSelectedBoard] = useState('');
   const [baudRate, setBaudRate] = useState(115200);
   const [serviceReady, setServiceReady] = useState(false);
@@ -166,8 +186,8 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     setServiceError('');
     setErrorText('');
     try {
-      const webPorts = await navigator.serial.getPorts();
-      const foundPorts: SerialPortInfo[] = webPorts.map((port, index) => {
+      const webPorts: SerialPort[] = (navigator as any).serial ? await (navigator as any).serial.getPorts() : [];
+      const foundPorts: SerialPortInfo[] = webPorts.map((port: SerialPort, index: number) => {
         const board = identifyBoardFromWebSerial(port);
         const vidPid = getVidPidString(port);
         return {
@@ -213,14 +233,42 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   /* ── Detect ports via local backend (localhost:8000) ── */
   const refreshDevicesBackend = useCallback(async () => {
     setStage('detecting');
-    setStatusText('Scanning USB serial ports via local bridge...');
+    setBridgeState('checking');
+    setStatusText('Checking local hardware bridge...');
     setServiceError('');
     setErrorText('');
+
     try {
-      const [statusResponse, portsResponse] = await Promise.all([
-        hardwareFetch('/flash/status'),
-        hardwareFetch('/flash/boards'),
-      ]);
+      // 1. Perform health check with bounded retry strategy
+      const health = await checkBridgeHealthWithRetry({
+        maxAttempts: 3,
+        initialDelayMs: 350,
+        backoffMultiplier: 1.8,
+        onAttempt: (att, max) => {
+          if (att > 1) {
+            setStatusText(`Connecting to local hardware bridge (attempt ${att}/${max})...`);
+          }
+        },
+      });
+
+      if (!health.ready) {
+        setBridgeState(health.state);
+        setServiceReady(false);
+        setServiceError(health.error || 'Local hardware bridge is unavailable.');
+        setPorts([]);
+        setSelectedPort('');
+        setStatusText(health.error || 'Local hardware bridge is unavailable.');
+        return;
+      }
+
+      setBridgeState('connected');
+      setServiceReady(health.compilerReady);
+      if (!health.compilerReady && health.error) {
+        setServiceError(health.error);
+      }
+
+      // 2. Query available USB serial ports
+      const portsResponse = await hardwareFetch('/flash/boards');
       if (!portsResponse.ok) throw new Error(await hardwareResponseError(portsResponse));
       const portPayload = await portsResponse.json() as { ports?: SerialPortInfo[] };
       const foundPorts = Array.isArray(portPayload.ports) ? portPayload.ports : [];
@@ -229,18 +277,6 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       const autoTargetPort = foundPorts.find((port) => port.port === selectedPort)
         || (foundPorts.length === 1 ? foundPorts[0] : recognizedPorts.length === 1 ? recognizedPorts[0] : null);
 
-      let ready = false;
-      let statusMessage = '';
-      if (statusResponse.ok) {
-        const statusPayload = await statusResponse.json() as { ready?: boolean; error?: string };
-        ready = statusPayload.ready === true;
-        statusMessage = statusPayload.error || '';
-      } else {
-        statusMessage = await hardwareResponseError(statusResponse);
-      }
-      setServiceReady(ready);
-      setServiceError(statusMessage);
-
       setSelectedPort(autoTargetPort?.port || '');
       setSelectedBoard((previous) => {
         const detected = autoTargetPort?.fqbn;
@@ -248,19 +284,24 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
         return previous;
       });
 
-      if (!ready) {
+      if (!health.compilerReady) {
         setStatusText('USB ports were scanned, but the Arduino compiler is not ready.');
       } else if (!foundPorts.length) {
-        setStatusText('No USB serial board detected. Connect a data-capable USB cable and scan again.');
+        setStatusText('Local bridge connected. No USB serial board detected. Connect a data-capable cable and scan again.');
       } else if (foundPorts.length === 1) {
         const detectedBoard = foundPorts[0].board || 'USB serial device';
         setStatusText('Detected ' + detectedBoard + ' on ' + foundPorts[0].port + '.');
       } else {
         setStatusText('Detected ' + foundPorts.length + ' USB serial ports. Select the board port.');
       }
-    } catch {
-      // Backend not available, stay in current mode
-      throw new Error('backend-unavailable');
+    } catch (error) {
+      const message = describeHardwareConnectionError(error);
+      setBridgeState('error');
+      setServiceReady(false);
+      setServiceError(message);
+      setPorts([]);
+      setSelectedPort('');
+      setStatusText('Local hardware service is unavailable.');
     } finally {
       setStage((current) => current === 'detecting' ? 'idle' : current);
     }
@@ -285,7 +326,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const requestNewDevice = useCallback(async () => {
     if (!('serial' in navigator)) return;
     try {
-      await navigator.serial.requestPort();
+      await (navigator as any).serial?.requestPort();
       // After user pairs, refresh to pick it up
       await refreshDevicesWebSerial();
     } catch {
@@ -663,10 +704,55 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
           <span className="shrink-0 text-xs font-semibold text-neutral-100">Hardware console</span>
           <span className="hidden h-4 w-px bg-neutral-700 sm:block" />
           <span className="truncate text-[11px] text-neutral-400">
-            {currentPort ? `${deviceLabel} · ${currentPort.port}` : ports.length ? 'Select a detected serial port' : mode === 'browser' ? 'Web Serial mode' : 'No board detected'}
+            {currentPort
+              ? `${deviceLabel} · ${currentPort.port}`
+              : bridgeState === 'checking'
+              ? 'Checking local bridge...'
+              : bridgeState === 'permission-required'
+              ? 'Browser permission required'
+              : bridgeState === 'not-running'
+              ? (mode === 'browser' ? 'Web Serial mode (Bridge offline)' : 'Local bridge offline')
+              : serviceReady
+              ? ports.length
+                ? 'Select a detected serial port'
+                : 'No board detected'
+              : mode === 'browser'
+              ? 'Web Serial mode'
+              : 'Local USB service unavailable'}
           </span>
-          <span className={'rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ' + (currentPort ? 'border-neutral-600 bg-neutral-800 text-white' : 'border-neutral-800 bg-neutral-900 text-neutral-400')}>
-            {stage === 'compiling' ? 'Building' : stage === 'uploading' ? 'Uploading' : stage === 'monitoring' ? 'Monitoring' : stage === 'error' ? 'Error' : currentPort ? 'Connected' : mode === 'browser' ? 'Browser' : 'Offline'}
+          <span
+            className={
+              'rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ' +
+              (bridgeState === 'checking'
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 animate-pulse'
+                : currentPort
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                : bridgeState === 'connected'
+                ? 'border-emerald-600/30 bg-emerald-950/40 text-emerald-400'
+                : bridgeState === 'permission-required'
+                ? 'border-amber-500/40 bg-amber-900/30 text-amber-300'
+                : 'border-neutral-800 bg-neutral-900 text-neutral-400')
+            }
+          >
+            {stage === 'compiling'
+              ? 'Building'
+              : stage === 'uploading'
+              ? 'Uploading'
+              : stage === 'monitoring'
+              ? 'Monitoring'
+              : stage === 'error'
+              ? 'Error'
+              : bridgeState === 'checking'
+              ? 'Checking'
+              : bridgeState === 'permission-required'
+              ? 'Permission Required'
+              : currentPort
+              ? 'Connected'
+              : bridgeState === 'connected'
+              ? 'Bridge Ready'
+              : mode === 'browser'
+              ? 'Browser'
+              : 'Offline'}
           </span>
           {mode === 'browser' && (
             <span className="flex items-center gap-1 rounded border border-green-900/50 bg-green-950/30 px-1.5 py-0.5 text-[9px] font-medium text-green-400">
@@ -854,6 +940,66 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
                 <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
                 Auto-polling bridge every 5s — will auto-connect when ready
               </div>
+            </div>
+          )}
+          {mode === 'local' && bridgeState !== 'connected' && stage !== 'compiling' && stage !== 'uploading' && (
+            <div className="m-3 rounded-lg border border-neutral-700 bg-neutral-900/90 p-4 text-xs text-neutral-200 shadow-xl">
+              <div className="flex items-center justify-between gap-3 pb-2">
+                <div className="flex items-center gap-2 font-semibold text-sm">
+                  <AlertTriangle size={16} className={bridgeState === 'permission-required' ? 'text-amber-400' : 'text-neutral-400'} />
+                  {bridgeState === 'checking'
+                    ? 'Checking local hardware bridge'
+                    : bridgeState === 'permission-required'
+                    ? 'Local network permission required'
+                    : bridgeState === 'not-running'
+                    ? 'Local hardware bridge is not running'
+                    : 'Local hardware bridge connection issue'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void refreshDevices()}
+                  disabled={stage === 'detecting'}
+                  className="flex shrink-0 items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-black transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                >
+                  <RefreshCw size={12} className={stage === 'detecting' ? 'animate-spin' : ''} />
+                  Retry connection
+                </button>
+              </div>
+
+              <p className="mt-1 text-neutral-300 leading-relaxed">{serviceError || statusText}</p>
+
+              {bridgeState === 'permission-required' && (
+                <div className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200 leading-relaxed">
+                  <div className="font-semibold text-amber-300 mb-1">How to grant browser access:</div>
+                  <ol className="list-decimal list-inside space-y-1 text-amber-200/90">
+                    <li>If Chrome or Edge prompted to allow access to local network devices, click <strong>Allow</strong>.</li>
+                    <li>If the prompt was dismissed: Click the tune/settings icon in the browser address bar next to the URL, open <strong>Site settings</strong>, and allow <strong>Insecure content</strong> or <strong>Local network access</strong>.</li>
+                    <li>Ensure the bridge is running with <code className="rounded bg-black/60 px-1 py-0.5 font-mono text-amber-300">npm run hardware:bridge</code>, then click <strong>Retry connection</strong> above.</li>
+                  </ol>
+                </div>
+              )}
+
+              {bridgeState === 'not-running' && (
+                <div className="mt-3 space-y-2 rounded border border-neutral-800 bg-black/50 p-3 text-[11px] text-neutral-300">
+                  <div className="font-medium text-neutral-200">Starting the local hardware bridge:</div>
+                  <p className="text-neutral-400">Run this command in your project terminal:</p>
+                  <code className="block rounded bg-neutral-950 p-2 font-mono text-xs text-emerald-400 border border-neutral-800">
+                    npm run hardware:bridge
+                  </code>
+                  <p className="text-neutral-400 pt-1">
+                    To automatically start the bridge on Windows login (user-level, no admin required):
+                  </p>
+                  <code className="block rounded bg-neutral-950 p-2 font-mono text-xs text-neutral-300 border border-neutral-800">
+                    npm run hardware:autostart:enable
+                  </code>
+                </div>
+              )}
+            </div>
+          )}
+          {serviceError && serviceReady && (
+            <div className="m-3 rounded-md border border-neutral-700 bg-neutral-900/70 p-3 text-xs text-neutral-200">
+              <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={14} /> Compiler note</div>
+              <p className="mt-1 text-neutral-300">{serviceError}</p>
             </div>
           )}
           {errorText && (

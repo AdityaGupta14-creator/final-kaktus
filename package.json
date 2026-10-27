@@ -10,6 +10,12 @@
     "start": "node server.js --production",
     "hardware:setup": "node hardware-setup.js",
     "hardware:bridge": "node hardware-bridge.js",
+    "hardware:bridge:daemon": "node scripts/hardware-bridge-launcher.js --daemon",
+    "hardware:status": "node scripts/hardware-bridge-launcher.js --status",
+    "hardware:stop": "node scripts/hardware-bridge-launcher.js --stop",
+    "hardware:autostart:enable": "node scripts/manage-bridge-autostart.js enable",
+    "hardware:autostart:disable": "node scripts/manage-bridge-autostart.js disable",
+    "hardware:autostart:status": "node scripts/manage-bridge-autostart.js status",
     "lint": "eslint"
   },
   "dependencies": {

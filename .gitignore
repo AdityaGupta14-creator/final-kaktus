@@ -48,12 +48,16 @@ next-env.d.ts
 !backend/main.py
 !hardware-bridge.js
 !hardware-setup.js
+!scripts/*.js
+!scripts/*.mjs
 *.txt
 !backend/requirements.txt
 !server.js
 !next.config.js
 !postcss.config.js
 !tailwind.config.js
+/backend/*.log
+/backend/.bridge.pid
 
 *.ps1
 *.html

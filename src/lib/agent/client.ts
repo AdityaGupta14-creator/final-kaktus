@@ -17,9 +17,11 @@ export interface AgentResponse {
   sources: Array<{ title: string; uri: string }>;
   searchQueries: string[];
   researched: boolean;
+  taskId?: string;
+  durationMs?: number;
 }
 
-export type AgentErrorCode = 'APP_QUOTA_EXCEEDED' | 'PROVIDER_RATE_LIMIT' | 'PROVIDER_QUOTA_EXHAUSTED' | 'PROVIDER_AUTH_ERROR' | 'API_KEY_MISSING' | 'UPSTREAM_ERROR' | string;
+export type AgentErrorCode = 'APP_QUOTA_EXCEEDED' | 'PROVIDER_RATE_LIMIT' | 'PROVIDER_QUOTA_EXHAUSTED' | 'PROVIDER_AUTH_ERROR' | 'API_KEY_MISSING' | 'UPSTREAM_ERROR' | 'UPSTREAM_TIMEOUT' | string;
 
 export class AgentRequestError extends Error {
   readonly code?: AgentErrorCode;
@@ -38,11 +40,11 @@ function responseError(data: unknown, status: number): AgentRequestError {
   const message = typeof payload.error === 'string' ? payload.error : 'Agent request failed.';
   const code = typeof payload.code === 'string'
     ? payload.code
-    : status === 429 ? 'PROVIDER_RATE_LIMIT' : undefined;
+    : status === 429 ? 'PROVIDER_RATE_LIMIT' : status === 504 ? 'UPSTREAM_TIMEOUT' : undefined;
   return new AgentRequestError(message, code, status);
 }
 
-interface AgentRequest {
+export interface AgentRequest {
   apiKeys: string[];
   model: string;
   systemPrompt: string;
@@ -51,6 +53,7 @@ interface AgentRequest {
   temperature?: number;
   research?: boolean;
   abortSignal?: AbortSignal;
+  taskId?: string;
 }
 
 /**
@@ -60,7 +63,7 @@ interface AgentRequest {
 function getOrderedKeys(keys: string[]): string[] {
   if (keys.length <= 1) return keys;
 
-  let billingKeys: string[] = [];
+  const billingKeys: string[] = [];
   let freeKeys: string[] = [];
 
   try {
@@ -108,6 +111,10 @@ function isKeyRecentlyExhausted(key: string, model: string): boolean {
 }
 
 export async function requestAgent(request: AgentRequest): Promise<AgentResponse> {
+  const taskId = request.taskId || (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `task_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
+
   // Check token limits before making the request
   if (typeof window !== 'undefined') {
     const uid = localStorage.getItem('kaktus_user_uid') || localStorage.getItem('kaktus_user_email');
@@ -125,7 +132,10 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
   }
 
   // Gather auth header if signed in
-  const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+  const authHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'x-task-id': taskId,
+  };
   if (typeof window !== 'undefined') {
     try {
       const { auth } = await import('@/lib/firebase');
@@ -136,20 +146,55 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
     } catch {}
   }
 
+  const isTransientError = (status?: number, code?: string) => {
+    if (status === 400 || status === 401 || status === 403 || status === 413) return false;
+    if (code === 'APP_QUOTA_EXCEEDED' || code === 'PROVIDER_RATE_LIMIT' || code === 'PROVIDER_QUOTA_EXHAUSTED' || code === 'PROVIDER_AUTH_ERROR' || code === 'API_KEY_MISSING') return false;
+    return status === 502 || status === 503 || status === 504 || code === 'UPSTREAM_TIMEOUT' || code === 'UPSTREAM_ERROR' || !status;
+  };
+
+  const fetchAttempt = async (targetPayload: Record<string, unknown>, maxRetries = 2) => {
+    let attempt = 0;
+    while (true) {
+      if (request.abortSignal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      try {
+        const response = await fetch('/api/agent', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify(targetPayload),
+          signal: request.abortSignal,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const err = responseError(data, response.status);
+          if (attempt < maxRetries && isTransientError(err.status, err.code) && !request.abortSignal?.aborted) {
+            attempt++;
+            const backoffMs = Math.min(2000, 300 * Math.pow(2, attempt)) + Math.random() * 150;
+            await new Promise(r => setTimeout(r, backoffMs));
+            continue;
+          }
+          throw err;
+        }
+        return data;
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || request.abortSignal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        if (attempt < maxRetries && isTransientError(err?.status, err?.code) && !request.abortSignal?.aborted) {
+          attempt++;
+          const backoffMs = Math.min(2000, 300 * Math.pow(2, attempt)) + Math.random() * 150;
+          await new Promise(r => setTimeout(r, backoffMs));
+          continue;
+        }
+        throw err instanceof AgentRequestError ? err : new AgentRequestError(err?.message || 'Agent request failed.');
+      }
+    }
+  };
+
   if (!request.apiKeys || request.apiKeys.length === 0) {
-    const payload = { ...request, apiKey: 'default_server_key' };
+    const payload = { ...request, taskId, apiKey: 'default_server_key' };
     delete (payload as any).apiKeys;
 
-    if (request.abortSignal?.aborted) throw new DOMException('Aborted', 'AbortError');
-
-    const response = await fetch('/api/agent', {
-      method: 'POST',
-      headers: authHeaders,
-      body: JSON.stringify(payload),
-      signal: request.abortSignal,
-    });
-    const data = await response.json();
-    if (!response.ok) throw responseError(data, response.status);
+    const data = await fetchAttempt(payload, 2);
 
     // Track usage for default server key
     if (typeof window !== 'undefined') {
@@ -163,6 +208,8 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
       sources: Array.isArray(data.sources) ? data.sources : [],
       searchQueries: Array.isArray(data.searchQueries) ? data.searchQueries : [],
       researched: data.researched === true,
+      taskId: data.taskId || taskId,
+      durationMs: data.durationMs,
     };
   }
 
@@ -183,36 +230,10 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
     triedCount++;
 
     try {
-      const payload = { ...request, apiKey: key };
+      const payload = { ...request, taskId, apiKey: key };
       delete (payload as any).apiKeys;
 
-      const response = await fetch('/api/agent', {
-        signal: request.abortSignal,
-        method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json().catch(() => ({}));
-      
-      if (!response.ok) {
-        const agentError = responseError(data, response.status);
-        
-        if (typeof window !== 'undefined') {
-          const isProviderLimit = agentError.code === 'PROVIDER_RATE_LIMIT' || agentError.code === 'PROVIDER_QUOTA_EXHAUSTED';
-          if (isProviderLimit) {
-            lastQuotaError = agentError;
-            const errsRaw = localStorage.getItem('gemini_key_errors') || '{}';
-            const errs = JSON.parse(errsRaw);
-            if (!errs[key]) errs[key] = {};
-            
-            const baseModel = request.model.replace('models/', '');
-            errs[key][baseModel] = { type: 'QUOTA_EXHAUSTED', timestamp: Date.now() };
-            localStorage.setItem('gemini_key_errors', JSON.stringify(errs));
-          }
-        }
-        
-        throw agentError;
-      }
+      const data = await fetchAttempt(payload, 2);
       
       // Clear error state on success
       if (typeof window !== 'undefined') {
@@ -241,12 +262,28 @@ export async function requestAgent(request: AgentRequest): Promise<AgentResponse
         sources: Array.isArray(data.sources) ? data.sources : [],
         searchQueries: Array.isArray(data.searchQueries) ? data.searchQueries : [],
         researched: data.researched === true,
+        taskId: data.taskId || taskId,
+        durationMs: data.durationMs,
       };
     } catch (e: unknown) {
       const error = e instanceof AgentRequestError
         ? e
         : new AgentRequestError(e instanceof Error ? e.message : 'Agent request failed.');
       if (error.code === 'APP_QUOTA_EXCEEDED') throw error;
+      if (typeof window !== 'undefined') {
+        const isProviderLimit = error.code === 'PROVIDER_RATE_LIMIT' || error.code === 'PROVIDER_QUOTA_EXHAUSTED';
+        if (isProviderLimit) {
+          lastQuotaError = error;
+          try {
+            const errsRaw = localStorage.getItem('gemini_key_errors') || '{}';
+            const errs = JSON.parse(errsRaw);
+            if (!errs[key]) errs[key] = {};
+            const baseModel = request.model.replace('models/', '');
+            errs[key][baseModel] = { type: 'QUOTA_EXHAUSTED', timestamp: Date.now() };
+            localStorage.setItem('gemini_key_errors', JSON.stringify(errs));
+          } catch {}
+        }
+      }
       console.warn(`[Smart Handler] Key ending in ${key.slice(-4)} failed for model ${request.model}:`, error.message);
       lastError = error;
     }

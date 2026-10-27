@@ -172,6 +172,7 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
     let reconnectTimer: number | undefined;
     let hasConnected = false;
     let hasReportedUnavailable = false;
+    let reconnectAttempts = 0;
     availabilityRef.current = 'available';
     const wsUrl = 'ws://127.0.0.1:3001';
     const connectionHint = isLocalHost
@@ -217,6 +218,7 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
       ws.onopen = () => {
         hasConnected = true;
         hasReportedUnavailable = false;
+        reconnectAttempts = 0;
         availabilityRef.current = 'available';
         statusCallbackRef.current?.('connected');
         term.write('\r\n*** Connected to local terminal ***\r\n\r\n');
@@ -295,12 +297,21 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
         if (hasConnected) {
           availabilityRef.current = 'available';
           term.write('\r\n*** Terminal connection lost. Reconnecting... ***\r\n');
-        } else if (!hasReportedUnavailable) {
-          availabilityRef.current = 'unavailable';
-          term.writeln(`\r\nLocal terminal service unavailable. ${connectionHint}`);
-          hasReportedUnavailable = true;
+        } else {
+          reconnectAttempts += 1;
+          if (reconnectAttempts >= 4) {
+            availabilityRef.current = 'unavailable';
+            statusCallbackRef.current?.('unavailable');
+            term.writeln(`\r\nLocal terminal service unavailable. ${connectionHint}\r\nPress any key to retry connection.`);
+            return;
+          }
+          if (!hasReportedUnavailable) {
+            availabilityRef.current = 'unavailable';
+            term.writeln(`\r\nLocal terminal service unavailable. ${connectionHint}`);
+            hasReportedUnavailable = true;
+          }
         }
-        reconnectTimer = window.setTimeout(() => { void connect(); }, 2500);
+        reconnectTimer = window.setTimeout(connect, Math.min(6000, 1500 * Math.pow(1.5, reconnectAttempts)));
       };
     };
     void connect();
@@ -309,9 +320,17 @@ export const Terminal = forwardRef<TerminalRef, TerminalProps>(({ onStatusChange
       const ws = wsRef.current;
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(data);
-      } else if (inputQueueLengthRef.current + data.length < 20_000) {
-        inputQueueRef.current.push(data);
-        inputQueueLengthRef.current += data.length;
+      } else {
+        if (!hasConnected && reconnectAttempts >= 4) {
+          reconnectAttempts = 0;
+          term.write('\r\nRetrying terminal connection...\r\n');
+          connect();
+          return;
+        }
+        if (inputQueueLengthRef.current + data.length < 20_000) {
+          inputQueueRef.current.push(data);
+          inputQueueLengthRef.current += data.length;
+        }
       }
     });
 

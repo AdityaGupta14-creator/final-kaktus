@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, type ChangeEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, type ChangeEvent } from 'react';
 import { Send, Loader2, Terminal, Cpu, Zap, ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Cable, Code, Search, ArrowRight, Layers, GitMerge, Plus, Mic, ExternalLink, Play, BookOpen, Wrench, Trash2, History , Copy, Undo2, X, FileDown, Printer, Download, CircleDot } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { requestAgent, toGeminiImagePart, AgentRequestError, type AgentErrorCode, type AgentMessage } from '@/lib/agent/client';
@@ -1072,8 +1072,27 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const handledPlanActionRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const submittingRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const [visibleCount, setVisibleCount] = useState(30);
   const reachedFinalStep = Boolean((totalSteps || 0) > 0 && (currentStep || 0) >= (totalSteps || 0) - 1);
   const activeWorkspaceTabName = allTabs?.find(tab => tab.isActive)?.name;
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const totalMessages = messages.length;
+  const startIndex = Math.max(0, totalMessages - visibleCount);
+  const visibleMessages = messages.slice(startIndex);
+  const hasMoreMessages = startIndex > 0;
+
+  const handleLoadMoreMessages = useCallback(() => {
+    setVisibleCount(prev => Math.min(prev + 30, totalMessages));
+  }, [totalMessages]);
 
   const startNewChat = () => {
     if (isProcessing) return;
@@ -1116,7 +1135,8 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
       onQuotaReached?.();
       return;
     }
-    if (isProcessing || isPreparingImages) return;
+    if (submittingRef.current || isProcessing || isPreparingImages) return;
+    submittingRef.current = true;
     const textToSend = overrideInput || input;
     const attachedImages = pendingImages;
     const userMsg = textToSend.trim() || (attachedImages.length
@@ -1149,6 +1169,9 @@ export function ChatBox({ apiKeys, model, availableModels = [], onModelChange, o
     setPendingImages([]);
     setImageError('');
     const startTime = Date.now();
+    try {
+      sessionStorage.setItem(`kaktus_active_task_${sessionId}`, JSON.stringify({ userMsg, startedAt: startTime }));
+    } catch { /* ignore */ }
     const progressLog: WorkAction[] = [];
     const executedCommands: string[] = [];
     const executedCommandResults: TerminalCommandResult[] = [];
@@ -1697,9 +1720,15 @@ RULES:
           workActions: progressLog, workTimeMs: Date.now() - startTime,
         }]);
       }
+    } finally {
+      submittingRef.current = false;
+      try {
+        sessionStorage.removeItem(`kaktus_active_task_${sessionId}`);
+      } catch { /* ignore */ }
+      if (isMountedRef.current) {
+        setIsProcessing(false);
+      }
     }
-    
-    setIsProcessing(false);
   };
 
   const handleSendRef = useRef(handleSend);
@@ -1916,8 +1945,21 @@ RULES:
       {/* Messages Area */}
       {messages.length > 0 ? (
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
-          {messages.map((msg, idx) => (
-          <div key={idx} className={`flex flex-col group ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+          {hasMoreMessages && (
+            <div className="flex justify-center pb-2">
+              <button
+                type="button"
+                onClick={handleLoadMoreMessages}
+                className="text-xs text-blue-400 hover:text-blue-300 px-3 py-1 rounded bg-blue-950/30 border border-blue-800/40 transition-colors"
+              >
+                Load earlier messages ({messages.length - visibleCount} more)
+              </button>
+            </div>
+          )}
+          {visibleMessages.map((msg, index) => {
+            const idx = startIndex + index;
+            return (
+          <div key={`${idx}-${msg.createdAt || idx}`} className={`flex flex-col group ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
             
             {msg.role === 'assistant' && msg.workActions && msg.workActions.length > 0 && (
               <WorkAccordion actions={msg.workActions} timeMs={msg.workTimeMs} />
@@ -2165,7 +2207,8 @@ RULES:
               <NextStepsCard block={msg.nextStepsBlock} onSelect={(action) => handleSend(action)} />
             )}
           </div>
-        ))}
+            );
+          })}
         
           {isProcessing && (
             <WorkAccordion

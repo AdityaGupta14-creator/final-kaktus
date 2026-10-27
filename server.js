@@ -37,20 +37,21 @@ app.prepare().then(async () => {
   const mainPy = path.join(backendDir, 'main.py');
   const fs = require('fs');
 
+  const { getPortOccupant, checkBridgeHealth } = require('./scripts/hardware-bridge-launcher.js');
+
   const isBridgeReady = async () => {
-    try {
-      const response = await fetch('http://127.0.0.1:8000/');
-      const payload = response.ok ? await response.json().catch(() => ({})) : {};
-      return payload.flash_enabled === true;
-    } catch {
-      return false;
-    }
+    const health = await checkBridgeHealth(8000, 1500);
+    return health.ok && health.isKaktus;
   };
 
+  const occupant = getPortOccupant(8000);
   if (!fs.existsSync(mainPy)) {
     console.warn('> [Hardware] backend/main.py is missing; USB flashing is unavailable.');
   } else if (await isBridgeReady()) {
-    console.log('> [Hardware] Local USB bridge already running on 127.0.0.1:8000');
+    console.log(`> [Hardware] Local USB bridge already running on 127.0.0.1:8000${occupant?.pid ? ` (PID: ${occupant.pid})` : ''}`);
+  } else if (occupant && occupant.pid) {
+    console.warn(`> [Hardware] Port 8000 is occupied by another process (PID: ${occupant.pid}, Name: ${occupant.name || 'unknown'}).`);
+    console.warn('> [Hardware] Hardware bridge auto-spawn skipped to avoid terminating foreign process. Free port 8000 to enable USB flashing.');
   } else {
     const pythonCmd = (fs.existsSync(venvPython) ? venvPython : null)
       || (fs.existsSync(venvUnixPython) ? venvUnixPython : null)

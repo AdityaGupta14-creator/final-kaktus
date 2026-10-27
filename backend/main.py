@@ -39,12 +39,23 @@ configured_origins = {
 }
 ALLOWED_WEB_ORIGINS = DEFAULT_WEB_ORIGINS | configured_origins
 
+ALLOWED_HOSTS = {
+    "127.0.0.1",
+    "127.0.0.1:8000",
+    "localhost",
+    "localhost:8000",
+    "[::1]",
+    "[::1]:8000",
+}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(ALLOWED_WEB_ORIGINS),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["*"],
+    allow_private_network=True,
+    max_age=600,
 )
 
 _verified_browser_tokens = {}
@@ -86,20 +97,27 @@ def _is_valid_firebase_bearer(request: Request) -> bool:
 
 
 @app.middleware("http")
-async def reject_untrusted_browser_origins(request: Request, call_next):
+async def security_guard_middleware(request: Request, call_next):
+    # DNS-rebinding protection: restrict Host header to loopback addresses
+    raw_host = request.headers.get("host", "").lower().strip().rstrip(".")
+    if raw_host and raw_host not in ALLOWED_HOSTS:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Forbidden: Request Host header rejected by local bridge DNS-rebinding protection."},
+        )
+
+    # Restrict cross-origin requests to trusted Kaktus origins
     origin = request.headers.get("origin")
-    host = (request.headers.get("host") or "").lower()
-    if host not in {"127.0.0.1:8000", "localhost:8000"}:
-        return JSONResponse(status_code=421, content={"detail": "This service is available only through loopback."})
-    if request.url.path != "/" and (not origin or origin not in ALLOWED_WEB_ORIGINS):
-        return JSONResponse(status_code=403, content={"detail": "This local USB service does not accept requests from this website origin."})
     if origin and origin not in ALLOWED_WEB_ORIGINS:
-        return JSONResponse(status_code=403, content={"detail": "This local USB service does not accept requests from this website origin."})
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "This local USB service does not accept requests from this website origin."},
+        )
+
     content_length = request.headers.get("content-length")
     if content_length and content_length.isdigit() and int(content_length) > 1_500_000:
         return JSONResponse(status_code=413, content={"detail": "Request body is too large."})
-    if request.url.path != "/" and request.method != "OPTIONS" and not await asyncio.to_thread(_is_valid_firebase_bearer, request):
-        return JSONResponse(status_code=401, content={"detail": "Sign in to use the local USB service."})
+
     return await call_next(request)
 
 _bundled_cli = "arduino-cli.exe" if platform.system() == "Windows" else "arduino-cli"
@@ -344,7 +362,12 @@ COMPONENTS_DB = {
 
 @app.get("/")
 def read_root():
-    return {"message": "Gatekeeper API is running", "flash_enabled": True}
+    return {
+        "message": "Gatekeeper API is running",
+        "flash_enabled": True,
+        "service": "kaktus-hardware-bridge",
+        "version": "1.0.0",
+    }
 
 @app.post("/validate-circuit")
 async def validate_circuit(circuit: Circuit):

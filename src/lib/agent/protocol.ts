@@ -174,8 +174,19 @@ export interface ExtractedProjectPlanResponse {
   cleanText: string;
 }
 
-function findJsonObject(text: string, from = 0): { start: number; end: number; value: unknown } | null {
+function findJsonObject(text: string, from = 0, requiredKey?: string): { start: number; end: number; value: unknown } | null {
+  // Fast path: check if text even contains opening brace and required key
+  if (requiredKey && !text.includes(`"${requiredKey}"`)) {
+    return null;
+  }
+
+  let candidatesChecked = 0;
+  const maxCandidates = 15;
+
   for (let start = text.indexOf('{', from); start !== -1; start = text.indexOf('{', start + 1)) {
+    candidatesChecked++;
+    if (candidatesChecked > maxCandidates) break;
+
     let depth = 0;
     let inString = false;
     let escaped = false;
@@ -192,11 +203,15 @@ function findJsonObject(text: string, from = 0): { start: number; end: number; v
       else if (char === '}') {
         depth -= 1;
         if (depth === 0) {
-          try {
-            return { start, end: index + 1, value: JSON.parse(text.slice(start, index + 1)) };
-          } catch {
-            break;
+          const slice = text.slice(start, index + 1);
+          if (!requiredKey || slice.includes(`"${requiredKey}"`)) {
+            try {
+              return { start, end: index + 1, value: JSON.parse(slice) };
+            } catch {
+              break;
+            }
           }
+          break;
         }
       }
     }
@@ -212,7 +227,20 @@ export function extractProjectPlanResponse(text: string): ExtractedProjectPlanRe
     return { plan: taggedPlan, cleanText: cleanAgentText(preamble) };
   }
 
-  let candidate = findJsonObject(text);
+  // Fast path: check markdown json code block first
+  const fencedMatch = /```(?:json)?\s*(\{[\s\S]*?"subsystems"[\s\S]*?\})\s*```/i.exec(text);
+  if (fencedMatch) {
+    try {
+      const parsed = JSON.parse(fencedMatch[1]);
+      const plan = parseProjectPlan(parsed);
+      if (plan) {
+        const preamble = text.slice(0, fencedMatch.index).trim();
+        return { plan, cleanText: cleanAgentText(preamble) };
+      }
+    } catch {}
+  }
+
+  let candidate = findJsonObject(text, 0, 'subsystems');
   while (candidate) {
     const plan = parseProjectPlan(candidate.value);
     if (plan) {
@@ -221,7 +249,7 @@ export function extractProjectPlanResponse(text: string): ExtractedProjectPlanRe
         .trim();
       return { plan, cleanText: cleanAgentText(preamble) };
     }
-    candidate = findJsonObject(text, candidate.start + 1);
+    candidate = findJsonObject(text, candidate.start + 1, 'subsystems');
   }
 
   return { plan: null, cleanText: cleanAgentText(text) };
@@ -455,12 +483,23 @@ export function extractTutorialResponse(text: string): ExtractedTutorialResponse
   const candidates: Array<{ value: unknown; start?: number; end?: number }> = [];
   if (tagged) candidates.push({ value: tagged });
 
-  let candidate = findJsonObject(text);
+  // Fast path: check markdown json code block first
+  const fencedMatch = /```(?:json)?\s*(\{[\s\S]*?"steps"[\s\S]*?\})\s*```/i.exec(text);
+  if (fencedMatch) {
+    try {
+      const parsed = JSON.parse(fencedMatch[1]);
+      if (isRecord(parsed) && Array.isArray(parsed.steps)) {
+        candidates.push({ value: parsed, start: fencedMatch.index, end: fencedMatch.index + fencedMatch[0].length });
+      }
+    } catch {}
+  }
+
+  let candidate = findJsonObject(text, 0, 'steps');
   while (candidate) {
     if (isRecord(candidate.value) && Array.isArray(candidate.value.steps)) {
       candidates.push(candidate);
     }
-    candidate = findJsonObject(text, candidate.start + 1);
+    candidate = findJsonObject(text, candidate.start + 1, 'steps');
   }
 
   let lastErrors = ['The response did not contain a tutorial JSON object with a steps array.'];
