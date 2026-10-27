@@ -16,9 +16,9 @@ import {
   Upload,
   Usb,
   Wifi,
-  WifiOff,
   X,
 } from 'lucide-react';
+import { auth } from '@/lib/firebase';
 import {
   BridgeConnectionState,
   checkBridgeHealthWithRetry,
@@ -146,6 +146,9 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const [serviceReady, setServiceReady] = useState(false);
   const [serviceError, setServiceError] = useState('');
   const [statusText, setStatusText] = useState('Checking connection...');
+  const [cloudSetupBusy, setCloudSetupBusy] = useState(false);
+  const [cloudSetupMessage, setCloudSetupMessage] = useState('');
+  const [pairedBridgeId, setPairedBridgeId] = useState('');
   const [errorText, setErrorText] = useState('');
   const [compileOutput, setCompileOutput] = useState('');
   const [serialLines, setSerialLines] = useState<string[]>([]);
@@ -168,6 +171,74 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     () => ports.find((port) => port.port === selectedPort) || null,
     [ports, selectedPort],
   );
+  const hostedProduction = typeof window !== 'undefined'
+    && window.location.protocol === 'https:'
+    && window.location.hostname !== 'localhost'
+    && window.location.hostname !== '127.0.0.1';
+
+  useEffect(() => {
+    setPairedBridgeId(window.localStorage.getItem('kaktus.hardwareBridgeId') || '');
+  }, []);
+
+  const setupCloudBridge = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setCloudSetupMessage('Sign in before pairing a hardware computer.');
+      return;
+    }
+    setCloudSetupBusy(true);
+    setCloudSetupMessage('Creating a secure, account-scoped pairing file…');
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/hardware/relay', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'register', label: typeof navigator !== 'undefined' ? navigator.platform : 'This computer' }),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({})) as { bridgeId?: string; bridgeToken?: string; apiBase?: string; error?: string };
+      if (!response.ok || !payload.bridgeId || !payload.bridgeToken || !payload.apiBase) {
+        throw new Error(payload.error || `Pairing failed (HTTP ${response.status}).`);
+      }
+      window.localStorage.setItem('kaktus.hardwareBridgeId', payload.bridgeId);
+      setPairedBridgeId(payload.bridgeId);
+      const config = new Blob([JSON.stringify({ apiBase: payload.apiBase, bridgeId: payload.bridgeId, bridgeToken: payload.bridgeToken }, null, 2)], { type: 'application/json' });
+      const downloadUrl = URL.createObjectURL(config);
+      const anchor = document.createElement('a');
+      anchor.href = downloadUrl;
+      anchor.download = 'kaktus-hardware-bridge.json';
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      setCloudSetupMessage('Pairing file downloaded. On the computer connected to the board, run: npm run hardware:bridge:cloud -- --config "<path-to-downloaded-file>". The agent starts the USB service and connects outward over HTTPS. Keep the pairing file private.');
+    } catch (error) {
+      setCloudSetupMessage(error instanceof Error ? error.message : 'Could not pair this computer.');
+    } finally {
+      setCloudSetupBusy(false);
+    }
+  }, []);
+
+  const revokeCloudBridge = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user || !pairedBridgeId) return;
+    setCloudSetupBusy(true);
+    try {
+      const response = await fetch('/api/hardware/relay', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'revoke', bridgeId: pairedBridgeId }),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || `Could not revoke bridge (HTTP ${response.status}).`);
+      window.localStorage.removeItem('kaktus.hardwareBridgeId');
+      setPairedBridgeId('');
+      setCloudSetupMessage('This computer’s relay key has been revoked. Pair it again to reconnect.');
+    } catch (error) {
+      setCloudSetupMessage(error instanceof Error ? error.message : 'Could not revoke the paired computer.');
+    } finally {
+      setCloudSetupBusy(false);
+    }
+  }, [pairedBridgeId]);
   const baudFromSketch = useMemo(
     () => inferMonitorBaud(code, currentBoard?.defaultBaud || 115200),
     [code, currentBoard],
@@ -949,6 +1020,8 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
                   <AlertTriangle size={16} className={bridgeState === 'permission-required' || bridgeState === 'cors-rejected' ? 'text-amber-400' : 'text-neutral-400'} />
                   {bridgeState === 'checking'
                     ? 'Checking local hardware bridge'
+                    : hostedProduction
+                    ? 'Secure hardware bridge not connected'
                     : bridgeState === 'permission-required'
                     ? 'Browser permission required'
                     : bridgeState === 'cors-rejected'
@@ -970,7 +1043,36 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
 
               <p className="mt-1 text-neutral-300 leading-relaxed">{serviceError || statusText}</p>
 
-              {bridgeState === 'permission-required' && (
+              {hostedProduction && (
+                <div className="mt-3 rounded border border-blue-500/30 bg-blue-500/10 p-3 text-[11px] text-blue-100 leading-relaxed">
+                  <div className="font-semibold text-blue-200 mb-2">Connect this computer without browser local-network permission</div>
+                  <p>The paired agent makes an outbound encrypted connection and can compile and flash boards plugged into that computer. Pairing is required once per computer.</p>
+                  <button
+                    type="button"
+                    onClick={() => void setupCloudBridge()}
+                    disabled={cloudSetupBusy}
+                    className="mt-3 inline-flex items-center gap-2 rounded-md bg-blue-500 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-400 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {cloudSetupBusy ? <Loader2 size={13} className="animate-spin" /> : <Usb size={13} />}
+                    {cloudSetupBusy ? 'Preparing pairing…' : 'Pair computer and download setup file'}
+                  </button>
+                  {pairedBridgeId && (
+                    <button
+                      type="button"
+                      onClick={() => void revokeCloudBridge()}
+                      disabled={cloudSetupBusy}
+                      className="ml-2 rounded-md border border-red-400/40 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-400/10 disabled:opacity-60"
+                    >
+                      Revoke paired computer
+                    </button>
+                  )}
+                  {cloudSetupMessage && (
+                    <p role="status" className="mt-2 whitespace-pre-wrap rounded bg-black/30 p-2 font-mono text-[10px] text-blue-100">{cloudSetupMessage}</p>
+                  )}
+                </div>
+              )}
+
+              {!hostedProduction && bridgeState === 'permission-required' && (
                 <div className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200 leading-relaxed">
                   <div className="font-semibold text-amber-300 mb-1">Granting local access in Google Chrome / Microsoft Edge:</div>
                   <ol className="list-decimal list-inside space-y-1 text-amber-200/90">
