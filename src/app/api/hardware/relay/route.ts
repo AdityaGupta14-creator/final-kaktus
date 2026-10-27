@@ -8,6 +8,7 @@ import { extractBearerToken, requireAuthenticatedUser } from '@/lib/server/auth'
 import { checkSharedRateLimit, rateLimitExceededResponse } from '@/lib/server/rate-limiter';
 
 const devices = db.collection('hardware_bridge_devices');
+const pairings = db.collection('hardware_bridge_pairings');
 const MAX_COMMAND_BYTES = 1_000_000;
 const MAX_RESULT_BYTES = 1_000_000;
 const COMMAND_TTL_MS = 6 * 60 * 1000;
@@ -154,6 +155,51 @@ export async function POST(request: Request) {
     return Response.json({ ok: true });
   }
 
+  if (action === 'complete-pairing') {
+    const pairingId = body.pairingId;
+    const pairingCode = body.pairingCode;
+    if (!validId(pairingId) || typeof pairingCode !== 'string' || !/^[A-Za-z0-9_-]{40,48}$/.test(pairingCode)) {
+      return Response.json({ error: 'This pairing link is invalid. Start pairing again in Kaktus.' }, { status: 400 });
+    }
+    const pairLimit = await checkSharedRateLimit(pairingId, 'hardware_bridge_pair_complete', 12, 300);
+    if (!pairLimit.allowed) return rateLimitExceededResponse(pairLimit);
+
+    const pairingRef = pairings.doc(pairingId);
+    const bridgeId = crypto.randomBytes(16).toString('hex');
+    const bridgeToken = crypto.randomBytes(32).toString('base64url');
+    const bridgeRef = devices.doc(bridgeId);
+    const suppliedHash = crypto.createHash('sha256').update(pairingCode).digest();
+    const pairingResult = await db.runTransaction(async (transaction): Promise<'paired' | 'expired' | 'invalid' | 'limit'> => {
+      const pairing = await transaction.get(pairingRef);
+      if (!pairing.exists) return 'invalid';
+      const data = pairing.data()!;
+      if (Number(data.expiresAt || 0) <= Date.now()) {
+        transaction.delete(pairingRef);
+        return 'expired';
+      }
+      const expectedHash = Buffer.from(String(data.codeHash || ''), 'hex');
+      if (expectedHash.length !== suppliedHash.length || !crypto.timingSafeEqual(expectedHash, suppliedHash)) return 'invalid';
+      const ownerDevices = await transaction.get(devices.where('ownerUid', '==', data.ownerUid));
+      if (ownerDevices.docs.filter((device) => device.get('active') === true).length >= 3) return 'limit';
+      transaction.create(bridgeRef, {
+        ownerUid: data.ownerUid,
+        secretHash: crypto.createHash('sha256').update(bridgeToken).digest('hex'),
+        active: true,
+        label: typeof data.label === 'string' ? data.label.slice(0, 80) : 'This computer',
+        createdAt: Date.now(),
+        lastSeenAt: null,
+        agentVersion: 'windows-companion-1.0.0',
+      });
+      transaction.delete(pairingRef);
+      return 'paired';
+    });
+    if (pairingResult !== 'paired') {
+      if (pairingResult === 'limit') return Response.json({ error: 'You can pair up to three computers. Revoke an old bridge first.' }, { status: 409 });
+      return Response.json({ error: pairingResult === 'expired' ? 'This pairing link expired. Start pairing again in Kaktus.' : 'This pairing link is invalid or already used.' }, { status: pairingResult === 'expired' ? 410 : 401 });
+    }
+    return Response.json({ bridgeId, bridgeToken }, { headers: { 'Cache-Control': 'no-store' } });
+  }
+
   let user;
   try { user = await requireAuthenticatedUser(request); }
   catch (error) {
@@ -180,6 +226,34 @@ export async function POST(request: Request) {
       agentVersion: null,
     });
     return Response.json({ bridgeId, bridgeToken, apiBase: new URL(request.url).origin }, { headers: { 'Cache-Control': 'no-store' } });
+  }
+
+  if (action === 'create-pairing') {
+    const rate = await checkSharedRateLimit(user.uid, 'hardware_bridge_create_pairing', 5, 3600);
+    if (!rate.allowed) return rateLimitExceededResponse(rate);
+    const existing = await devices.where('ownerUid', '==', user.uid).get();
+    const activeDeviceCount = existing.docs.filter((doc) => doc.get('active') === true).length;
+    if (activeDeviceCount >= 3) {
+      return Response.json({ error: 'You can pair up to three computers. Revoke an old bridge first.' }, { status: 409 });
+    }
+    const userPairings = await pairings.where('ownerUid', '==', user.uid).limit(200).get();
+    const stale = userPairings.docs.filter((doc) => Number(doc.get('expiresAt') || 0) <= Date.now());
+    if (stale.length) await Promise.all(stale.map((doc) => doc.ref.delete()));
+    const pendingPairings = userPairings.docs.length - stale.length;
+    if (activeDeviceCount + pendingPairings >= 3) {
+      return Response.json({ error: 'Finish or wait for an existing setup link before creating another one.' }, { status: 409 });
+    }
+    const pairingId = crypto.randomBytes(16).toString('hex');
+    const pairingCode = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    await pairings.doc(pairingId).create({
+      ownerUid: user.uid,
+      codeHash: crypto.createHash('sha256').update(pairingCode).digest('hex'),
+      label: typeof body.label === 'string' ? body.label.slice(0, 80) : 'This computer',
+      createdAt: Date.now(),
+      expiresAt,
+    });
+    return Response.json({ pairingId, pairingCode, apiBase: new URL(request.url).origin, expiresAt }, { headers: { 'Cache-Control': 'no-store' } });
   }
 
   if (action === 'revoke') {

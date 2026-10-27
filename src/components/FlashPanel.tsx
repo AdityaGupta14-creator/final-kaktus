@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   Cpu,
+  Download,
   Loader2,
   MonitorSpeaker,
   RefreshCw,
@@ -26,6 +27,9 @@ import {
   hardwareFetch,
   hardwareResponseError,
 } from '@/lib/hardware-api';
+
+const HARDWARE_BRIDGE_INSTALLER_URL = process.env.NEXT_PUBLIC_HARDWARE_BRIDGE_INSTALLER_URL
+  || 'https://github.com/AdityaGupta14-creator/final-kaktus/releases/latest/download/KaktusHardwareBridgeSetup.exe';
 
 export interface BoardOption {
   fqbn: string;
@@ -149,6 +153,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
   const [cloudSetupBusy, setCloudSetupBusy] = useState(false);
   const [cloudSetupMessage, setCloudSetupMessage] = useState('');
   const [pairedBridgeId, setPairedBridgeId] = useState('');
+  const [pairingPendingSince, setPairingPendingSince] = useState(0);
   const [errorText, setErrorText] = useState('');
   const [compileOutput, setCompileOutput] = useState('');
   const [serialLines, setSerialLines] = useState<string[]>([]);
@@ -180,6 +185,55 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
     setPairedBridgeId(window.localStorage.getItem('kaktus.hardwareBridgeId') || '');
   }, []);
 
+  useEffect(() => {
+    if (!pairingPendingSince) return;
+    let stopped = false;
+    let attempts = 0;
+    let timer = 0;
+    const checkPairing = async () => {
+      if (stopped) return;
+      attempts += 1;
+      try {
+        const user = auth.currentUser;
+        if (user) {
+          const response = await fetch('/api/hardware/relay?action=devices', {
+            headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+            cache: 'no-store',
+          });
+          const payload = await response.json().catch(() => ({})) as {
+            devices?: Array<{ id?: string; createdAt?: number | null; lastSeenAt?: number | null }>;
+          };
+          const paired = (payload.devices || [])
+            .filter((device) => typeof device.id === 'string'
+              && Number(device.createdAt || 0) >= pairingPendingSince - 10_000
+              && Number(device.lastSeenAt || 0) >= pairingPendingSince - 10_000)
+            .sort((a, b) => Number(b.lastSeenAt || 0) - Number(a.lastSeenAt || 0))[0];
+          if (paired?.id) {
+            window.localStorage.setItem('kaktus.hardwareBridgeId', paired.id);
+            setPairedBridgeId(paired.id);
+            setCloudSetupMessage('This computer is connected. Plug in a supported board and use Flash in Kaktus.');
+            setPairingPendingSince(0);
+            window.dispatchEvent(new Event('kaktus-hardware-paired'));
+            return;
+          }
+        }
+      } catch {
+        // Pairing remains pending while the companion opens and connects.
+      }
+      if (attempts >= 60) {
+        setPairingPendingSince(0);
+        setCloudSetupMessage('Pairing timed out. Install Kaktus Hardware Bridge if needed, then click Pair and start helper again.');
+        return;
+      }
+      timer = window.setTimeout(checkPairing, 5000);
+    };
+    timer = window.setTimeout(checkPairing, 2500);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [pairingPendingSince]);
+
   const setupCloudBridge = useCallback(async () => {
     const user = auth.currentUser;
     if (!user) {
@@ -187,29 +241,29 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       return;
     }
     setCloudSetupBusy(true);
-    setCloudSetupMessage('Creating a secure, account-scoped pairing file…');
+    setCloudSetupMessage('Preparing a one-time secure pairing link…');
     try {
       const idToken = await user.getIdToken();
       const response = await fetch('/api/hardware/relay', {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'register', label: typeof navigator !== 'undefined' ? navigator.platform : 'This computer' }),
+        body: JSON.stringify({ action: 'create-pairing', label: typeof navigator !== 'undefined' ? navigator.platform : 'This computer' }),
         cache: 'no-store',
       });
-      const payload = await response.json().catch(() => ({})) as { bridgeId?: string; bridgeToken?: string; apiBase?: string; error?: string };
-      if (!response.ok || !payload.bridgeId || !payload.bridgeToken || !payload.apiBase) {
+      const payload = await response.json().catch(() => ({})) as {
+        pairingId?: string; pairingCode?: string; apiBase?: string; error?: string;
+      };
+      if (!response.ok || !payload.pairingId || !payload.pairingCode || !payload.apiBase) {
         throw new Error(payload.error || `Pairing failed (HTTP ${response.status}).`);
       }
-      window.localStorage.setItem('kaktus.hardwareBridgeId', payload.bridgeId);
-      setPairedBridgeId(payload.bridgeId);
-      const config = new Blob([JSON.stringify({ apiBase: payload.apiBase, bridgeId: payload.bridgeId, bridgeToken: payload.bridgeToken }, null, 2)], { type: 'application/json' });
-      const downloadUrl = URL.createObjectURL(config);
-      const anchor = document.createElement('a');
-      anchor.href = downloadUrl;
-      anchor.download = 'kaktus-hardware-bridge.json';
-      anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
-      setCloudSetupMessage('Pairing file downloaded. On the computer connected to the board, run: npm run hardware:bridge:cloud -- --config "<path-to-downloaded-file>". The agent starts the USB service and connects outward over HTTPS. Keep the pairing file private.');
+      const startedAt = Date.now();
+      setPairingPendingSince(startedAt);
+      const pairUrl = new URL('kaktus-bridge://pair');
+      pairUrl.searchParams.set('apiBase', payload.apiBase);
+      pairUrl.searchParams.set('pairingId', payload.pairingId);
+      pairUrl.searchParams.set('pairingCode', payload.pairingCode);
+      setCloudSetupMessage('Opening Kaktus Hardware Bridge. Approve the one-time Windows prompt if it appears. Keep this page open while pairing finishes.');
+      window.location.href = pairUrl.toString();
     } catch (error) {
       setCloudSetupMessage(error instanceof Error ? error.message : 'Could not pair this computer.');
     } finally {
@@ -233,6 +287,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       window.localStorage.removeItem('kaktus.hardwareBridgeId');
       setPairedBridgeId('');
       setCloudSetupMessage('This computer’s relay key has been revoked. Pair it again to reconnect.');
+      window.dispatchEvent(new Event('kaktus-hardware-paired'));
     } catch (error) {
       setCloudSetupMessage(error instanceof Error ? error.message : 'Could not revoke the paired computer.');
     } finally {
@@ -400,6 +455,12 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
       await refreshDevicesWebSerial();
     }
   }, [hostedProduction, mode, refreshDevicesBackend, refreshDevicesWebSerial]);
+
+  useEffect(() => {
+    const refreshAfterPairing = () => { void refreshDevices(); };
+    window.addEventListener('kaktus-hardware-paired', refreshAfterPairing);
+    return () => window.removeEventListener('kaktus-hardware-paired', refreshAfterPairing);
+  }, [refreshDevices]);
 
   /* ── Request a new device pairing (Web Serial browser picker) ── */
   const requestNewDevice = useCallback(async () => {
@@ -1054,7 +1115,13 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               {hostedProduction && (
                 <div className="mt-3 rounded border border-blue-500/30 bg-blue-500/10 p-3 text-[11px] text-blue-100 leading-relaxed">
                   <div className="font-semibold text-blue-200 mb-2">Connect this computer without browser local-network permission</div>
-                  <p>The app uses an authenticated outbound bridge, so Chrome/Edge local-network access is not needed. Pair the computer and keep its helper running while you build or upload through this app.</p>
+                  <p>Install the helper once on the computer connected to your board. Then pair it here; Kaktus starts the USB service and reconnects it automatically when Windows starts.</p>
+                  <a
+                    href={HARDWARE_BRIDGE_INSTALLER_URL}
+                    className="mt-3 inline-flex items-center gap-2 rounded-md border border-neutral-600 bg-neutral-900 px-3 py-2 text-xs font-semibold text-neutral-100 hover:bg-neutral-800"
+                  >
+                    <Download size={13} /> Download Kaktus Hardware Bridge
+                  </a>
                   <button
                     type="button"
                     onClick={() => void setupCloudBridge()}
@@ -1062,7 +1129,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
                     className="mt-3 inline-flex items-center gap-2 rounded-md bg-blue-500 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-400 disabled:cursor-wait disabled:opacity-60"
                   >
                     {cloudSetupBusy ? <Loader2 size={13} className="animate-spin" /> : <Usb size={13} />}
-                    {cloudSetupBusy ? 'Preparing pairing…' : 'Pair computer and download setup file'}
+                    {cloudSetupBusy ? 'Preparing pairing…' : 'Pair and start helper'}
                   </button>
                   {pairedBridgeId && (
                     <button
@@ -1075,7 +1142,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
                     </button>
                   )}
                   {cloudSetupMessage && (
-                    <p role="status" className="mt-2 whitespace-pre-wrap rounded bg-black/30 p-2 font-mono text-[10px] text-blue-100">{cloudSetupMessage}</p>
+                    <p role="status" className="mt-2 whitespace-pre-wrap rounded bg-black/30 p-2 text-[11px] text-blue-100">{cloudSetupMessage}</p>
                   )}
                 </div>
               )}
@@ -1115,6 +1182,19 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
                   </code>
                 </div>
               )}
+            </div>
+          )}
+          {hostedProduction && bridgeState === 'connected' && pairedBridgeId && (
+            <div className="mx-3 mt-2 flex items-center justify-between gap-3 rounded-md border border-neutral-800 bg-neutral-950/80 px-3 py-2 text-[11px] text-neutral-300">
+              <span className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Kaktus Hardware Bridge connected</span>
+              <button
+                type="button"
+                onClick={() => void revokeCloudBridge()}
+                disabled={cloudSetupBusy}
+                className="rounded border border-neutral-700 px-2 py-1 text-neutral-300 hover:border-red-400/50 hover:text-red-200 disabled:opacity-60"
+              >
+                {cloudSetupBusy ? 'Working…' : 'Revoke computer'}
+              </button>
             </div>
           )}
           {serviceError && serviceReady && (

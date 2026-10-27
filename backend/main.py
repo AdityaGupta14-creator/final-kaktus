@@ -17,8 +17,8 @@ import serial
 import platform
 import hashlib
 import time
-import urllib.request
-import urllib.error
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2 import id_token
 
 app = FastAPI(title="Hardware Gatekeeper API")
 
@@ -39,11 +39,14 @@ configured_origins = {
 }
 ALLOWED_WEB_ORIGINS = DEFAULT_WEB_ORIGINS | configured_origins
 
+HARDWARE_PORT = int(os.getenv("KAKTUS_HARDWARE_PORT", "8000"))
 ALLOWED_HOSTS = {
     "127.0.0.1",
     "127.0.0.1:8000",
+    f"127.0.0.1:{HARDWARE_PORT}",
     "localhost",
     "localhost:8000",
+    f"localhost:{HARDWARE_PORT}",
     "[::1]",
     "[::1]:8000",
 }
@@ -59,7 +62,17 @@ app.add_middleware(
 )
 
 _verified_browser_tokens = {}
-_local_auth_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+_google_auth_request = GoogleAuthRequest()
+_firebase_project_id = (
+    os.getenv("FIREBASE_PROJECT_ID")
+    or os.getenv("NEXT_PUBLIC_FIREBASE_PROJECT_ID")
+    or "otpdemo-291bd"
+).strip()
+
+
+def _bounded_google_auth_request(url, **kwargs):
+    kwargs.setdefault("timeout", 3)
+    return _google_auth_request(url, **kwargs)
 
 
 def _is_valid_firebase_bearer(request: Request) -> bool:
@@ -77,17 +90,20 @@ def _is_valid_firebase_bearer(request: Request) -> bool:
     if expires_at > now:
         return True
 
-    verification_request = urllib.request.Request(
-        "http://127.0.0.1:3001/internal/verify-token",
-        data=b"",
-        headers={"Authorization": f"Bearer {token}"},
-        method="POST",
-    )
     try:
-        with _local_auth_opener.open(verification_request, timeout=3) as response:
-            if response.status != 204:
-                return False
-    except (urllib.error.URLError, TimeoutError, OSError):
+        decoded = id_token.verify_firebase_token(
+            token,
+            _bounded_google_auth_request,
+            audience=_firebase_project_id,
+        )
+        if (
+            decoded.get("aud") != _firebase_project_id
+            or decoded.get("iss") != f"https://securetoken.google.com/{_firebase_project_id}"
+            or not isinstance(decoded.get("sub"), str)
+            or not decoded.get("sub")
+        ):
+            return False
+    except Exception:
         return False
 
     if len(_verified_browser_tokens) > 5000:
@@ -121,16 +137,18 @@ async def security_guard_middleware(request: Request, call_next):
     return await call_next(request)
 
 _bundled_cli = "arduino-cli.exe" if platform.system() == "Windows" else "arduino-cli"
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+HARDWARE_HOME = os.path.abspath(os.getenv("KAKTUS_HARDWARE_HOME", BACKEND_DIR))
+os.makedirs(HARDWARE_HOME, exist_ok=True)
 ARDUINO_CLI = os.getenv(
     "ARDUINO_CLI_PATH",
-    os.path.join(os.path.dirname(__file__), "arduino-cli", _bundled_cli),
+    os.path.join(BACKEND_DIR, "arduino-cli", _bundled_cli),
 )
-BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-ARDUINO_CONFIG_FILE = os.path.join(BACKEND_DIR, ".arduino-cli.yaml")
-ARDUINO_DATA_DIR = os.path.join(BACKEND_DIR, ".arduino-data")
-ARDUINO_DOWNLOADS_DIR = os.path.join(BACKEND_DIR, ".arduino-downloads")
-ARDUINO_USER_DIR = os.path.join(BACKEND_DIR, ".arduino-user")
-BUILD_TEMP_DIR = os.path.join(BACKEND_DIR, ".work")
+ARDUINO_CONFIG_FILE = os.path.join(HARDWARE_HOME, ".arduino-cli.yaml")
+ARDUINO_DATA_DIR = os.path.join(HARDWARE_HOME, ".arduino-data")
+ARDUINO_DOWNLOADS_DIR = os.path.join(HARDWARE_HOME, ".arduino-downloads")
+ARDUINO_USER_DIR = os.path.join(HARDWARE_HOME, ".arduino-user")
+BUILD_TEMP_DIR = os.path.join(HARDWARE_HOME, ".work")
 
 BOARD_CATALOG = {
     "arduino:avr:uno": {"name": "Arduino Uno", "chip": "ATmega328P", "default_baud": 9600},

@@ -31,8 +31,8 @@ async function resolveCloudBridgeId(idToken: string, signal?: AbortSignal): Prom
   if (!bridgeId) {
     const hasPairedDevice = payload.devices?.some((device) => Boolean(device.id));
     throw new Error(hasPairedDevice
-      ? 'The paired computer is offline. Start the Kaktus Hardware Cloud Bridge on that computer, then retry.'
-      : 'Pair a Kaktus Hardware Bridge computer first.');
+      ? 'The paired computer is offline. Open Kaktus Hardware Bridge from the Windows Start menu, then retry.'
+      : 'Install Kaktus Hardware Bridge once, then choose Pair and start helper.');
   }
   window.localStorage.setItem(CLOUD_BRIDGE_STORAGE_KEY, bridgeId);
   return bridgeId;

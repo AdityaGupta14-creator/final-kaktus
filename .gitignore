@@ -46,6 +46,7 @@ next-env.d.ts
 *.js
 *.py
 !backend/main.py
+!companion/*.py
 !hardware-bridge.js
 !hardware-setup.js
 !scripts/*.js
