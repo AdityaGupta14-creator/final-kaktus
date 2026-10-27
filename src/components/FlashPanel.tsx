@@ -1054,7 +1054,7 @@ export function FlashPanel({ code, left = 0, onClose, onRequestBridgeSetup, brid
               {hostedProduction && (
                 <div className="mt-3 rounded border border-blue-500/30 bg-blue-500/10 p-3 text-[11px] text-blue-100 leading-relaxed">
                   <div className="font-semibold text-blue-200 mb-2">Connect this computer without browser local-network permission</div>
-                  <p>The app uses an authenticated outbound bridge, so Chrome/Edge local-network access is not needed. Pair and start the helper on the computer connected to the board once; builds and uploads then run through this app.</p>
+                  <p>The app uses an authenticated outbound bridge, so Chrome/Edge local-network access is not needed. Pair the computer and keep its helper running while you build or upload through this app.</p>
                   <button
                     type="button"
                     onClick={() => void setupCloudBridge()}
