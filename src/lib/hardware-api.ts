@@ -10,103 +10,11 @@ export function hardwareApiUrl(path: string): string {
   return `${hardwareApiBase}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-const CLOUD_BRIDGE_STORAGE_KEY = 'kaktus.hardwareBridgeId';
-
-function isHostedRelay(): boolean {
-  return typeof window !== 'undefined'
-    && window.location.protocol === 'https:'
-    && window.location.hostname !== 'localhost'
-    && window.location.hostname !== '127.0.0.1';
-}
-
-async function resolveCloudBridgeId(idToken: string, signal?: AbortSignal): Promise<string> {
-  const response = await fetch('/api/hardware/relay?action=devices', {
-    headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store', signal,
-  });
-  const payload = await response.json().catch(() => ({})) as { devices?: Array<{ id?: string; lastSeenAt?: number | null }> };
-  const saved = window.localStorage.getItem(CLOUD_BRIDGE_STORAGE_KEY);
-  const onlineDevices = (payload.devices || []).filter((device) => typeof device.lastSeenAt === 'number' && Date.now() - device.lastSeenAt < 20_000);
-  const bridgeId = onlineDevices.find((device) => device.id === saved)?.id || onlineDevices[0]?.id;
-  if (!response.ok) throw new Error('Could not check paired hardware computers.');
-  if (!bridgeId) {
-    const hasPairedDevice = payload.devices?.some((device) => Boolean(device.id));
-    throw new Error(hasPairedDevice
-      ? 'The paired computer is offline. Start the Kaktus Hardware Cloud Bridge on that computer, then retry.'
-      : 'Pair a Kaktus Hardware Bridge computer first.');
-  }
-  window.localStorage.setItem(CLOUD_BRIDGE_STORAGE_KEY, bridgeId);
-  return bridgeId;
-}
-
-async function cloudHardwareFetch(path: string, init: RequestInit, idToken: string): Promise<Response> {
-  const bridgeId = await resolveCloudBridgeId(idToken, init.signal || undefined);
-  let commandBody: unknown = null;
-  if (typeof init.body === 'string') {
-    try { commandBody = JSON.parse(init.body); } catch { commandBody = init.body; }
-  }
-  const enqueueResponse = await fetch('/api/hardware/relay', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'enqueue', bridgeId, path, method: init.method || 'GET', body: commandBody }),
-    cache: 'no-store', signal: init.signal,
-  });
-  const queued = await enqueueResponse.json().catch(() => ({})) as { commandId?: string; error?: string };
-  if (!enqueueResponse.ok || !queued.commandId) {
-    if (enqueueResponse.status === 404 || enqueueResponse.status === 409) window.localStorage.removeItem(CLOUD_BRIDGE_STORAGE_KEY);
-    throw new Error(queued.error || `Hardware relay returned HTTP ${enqueueResponse.status}.`);
-  }
-
-  const timeoutMs = /^\/flash\/(?:compile|upload|install-core|install-library)/.test(path)
-    ? 4 * 60_000
-    : 20_000;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (init.signal?.aborted) throw new DOMException('Request cancelled.', 'AbortError');
-    await new Promise<void>((resolve, reject) => {
-      const cleanup = () => init.signal?.removeEventListener('abort', abort);
-      const timeout = window.setTimeout(() => { cleanup(); resolve(); }, 900);
-      const abort = () => {
-        window.clearTimeout(timeout);
-        cleanup();
-        reject(new DOMException('Request cancelled.', 'AbortError'));
-      };
-      init.signal?.addEventListener('abort', abort, { once: true });
-      if (init.signal?.aborted) abort();
-    });
-    const statusResponse = await fetch(`/api/hardware/relay?action=command&bridgeId=${encodeURIComponent(bridgeId)}&commandId=${encodeURIComponent(queued.commandId)}`, {
-      headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store', signal: init.signal,
-    });
-    const status = await statusResponse.json().catch(() => ({})) as {
-      status?: string; responseStatus?: number; responseBody?: unknown; error?: string;
-    };
-    if (!statusResponse.ok) throw new Error(status.error || `Hardware relay status returned HTTP ${statusResponse.status}.`);
-    if (status.status === 'complete') {
-      const responseBody = typeof status.responseBody === 'string' ? status.responseBody : JSON.stringify(status.responseBody ?? null);
-      return new Response(responseBody, {
-        status: status.responseStatus || 200,
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-      });
-    }
-    if (status.status === 'expired') throw new Error('The hardware bridge did not finish in time. Check its connection, then retry.');
-  }
-  throw new Error('The hardware bridge did not respond within five minutes.');
-}
-
 export async function hardwareFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   const user = auth.currentUser;
   if (user && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${await user.getIdToken()}`);
-  }
-
-  // Hosted pages use the outbound bridge relay and never request loopback access.
-  if (isHostedRelay()) {
-    const idToken = headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || '';
-    if (!idToken) throw new Error('Sign in before connecting a hardware bridge.');
-    if (/^\/flash\/serial-monitor(?:\?|$)/.test(path)) {
-      throw new Error('Serial monitor streaming needs a live local connection. Cloud-relay support for the serial stream is not enabled yet.');
-    }
-    return cloudHardwareFetch(path, init, idToken);
   }
 
   const url = hardwareApiUrl(path);
