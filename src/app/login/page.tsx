@@ -50,6 +50,13 @@ function LoginContent() {
         }
       }
 
+      const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+      const destinationPath = redirectTo.split(/[?#]/, 1)[0];
+      if (isAndroid && destinationPath === '/ide') {
+        router.push(`/mobile-workspace?redirect=${encodeURIComponent(redirectTo)}`);
+        return;
+      }
+
       if (redirectTo.includes('#pricing')) {
         window.location.href = redirectTo;
       } else {
